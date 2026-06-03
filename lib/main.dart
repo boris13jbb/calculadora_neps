@@ -353,7 +353,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
     return Scaffold(
       body: Container(
         width: double.infinity,
-        minHeight: double.infinity,
+        constraints: const BoxConstraints(minHeight: double.infinity),
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [
