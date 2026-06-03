@@ -1,0 +1,46 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Flutter APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+
+      - name: Verificar Flutter
+        run: flutter --version
+
+      - name: Crear carpetas Android si no existen
+        run: flutter create --platforms android --project-name calculadora_neps .
+
+      - name: Descargar dependencias
+        run: flutter pub get
+
+      - name: Generar APK Release
+        run: flutter build apk --release
+
+      - name: Subir APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculadora-neps-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
