@@ -1,24 +1,28 @@
 name: calculadora_neps
 
-description: Calculadora VICUNHA de Neps dividido para 0.09 metros.
+description: Calculadora VICUNHA de Neps dividido para 0.09 m con exportacion PDF, CSV, Excel e impresion.
 
 publish_to: 'none'
 
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.3.0 <4.0.0'
+  sdk: '>=3.5.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
-  shared_preferences: ^2.2.3
-  cupertino_icons: ^1.0.8
+  shared_preferences: 2.3.2
+  pdf: 3.11.1
+  printing: 5.13.4
+  excel: 4.0.6
+  path_provider: 2.1.4
+  share_plus: 10.0.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
+  flutter_lints: 4.0.0
 
 flutter:
   uses-material-design: true

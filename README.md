@@ -1,48 +1,27 @@
-# Calculadora Neps VICUNHA - Flutter Android
+# Calculadora Neps VICUNHA
 
-Aplicación Flutter para Android que permite:
+Aplicacion Flutter Android para calcular:
 
-- Ingresar número de telar.
-- Ingresar cantidad de Neps.
-- Calcular automáticamente: `Mts = Neps ÷ 0.09`.
-- Guardar registros en el celular.
-- Copiar tabla.
-- Copiar CSV para pegar en Excel.
-- Vaciar tabla.
+`Mts calculados = Neps / 0.09`
 
-La app inicia sin datos precargados.
+Incluye:
 
-## Opción 1: Compilar APK en tu computadora
+- Ingreso de numero de telar
+- Ingreso de neps
+- Calculo automatico
+- Tabla de registros
+- Guardado local
+- Exportacion CSV real
+- Exportacion Excel .xlsx real
+- Exportacion PDF
+- Impresion PDF
+- Copiar tabla
+- Vaciar tabla
 
-1. Instala Flutter.
-2. Crea o abre esta carpeta.
-3. Ejecuta:
+## Generar APK con GitHub Actions
 
-```bash
-flutter pub get
-flutter create --platforms android --project-name calculadora_neps .
-flutter build apk --release
-```
-
-El APK queda en:
-
-```text
-build/app/outputs/flutter-apk/app-release.apk
-```
-
-## Opción 2: Compilar APK gratis con GitHub Actions
-
-1. Crea un repositorio en GitHub.
-2. Sube todos estos archivos.
-3. Entra a la pestaña **Actions**.
-4. Ejecuta el workflow **Build APK**.
-5. Cuando termine, descarga el artefacto **calculadora-neps-apk**.
-6. Dentro estará el archivo `app-release.apk`.
-
-## Archivos principales
-
-```text
-lib/main.dart
-pubspec.yaml
-.github/workflows/build-apk.yml
-```
+1. Sube estos archivos al repositorio.
+2. Entra a Actions.
+3. Ejecuta Build APK.
+4. Descarga el artifact `calculadora-neps-apk`.
+5. Dentro estara `app-release.apk`.
