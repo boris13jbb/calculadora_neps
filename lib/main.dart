@@ -1,7 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:excel/excel.dart' as xls;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -10,7 +17,7 @@ void main() {
 
 const double testLengthM = 0.09;
 const int decimals = 0;
-const String storageKey = 'vicunha_neps_flutter_sin_precarga_v1';
+const String storageKey = 'vicunha_neps_flutter_exportaciones_v1';
 
 class NepsApp extends StatelessWidget {
   const NepsApp({super.key});
@@ -23,7 +30,6 @@ class NepsApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: 'Roboto',
-        colorSchemeSeed: const Color(0xFFC5A059),
       ),
       home: const NepsHomePage(),
     );
@@ -34,10 +40,7 @@ class NepRecord {
   String telar;
   double neps;
 
-  NepRecord({
-    required this.telar,
-    required this.neps,
-  });
+  NepRecord({required this.telar, required this.neps});
 
   Map<String, dynamic> toJson() {
     return {
@@ -65,18 +68,14 @@ class _NepsHomePageState extends State<NepsHomePage> {
   final TextEditingController telarController = TextEditingController();
   final TextEditingController nepsController = TextEditingController();
 
-  final FocusNode telarFocus = FocusNode();
-  final FocusNode nepsFocus = FocusNode();
-
   List<NepRecord> records = [];
   bool isLoading = true;
+  bool isExporting = false;
 
   @override
   void initState() {
     super.initState();
-    nepsController.addListener(() {
-      setState(() {});
-    });
+    nepsController.addListener(() => setState(() {}));
     loadData();
   }
 
@@ -84,8 +83,6 @@ class _NepsHomePageState extends State<NepsHomePage> {
   void dispose() {
     telarController.dispose();
     nepsController.dispose();
-    telarFocus.dispose();
-    nepsFocus.dispose();
     super.dispose();
   }
 
@@ -106,9 +103,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
       records = [];
     }
 
-    setState(() {
-      isLoading = false;
-    });
+    setState(() => isLoading = false);
   }
 
   Future<void> saveData() async {
@@ -117,166 +112,307 @@ class _NepsHomePageState extends State<NepsHomePage> {
     await prefs.setString(storageKey, jsonEncode(data));
   }
 
-  double calculateMts(double neps) {
-    return neps / testLengthM;
+  double calculateMts(double neps) => neps / testLengthM;
+
+  double parseNumber(String value) {
+    return double.tryParse(value.replaceAll(',', '.')) ?? 0;
   }
 
   String formatNumber(double value) {
-    if (decimals == 0) {
-      return value.round().toString();
-    }
-
+    if (decimals == 0) return value.round().toString();
     return value.toStringAsFixed(decimals);
   }
 
-  double parseNumber(String value) {
-    final normalized = value.replaceAll(',', '.');
-    return double.tryParse(normalized) ?? 0;
-  }
-
-  String formatNeps(double value) {
-    if (value == value.roundToDouble()) {
-      return value.round().toString();
-    }
-
-    return value.toString();
+  String formatDecimal(double value) {
+    if (value == value.roundToDouble()) return value.round().toString();
+    return value.toStringAsFixed(3);
   }
 
   double get previewValue {
-    if (nepsController.text.trim().isEmpty) {
-      return 0;
-    }
-
-    final neps = parseNumber(nepsController.text);
-    return calculateMts(neps);
+    if (nepsController.text.trim().isEmpty) return 0;
+    return calculateMts(parseNumber(nepsController.text));
   }
 
-  double get totalNeps {
-    return records.fold(0, (sum, item) => sum + item.neps);
+  double get totalNeps => records.fold(0, (sum, item) => sum + item.neps);
+
+  double get totalMts =>
+      records.fold(0, (sum, item) => sum + calculateMts(item.neps));
+
+  double get averageMts => records.isEmpty ? 0 : totalMts / records.length;
+
+  String get timestamp {
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${now.year}${two(now.month)}${two(now.day)}_${two(now.hour)}${two(now.minute)}${two(now.second)}';
   }
 
-  double get totalMts {
-    return records.fold(0, (sum, item) => sum + calculateMts(item.neps));
+  Future<Directory> getExportDirectory() async {
+    return getTemporaryDirectory();
   }
 
-  double get averageMts {
+  void showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> runExport(Future<void> Function() action) async {
     if (records.isEmpty) {
-      return 0;
+      showMessage('No hay datos para exportar.');
+      return;
     }
 
-    return totalMts / records.length;
+    if (isExporting) return;
+
+    setState(() => isExporting = true);
+
+    try {
+      await action();
+    } catch (e) {
+      showMessage('Error al exportar: $e');
+    } finally {
+      if (mounted) setState(() => isExporting = false);
+    }
   }
 
-  Future<void> addRecord() async {
-    final telar = telarController.text.trim();
-    final nepsText = nepsController.text.trim();
+  String escapeCsv(String value) {
+    final needsQuotes = value.contains(',') || value.contains('"') || value.contains('\n');
+    final escaped = value.replaceAll('"', '""');
+    return needsQuotes ? '"$escaped"' : escaped;
+  }
 
-    if (telar.isEmpty) {
-      showMessage('Ingrese el número de telar.');
-      telarFocus.requestFocus();
-      return;
+  String buildCsvText() {
+    final buffer = StringBuffer();
+    buffer.writeln('Nro,Telar,Neps,Mts calculados');
+
+    for (int i = 0; i < records.length; i++) {
+      final item = records[i];
+      final mts = calculateMts(item.neps);
+      buffer.writeln([
+        (i + 1).toString(),
+        escapeCsv(item.telar),
+        formatDecimal(item.neps),
+        formatNumber(mts),
+      ].join(','));
     }
 
-    if (nepsText.isEmpty || parseNumber(nepsText) <= 0) {
-      showMessage('Ingrese una cantidad válida de neps.');
-      nepsFocus.requestFocus();
-      return;
-    }
+    buffer.writeln([
+      '',
+      'TOTALES',
+      formatDecimal(totalNeps),
+      formatNumber(totalMts),
+    ].join(','));
 
-    final neps = parseNumber(nepsText);
+    return buffer.toString();
+  }
 
-    setState(() {
-      records.add(
-        NepRecord(
-          telar: telar,
-          neps: neps,
-        ),
+  Future<void> exportCsv() async {
+    await runExport(() async {
+      final dir = await getExportDirectory();
+      final file = File('${dir.path}/reporte_neps_$timestamp.csv');
+      await file.writeAsString('\uFEFF${buildCsvText()}', encoding: utf8);
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'text/csv')],
+        text: 'Reporte CSV de Neps',
       );
     });
-
-    await saveData();
-
-    telarController.clear();
-    nepsController.clear();
-    telarFocus.requestFocus();
-
-    showMessage('Registro agregado correctamente.');
   }
 
-  Future<void> deleteRecord(int index) async {
-    setState(() {
-      records.removeAt(index);
+  Future<void> exportExcel() async {
+    await runExport(() async {
+      final excel = xls.Excel.createExcel();
+      const sheetName = 'Reporte Neps';
+      final sheet = excel[sheetName];
+      excel.setDefaultSheet(sheetName);
+
+      if (excel.sheets.containsKey('Sheet1')) {
+        excel.delete('Sheet1');
+      }
+
+      sheet.appendRow([
+        xls.TextCellValue('Nro'),
+        xls.TextCellValue('Telar'),
+        xls.TextCellValue('Neps'),
+        xls.TextCellValue('Mts calculados'),
+      ]);
+
+      for (int i = 0; i < records.length; i++) {
+        final item = records[i];
+        sheet.appendRow([
+          xls.IntCellValue(i + 1),
+          xls.TextCellValue(item.telar),
+          xls.DoubleCellValue(item.neps),
+          xls.DoubleCellValue(calculateMts(item.neps)),
+        ]);
+      }
+
+      sheet.appendRow([
+        xls.TextCellValue(''),
+        xls.TextCellValue('TOTALES'),
+        xls.DoubleCellValue(totalNeps),
+        xls.DoubleCellValue(totalMts),
+      ]);
+
+      sheet.appendRow([
+        xls.TextCellValue(''),
+        xls.TextCellValue('PROMEDIO MTS'),
+        xls.TextCellValue(''),
+        xls.DoubleCellValue(averageMts),
+      ]);
+
+      final bytes = excel.encode();
+      if (bytes == null) {
+        showMessage('No se pudo generar el archivo Excel.');
+        return;
+      }
+
+      final dir = await getExportDirectory();
+      final file = File('${dir.path}/reporte_neps_$timestamp.xlsx');
+      await file.writeAsBytes(bytes, flush: true);
+
+      await Share.shareXFiles(
+        [
+          XFile(
+            file.path,
+            mimeType:
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          ),
+        ],
+        text: 'Reporte Excel de Neps',
+      );
     });
-
-    await saveData();
   }
 
-  Future<void> confirmDeleteRecord(int index) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Eliminar registro'),
-          content: const Text('¿Desea eliminar este registro?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFB94D4D),
+  Future<Uint8List> buildPdfBytes() async {
+    final doc = pw.Document();
+
+    final tableData = records.asMap().entries.map((entry) {
+      final i = entry.key;
+      final item = entry.value;
+      return [
+        '${i + 1}',
+        item.telar,
+        formatDecimal(item.neps),
+        formatNumber(calculateMts(item.neps)),
+      ];
+    }).toList();
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        build: (context) {
+          return [
+            pw.Container(
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(
+                color: PdfColor.fromHex('#1F2A2E'),
+                borderRadius: pw.BorderRadius.circular(8),
               ),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Eliminar'),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'VICUNHA  jeansidentity',
+                    style: pw.TextStyle(
+                      color: PdfColor.fromHex('#F7EAC5'),
+                      fontSize: 22,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'Calculadora de Neps dividido para 0.09 metros',
+                    style: pw.TextStyle(
+                      color: PdfColor.fromHex('#CFD8C5'),
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        );
-      },
+            pw.SizedBox(height: 14),
+            pw.Text(
+              'Formula utilizada: Mts calculados = Neps / 0.09',
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Table.fromTextArray(
+              headers: ['#', 'Telar', 'Neps', 'Mts calculados'],
+              data: tableData,
+              headerDecoration: pw.BoxDecoration(
+                color: PdfColor.fromHex('#1F2A2E'),
+              ),
+              headerStyle: pw.TextStyle(
+                color: PdfColor.fromHex('#F7EAC5'),
+                fontWeight: pw.FontWeight.bold,
+              ),
+              cellAlignment: pw.Alignment.center,
+              cellStyle: const pw.TextStyle(fontSize: 10),
+              rowDecoration: pw.BoxDecoration(
+                border: pw.Border(
+                  bottom: pw.BorderSide(
+                    color: PdfColor.fromHex('#E4D8BA'),
+                    width: 0.5,
+                  ),
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 14),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(10),
+              decoration: pw.BoxDecoration(
+                color: PdfColor.fromHex('#EBDFC3'),
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text('Total registros: ${records.length}'),
+                  pw.Text('Total neps: ${formatDecimal(totalNeps)}'),
+                  pw.Text('Total mts: ${formatNumber(totalMts)}'),
+                  pw.Text('Promedio mts: ${formatNumber(averageMts)}'),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 10),
+            pw.Text(
+              'Reporte generado desde la aplicacion Calculadora Neps VICUNHA.',
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          ];
+        },
+      ),
     );
 
-    if (result == true) {
-      await deleteRecord(index);
-    }
+    return doc.save();
   }
 
-  Future<void> clearTable() async {
-    if (records.isEmpty) {
-      showMessage('La tabla ya está vacía.');
-      return;
-    }
+  Future<void> exportPdf() async {
+    await runExport(() async {
+      final bytes = await buildPdfBytes();
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename: 'reporte_neps_$timestamp.pdf',
+      );
+    });
+  }
 
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Vaciar tabla'),
-          content: const Text('¿Seguro que desea vaciar toda la tabla?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFB94D4D),
-              ),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Vaciar'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (result == true) {
-      setState(() {
-        records = [];
-      });
-
-      await saveData();
-      showMessage('Tabla vaciada correctamente.');
-    }
+  Future<void> printPdf() async {
+    await runExport(() async {
+      await Printing.layoutPdf(
+        name: 'Reporte Neps VICUNHA',
+        onLayout: (_) async => buildPdfBytes(),
+      );
+    });
   }
 
   Future<void> copyTable() async {
@@ -290,64 +426,105 @@ class _NepsHomePageState extends State<NepsHomePage> {
 
     for (int i = 0; i < records.length; i++) {
       final item = records[i];
-      final mts = calculateMts(item.neps);
-
       buffer.writeln(
-        '${i + 1}\t${item.telar}\t${formatNeps(item.neps)}\t${formatNumber(mts)}',
+        '${i + 1}\t${item.telar}\t${formatDecimal(item.neps)}\t${formatNumber(calculateMts(item.neps))}',
       );
     }
 
-    await Clipboard.setData(
-      ClipboardData(text: buffer.toString()),
-    );
-
+    await Clipboard.setData(ClipboardData(text: buffer.toString()));
     showMessage('Tabla copiada correctamente.');
   }
 
-  Future<void> copyCSV() async {
-    if (records.isEmpty) {
-      showMessage('No hay datos para exportar.');
+  Future<void> addRecord() async {
+    final telar = telarController.text.trim();
+    final nepsText = nepsController.text.trim();
+
+    if (telar.isEmpty) {
+      showMessage('Ingrese el numero de telar.');
       return;
     }
 
-    final buffer = StringBuffer();
-    buffer.writeln('Nro,Telar,Neps,Mts calculados');
-
-    for (int i = 0; i < records.length; i++) {
-      final item = records[i];
-      final mts = calculateMts(item.neps);
-
-      buffer.writeln(
-        '${i + 1},${item.telar},${formatNeps(item.neps)},${formatNumber(mts)}',
-      );
+    if (nepsText.isEmpty || parseNumber(nepsText) <= 0) {
+      showMessage('Ingrese una cantidad valida de neps.');
+      return;
     }
 
-    await Clipboard.setData(
-      ClipboardData(text: buffer.toString()),
-    );
+    setState(() {
+      records.add(NepRecord(telar: telar, neps: parseNumber(nepsText)));
+    });
 
-    showMessage('CSV copiado. Puede pegarlo en Excel.');
+    await saveData();
+    telarController.clear();
+    nepsController.clear();
+    showMessage('Registro agregado correctamente.');
   }
 
-  void showMessage(String message) {
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
+  Future<void> deleteRecord(int index) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar registro'),
+        content: const Text('Desea eliminar este registro?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB94D4D),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eliminar'),
+          ),
+        ],
       ),
     );
+
+    if (result == true) {
+      setState(() => records.removeAt(index));
+      await saveData();
+    }
+  }
+
+  Future<void> clearTable() async {
+    if (records.isEmpty) {
+      showMessage('La tabla ya esta vacia.');
+      return;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Vaciar tabla'),
+        content: const Text('Seguro que desea vaciar toda la tabla?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB94D4D),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Vaciar'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      setState(() => records = []);
+      await saveData();
+      showMessage('Tabla vaciada correctamente.');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -356,10 +533,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
         height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFFD9D2B0),
-              Color(0xFFC2B280),
-            ],
+            colors: [Color(0xFFD9D2B0), Color(0xFFC2B280)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -369,9 +543,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
             padding: const EdgeInsets.all(14),
             child: Center(
               child: Container(
-                constraints: const BoxConstraints(
-                  maxWidth: 1100,
-                ),
+                constraints: const BoxConstraints(maxWidth: 1100),
                 decoration: BoxDecoration(
                   color: const Color(0xFFFEF9E8),
                   borderRadius: BorderRadius.circular(24),
@@ -397,6 +569,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
                             const SizedBox(height: 12),
                             buildForm(),
                             const SizedBox(height: 12),
+                            if (isExporting) buildExportingNotice(),
                             buildActions(),
                             const SizedBox(height: 12),
                             buildTable(),
@@ -404,7 +577,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
                             buildSummary(),
                             const SizedBox(height: 12),
                             const Text(
-                              '* El resultado se calcula automáticamente cada vez que se ingresa o modifica el valor de Neps.',
+                              '* El resultado se calcula automaticamente cada vez que se ingresa el valor de Neps.',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Color(0xFF7A6648),
@@ -448,10 +621,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
                   color: const Color(0xFFC5A059),
                   borderRadius: BorderRadius.circular(40),
@@ -470,10 +640,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
           const SizedBox(height: 6),
           const Text(
             'Calculadora de Neps dividido para 0.09 metros',
-            style: TextStyle(
-              color: Color(0xFFCFD8C5),
-              fontSize: 13,
-            ),
+            style: TextStyle(color: Color(0xFFCFD8C5), fontSize: 13),
           ),
         ],
       ),
@@ -488,18 +655,15 @@ class _NepsHomePageState extends State<NepsHomePage> {
         color: const Color(0xFFEBDFC3),
         borderRadius: BorderRadius.circular(18),
         border: const Border(
-          left: BorderSide(
-            color: Color(0xFFB8860B),
-            width: 8,
-          ),
+          left: BorderSide(color: Color(0xFFB8860B), width: 8),
         ),
       ),
       child: const Text.rich(
         TextSpan(
           children: [
-            TextSpan(text: '📌 Fórmula utilizada: '),
+            TextSpan(text: 'Formula utilizada: '),
             TextSpan(
-              text: 'Metros calculados = Neps ÷ 0.09\n',
+              text: 'Mts calculados = Neps / 0.09\n',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1F2A2E),
@@ -507,7 +671,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
             ),
             TextSpan(text: 'Ejemplo: '),
             TextSpan(
-              text: '51 ÷ 0.09 = 566.667',
+              text: '51 / 0.09 = 566.667',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1F2A2E),
@@ -515,10 +679,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
             ),
           ],
         ),
-        style: TextStyle(
-          color: Color(0xFF3B2F1C),
-          fontSize: 14,
-        ),
+        style: TextStyle(color: Color(0xFF3B2F1C), fontSize: 14),
       ),
     );
   }
@@ -539,13 +700,9 @@ class _NepsHomePageState extends State<NepsHomePage> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Expanded(
-                    child: buildAddButton(),
-                  ),
+                  Expanded(child: buildAddButton()),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: buildClearButton(),
-                  ),
+                  Expanded(child: buildClearButton()),
                 ],
               ),
             ],
@@ -575,21 +732,15 @@ class _NepsHomePageState extends State<NepsHomePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Número de Telar',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF2C3E2F),
-          ),
+          'Numero de Telar',
+          style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF2C3E2F)),
         ),
         const SizedBox(height: 6),
         TextField(
           controller: telarController,
-          focusNode: telarFocus,
           textInputAction: TextInputAction.next,
           decoration: inputDecoration('Ej: 102'),
-          onSubmitted: (_) {
-            nepsFocus.requestFocus();
-          },
+          onSubmitted: (_) => FocusScope.of(context).nextFocus(),
         ),
       ],
     );
@@ -601,18 +752,12 @@ class _NepsHomePageState extends State<NepsHomePage> {
       children: [
         const Text(
           'Cantidad de Neps',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF2C3E2F),
-          ),
+          style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF2C3E2F)),
         ),
         const SizedBox(height: 6),
         TextField(
           controller: nepsController,
-          focusNode: nepsFocus,
-          keyboardType: const TextInputType.numberWithOptions(
-            decimal: true,
-          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           textInputAction: TextInputAction.done,
           decoration: inputDecoration('Ej: 53'),
           onSubmitted: (_) => addRecord(),
@@ -621,31 +766,39 @@ class _NepsHomePageState extends State<NepsHomePage> {
     );
   }
 
+  InputDecoration inputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(40),
+        borderSide: const BorderSide(color: Color(0xFFCFC29C), width: 2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(40),
+        borderSide: const BorderSide(color: Color(0xFFB8860B), width: 2),
+      ),
+    );
+  }
+
   Widget buildPreview() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Resultado automático',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF2C3E2F),
-          ),
+          'Resultado automatico',
+          style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF2C3E2F)),
         ),
         const SizedBox(height: 6),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           decoration: BoxDecoration(
             color: const Color(0xFFFFF7DF),
             borderRadius: BorderRadius.circular(40),
-            border: Border.all(
-              color: const Color(0xFFC5A059),
-              width: 2,
-            ),
+            border: Border.all(color: const Color(0xFFC5A059), width: 2),
           ),
           child: Text(
             formatNumber(previewValue),
@@ -661,48 +814,16 @@ class _NepsHomePageState extends State<NepsHomePage> {
     );
   }
 
-  InputDecoration inputDecoration(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(40),
-        borderSide: const BorderSide(
-          color: Color(0xFFCFC29C),
-          width: 2,
-        ),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(40),
-        borderSide: const BorderSide(
-          color: Color(0xFFB8860B),
-          width: 2,
-        ),
-      ),
-    );
-  }
-
   Widget buildAddButton() {
     return FilledButton.icon(
       style: FilledButton.styleFrom(
         backgroundColor: const Color(0xFFC5A059),
         foregroundColor: const Color(0xFF1F2A2E),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       onPressed: addRecord,
       icon: const Icon(Icons.add),
-      label: const Text(
-        'Agregar',
-        style: TextStyle(fontWeight: FontWeight.w900),
-      ),
+      label: const Text('Agregar', style: TextStyle(fontWeight: FontWeight.w900)),
     );
   }
 
@@ -711,19 +832,31 @@ class _NepsHomePageState extends State<NepsHomePage> {
       style: FilledButton.styleFrom(
         backgroundColor: const Color(0xFFE2D5B6),
         foregroundColor: const Color(0xFF3B2F1C),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
       onPressed: () {
         telarController.clear();
         nepsController.clear();
-        telarFocus.requestFocus();
       },
-      child: const Text(
-        'Limpiar',
-        style: TextStyle(fontWeight: FontWeight.w900),
+      child: const Text('Limpiar', style: TextStyle(fontWeight: FontWeight.w900)),
+    );
+  }
+
+  Widget buildExportingNotice() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE2D5B6),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: const Row(
+        children: [
+          SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+          SizedBox(width: 10),
+          Text('Generando archivo...', style: TextStyle(fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }
@@ -733,34 +866,61 @@ class _NepsHomePageState extends State<NepsHomePage> {
       spacing: 10,
       runSpacing: 10,
       children: [
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF2F6B45),
-            foregroundColor: Colors.white,
-          ),
-          onPressed: copyCSV,
-          icon: const Icon(Icons.download),
-          label: const Text('Exportar CSV'),
+        actionButton(
+          label: 'CSV',
+          icon: Icons.table_chart,
+          color: const Color(0xFF2F6B45),
+          onPressed: exportCsv,
         ),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFFE2D5B6),
-            foregroundColor: const Color(0xFF3B2F1C),
-          ),
+        actionButton(
+          label: 'Excel',
+          icon: Icons.grid_on,
+          color: const Color(0xFF2F6B45),
+          onPressed: exportExcel,
+        ),
+        actionButton(
+          label: 'PDF',
+          icon: Icons.picture_as_pdf,
+          color: const Color(0xFFC5A059),
+          foreground: const Color(0xFF1F2A2E),
+          onPressed: exportPdf,
+        ),
+        actionButton(
+          label: 'Imprimir',
+          icon: Icons.print,
+          color: const Color(0xFFE2D5B6),
+          foreground: const Color(0xFF3B2F1C),
+          onPressed: printPdf,
+        ),
+        actionButton(
+          label: 'Copiar',
+          icon: Icons.copy,
+          color: const Color(0xFFE2D5B6),
+          foreground: const Color(0xFF3B2F1C),
           onPressed: copyTable,
-          icon: const Icon(Icons.copy),
-          label: const Text('Copiar tabla'),
         ),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFFB94D4D),
-            foregroundColor: Colors.white,
-          ),
+        actionButton(
+          label: 'Vaciar',
+          icon: Icons.delete,
+          color: const Color(0xFFB94D4D),
           onPressed: clearTable,
-          icon: const Icon(Icons.delete),
-          label: const Text('Vaciar tabla'),
         ),
       ],
+    );
+  }
+
+  Widget actionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+    Color foreground = Colors.white,
+  }) {
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(backgroundColor: color, foregroundColor: foreground),
+      onPressed: isExporting ? null : onPressed,
+      icon: Icon(icon),
+      label: Text(label),
     );
   }
 
@@ -770,37 +930,27 @@ class _NepsHomePageState extends State<NepsHomePage> {
       decoration: BoxDecoration(
         color: const Color(0xFFFFFDF4),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFD6C394),
-        ),
+        border: Border.all(color: const Color(0xFFD6C394)),
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              minWidth: 700,
-            ),
+            constraints: const BoxConstraints(minWidth: 700),
             child: DataTable(
-              headingRowColor: MaterialStateProperty.all(
-                const Color(0xFF1F2A2E),
-              ),
+              headingRowColor: WidgetStateProperty.all(const Color(0xFF1F2A2E)),
               headingTextStyle: const TextStyle(
                 color: Color(0xFFF7EAC5),
                 fontWeight: FontWeight.w900,
                 fontSize: 12,
               ),
-              dataTextStyle: const TextStyle(
-                color: Color(0xFF1F2A2E),
-                fontSize: 14,
-              ),
               columns: const [
                 DataColumn(label: Text('#')),
                 DataColumn(label: Text('TELAR')),
                 DataColumn(label: Text('NEPS')),
-                DataColumn(label: Text('MTS CALCULADOS\nNEPS ÷ 0.09')),
-                DataColumn(label: Text('ACCIÓN')),
+                DataColumn(label: Text('MTS CALCULADOS\nNEPS / 0.09')),
+                DataColumn(label: Text('ACCION')),
               ],
               rows: records.isEmpty
                   ? [
@@ -816,16 +966,14 @@ class _NepsHomePageState extends State<NepsHomePage> {
                     ]
                   : List.generate(records.length, (index) {
                       final item = records[index];
-                      final mts = calculateMts(item.neps);
-
                       return DataRow(
                         cells: [
                           DataCell(Text('${index + 1}')),
                           DataCell(Text(item.telar)),
-                          DataCell(Text(formatNeps(item.neps))),
+                          DataCell(Text(formatDecimal(item.neps))),
                           DataCell(
                             Text(
-                              formatNumber(mts),
+                              formatNumber(calculateMts(item.neps)),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w900,
                                 fontFamily: 'monospace',
@@ -836,11 +984,8 @@ class _NepsHomePageState extends State<NepsHomePage> {
                           DataCell(
                             IconButton(
                               tooltip: 'Eliminar',
-                              onPressed: () => confirmDeleteRecord(index),
-                              icon: const Icon(
-                                Icons.delete,
-                                color: Color(0xFFB94D4D),
-                              ),
+                              onPressed: () => deleteRecord(index),
+                              icon: const Icon(Icons.delete, color: Color(0xFFB94D4D)),
                             ),
                           ),
                         ],
@@ -857,7 +1002,6 @@ class _NepsHomePageState extends State<NepsHomePage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isSmall = constraints.maxWidth < 650;
-
         return GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -866,42 +1010,24 @@ class _NepsHomePageState extends State<NepsHomePage> {
           crossAxisSpacing: 10,
           childAspectRatio: isSmall ? 2.3 : 2.4,
           children: [
-            buildSummaryCard(
-              title: 'Total registros',
-              value: records.length.toString(),
-            ),
-            buildSummaryCard(
-              title: 'Total neps',
-              value: formatNumber(totalNeps),
-            ),
-            buildSummaryCard(
-              title: 'Total mts',
-              value: formatNumber(totalMts),
-            ),
-            buildSummaryCard(
-              title: 'Promedio mts',
-              value: formatNumber(averageMts),
-            ),
+            buildSummaryCard('Total registros', records.length.toString()),
+            buildSummaryCard('Total neps', formatDecimal(totalNeps)),
+            buildSummaryCard('Total mts', formatNumber(totalMts)),
+            buildSummaryCard('Promedio mts', formatNumber(averageMts)),
           ],
         );
       },
     );
   }
 
-  Widget buildSummaryCard({
-    required String title,
-    required String value,
-  }) {
+  Widget buildSummaryCard(String title, String value) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFFEBDFC3),
         borderRadius: BorderRadius.circular(16),
         border: const Border(
-          left: BorderSide(
-            color: Color(0xFFB8860B),
-            width: 5,
-          ),
+          left: BorderSide(color: Color(0xFFB8860B), width: 5),
         ),
       ),
       child: Column(
