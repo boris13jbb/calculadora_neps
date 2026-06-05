@@ -10,8 +10,12 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_windows/shared_preferences_windows.dart';
 
 void main() {
+  if (Platform.isWindows) {
+    SharedPreferencesWindows.registerWith();
+  }
   runApp(const NepsApp());
 }
 
@@ -345,7 +349,7 @@ class _NepsHomePageState extends State<NepsHomePage> {
               ),
             ),
             pw.SizedBox(height: 10),
-            pw.Table.fromTextArray(
+            pw.TableHelper.fromTextArray(
               headers: ['#', 'Telar', 'Neps', 'Mts calculados'],
               data: tableData,
               headerDecoration: pw.BoxDecoration(
