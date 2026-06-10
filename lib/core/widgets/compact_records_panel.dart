@@ -11,12 +11,14 @@ class CompactRecordsPanel extends StatelessWidget {
     required this.appState,
     required this.records,
     required this.onDelete,
+    this.onEdit,
     this.onClearAll,
   });
 
   final AppState appState;
   final List<NepRecord> records;
   final Future<void> Function(String id) onDelete;
+  final Future<void> Function(NepRecord record)? onEdit;
   final VoidCallback? onClearAll;
 
   @override
@@ -73,6 +75,7 @@ class CompactRecordsPanel extends StatelessWidget {
                                     appState: appState,
                                     records: sorted,
                                     onDelete: onDelete,
+                                    onEdit: onEdit,
                                   ),
                                 ),
                               ),
@@ -93,6 +96,7 @@ class CompactRecordsPanel extends StatelessWidget {
                             item: item,
                             appState: appState,
                             onDelete: onDelete,
+                            onEdit: onEdit,
                           );
                         },
                       );
@@ -222,11 +226,13 @@ class _CompactDataTable extends StatelessWidget {
     required this.appState,
     required this.records,
     required this.onDelete,
+    this.onEdit,
   });
 
   final AppState appState;
   final List<NepRecord> records;
   final Future<void> Function(String id) onDelete;
+  final Future<void> Function(NepRecord record)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -273,21 +279,50 @@ class _CompactDataTable extends StatelessWidget {
               Text(
                 item.loteTrama,
                 overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  letterSpacing: 0.3,
+                ),
               ),
             ),
             DataCell(
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                tooltip: 'Eliminar',
-                icon:
-                    const Icon(Icons.close, size: 18, color: AppColors.danger),
-                onPressed: () async {
-                  if (await confirmDeleteRecord(context)) {
-                    await onDelete(item.id);
-                  }
-                },
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (onEdit != null)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
+                      tooltip: 'Editar',
+                      icon: const Icon(
+                        Icons.edit_outlined,
+                        size: 18,
+                        color: AppColors.primaryBlue,
+                      ),
+                      onPressed: () => onEdit!(item),
+                    ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
+                    tooltip: 'Eliminar',
+                    icon: const Icon(
+                      Icons.close,
+                      size: 18,
+                      color: AppColors.danger,
+                    ),
+                    onPressed: () async {
+                      if (await confirmDeleteRecord(context)) {
+                        await onDelete(item.id);
+                      }
+                    },
+                  ),
+                ],
               ),
             ),
           ],
@@ -303,12 +338,14 @@ class _CompactRecordTile extends StatelessWidget {
     required this.item,
     required this.appState,
     required this.onDelete,
+    this.onEdit,
   });
 
   final int index;
   final NepRecord item;
   final AppState appState;
   final Future<void> Function(String id) onDelete;
+  final Future<void> Function(NepRecord record)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -316,6 +353,7 @@ class _CompactRecordTile extends StatelessWidget {
       dense: true,
       visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
       minVerticalPadding: 0,
+      onTap: onEdit != null ? () => onEdit!(item) : null,
       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       leading: CircleAvatar(
         radius: 12,
@@ -341,17 +379,39 @@ class _CompactRecordTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 10),
       ),
-      trailing: IconButton(
-        visualDensity: VisualDensity.compact,
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-        icon:
-            const Icon(Icons.delete_outline, color: AppColors.danger, size: 18),
-        onPressed: () async {
-          if (await confirmDeleteRecord(context)) {
-            await onDelete(item.id);
-          }
-        },
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onEdit != null)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              tooltip: 'Editar',
+              icon: const Icon(
+                Icons.edit_outlined,
+                color: AppColors.primaryBlue,
+                size: 18,
+              ),
+              onPressed: () => onEdit!(item),
+            ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            tooltip: 'Eliminar',
+            icon: const Icon(
+              Icons.delete_outline,
+              color: AppColors.danger,
+              size: 18,
+            ),
+            onPressed: () async {
+              if (await confirmDeleteRecord(context)) {
+                await onDelete(item.id);
+              }
+            },
+          ),
+        ],
       ),
     );
   }

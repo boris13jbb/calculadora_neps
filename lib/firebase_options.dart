@@ -3,17 +3,23 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 
 class DefaultFirebaseOptions {
+  static bool get isSupported {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform == TargetPlatform.android;
+  }
+
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) return web;
 
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
+        return android;
       case TargetPlatform.iOS:
       case TargetPlatform.macOS:
       case TargetPlatform.windows:
       case TargetPlatform.linux:
         throw UnsupportedError(
-          'FirebaseOptions solo esta configurado para web.',
+          'FirebaseOptions no esta configurado para $defaultTargetPlatform.',
         );
       case TargetPlatform.fuchsia:
         throw UnsupportedError(
@@ -28,6 +34,14 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1000803867579',
     projectId: 'vicunha-calculadora-neps',
     authDomain: 'vicunha-calculadora-neps.firebaseapp.com',
+    storageBucket: 'vicunha-calculadora-neps.firebasestorage.app',
+  );
+
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyDNXZYpWDq4ysUOx5P5a5gNJi11q00wGT8',
+    appId: '1:1000803867579:android:46394687f9f6983586429e',
+    messagingSenderId: '1000803867579',
+    projectId: 'vicunha-calculadora-neps',
     storageBucket: 'vicunha-calculadora-neps.firebasestorage.app',
   );
 }

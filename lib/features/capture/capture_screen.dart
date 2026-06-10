@@ -9,8 +9,23 @@ import '../../core/widgets/app_input_decoration.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/capture_session_actions.dart';
 import '../../core/widgets/compact_records_panel.dart';
+import '../../core/widgets/edit_record_sheet.dart';
+import '../../core/widgets/lote_trama_field.dart';
 import '../../core/widgets/report_actions.dart';
+import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
+
+Future<void> _editCaptureRecord(
+  BuildContext context,
+  AppState appState,
+  NepRecord record,
+) {
+  return showEditRecordDialog(
+    context: context,
+    appState: appState,
+    record: record,
+  );
+}
 
 class CaptureScreen extends StatefulWidget {
   const CaptureScreen({super.key});
@@ -186,6 +201,7 @@ class _DesktopCaptureLayout extends StatelessWidget {
           appState: appState,
           records: appState.records,
           onDelete: appState.deleteRecord,
+          onEdit: (record) => _editCaptureRecord(context, appState, record),
           onClearAll: () => promptNewCaptureSession(context, appState),
         );
 
@@ -272,6 +288,8 @@ class _MobileCaptureLayout extends StatelessWidget {
                 appState: appState,
                 records: appState.records,
                 onDelete: appState.deleteRecord,
+                onEdit: (record) =>
+                    _editCaptureRecord(context, appState, record),
                 onClearAll: () => promptNewCaptureSession(context, appState),
               ),
             ],
@@ -727,28 +745,15 @@ class _LoteField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _CompactLabel('Lote de trama', ultraCompact: ultraCompact),
-        TextField(
-          controller: appState.loteSuffixController,
-          textCapitalization: TextCapitalization.characters,
-          style: TextStyle(fontSize: ultraCompact ? 13 : 14),
-          decoration: appInputDecoration(
-            'Ej: 5387',
-            compact: !ultraCompact,
-            ultraCompact: ultraCompact,
-          ).copyWith(
-            prefixText: '$loteTramaPrefix ',
-            prefixStyle: TextStyle(
-              fontWeight: FontWeight.w900,
-              color: AppColors.textDark,
-              fontSize: ultraCompact ? 12 : 13,
-            ),
-          ),
-        ),
-      ],
+    return LoteTramaField(
+      prefixController: appState.lotePrefixController,
+      suffixController: appState.loteSuffixController,
+      fullController: appState.loteFullController,
+      fullEntryMode: appState.loteFullEntryMode,
+      onFullEntryModeChanged: appState.setLoteFullEntryMode,
+      onPrefixPersist: appState.persistLotePrefix,
+      ultraCompact: ultraCompact,
+      compact: !ultraCompact,
     );
   }
 }

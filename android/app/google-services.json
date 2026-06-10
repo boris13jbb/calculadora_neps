@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "1000803867579",
+    "project_id": "vicunha-calculadora-neps",
+    "storage_bucket": "vicunha-calculadora-neps.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1000803867579:android:46394687f9f6983586429e",
+        "android_client_info": {
+          "package_name": "com.example.calculadora_neps"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1000803867579-f3d6gopvpf6btn4t9vd55slhe13sv5go.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDNXZYpWDq4ysUOx5P5a5gNJi11q00wGT8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1000803867579-f3d6gopvpf6btn4t9vd55slhe13sv5go.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

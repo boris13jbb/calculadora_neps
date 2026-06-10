@@ -7,7 +7,9 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/compact_stats_row.dart';
 import '../../core/widgets/confirm_dialogs.dart';
+import '../../core/widgets/edit_record_sheet.dart';
 import '../../core/widgets/records_table.dart';
+import '../../models/nep_record.dart';
 import '../../core/widgets/summary_cards.dart';
 import '../../providers/app_state.dart';
 import '../../widgets/record_filters_panel.dart';
@@ -60,6 +62,14 @@ class _RecordsScreenState extends State<RecordsScreen> {
     await appState.clearTable();
   }
 
+  Future<void> _editRecord(AppState appState, NepRecord record) async {
+    await showEditRecordDialog(
+      context: context,
+      appState: appState,
+      record: record,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
@@ -101,54 +111,57 @@ class _RecordsScreenState extends State<RecordsScreen> {
           ),
           SizedBox(height: spacing),
           if (phone)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Flexible(
-                  fit: FlexFit.loose,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        RecordFiltersPanel(
-                          key: ValueKey(appState.filterPanelKey),
-                          records: appState.records,
-                          filters: appState.filters,
-                          onChanged: appState.onFiltersChanged,
-                          onClear: appState.clearFilters,
-                          compact: true,
-                        ),
-                        if (appState.filters.hasActiveFilters)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              'Mostrando ${appState.visibleRecords.length} de ${appState.records.length}',
-                              style: const TextStyle(
-                                color: AppColors.muted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          RecordFiltersPanel(
+                            key: ValueKey(appState.filterPanelKey),
+                            records: appState.records,
+                            filters: appState.filters,
+                            onChanged: appState.onFiltersChanged,
+                            onClear: appState.clearFilters,
+                            compact: true,
+                          ),
+                          if (appState.filters.hasActiveFilters)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                'Mostrando ${appState.visibleRecords.length} de ${appState.records.length}',
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                CompactStatsRow(
-                  totalRecords: appState.visibleRecords.length,
-                  totalNeps: appState.formatDecimal(appState.totalNeps),
-                  averageNeps: appState.formatDecimal(appState.averageNeps),
-                ),
-                const SizedBox(height: 4),
-                Expanded(
-                  child: RecordsTable(
-                    appState: appState,
-                    records: appState.visibleRecords,
-                    onDelete: appState.deleteRecord,
+                  const SizedBox(height: 4),
+                  CompactStatsRow(
+                    totalRecords: appState.visibleRecords.length,
+                    totalNeps: appState.formatDecimal(appState.totalNeps),
+                    averageNeps: appState.formatDecimal(appState.averageNeps),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: RecordsTable(
+                      appState: appState,
+                      records: appState.visibleRecords,
+                      onDelete: appState.deleteRecord,
+                      onEdit: (record) => _editRecord(appState, record),
+                    ),
+                  ),
+                ],
+              ),
             )
           else
             Expanded(
@@ -181,6 +194,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
                       appState: appState,
                       records: appState.visibleRecords,
                       onDelete: appState.deleteRecord,
+                      onEdit: (record) => _editRecord(appState, record),
                     ),
                   ),
                   const SizedBox(height: 10),

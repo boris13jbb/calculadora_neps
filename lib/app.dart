@@ -24,11 +24,9 @@ class _NepsAppState extends State<NepsApp> {
     super.initState();
     _appState = AppState()..initialize(launchUri: _launchUri);
 
-    if (kIsWeb) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_bootstrapCloud());
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_bootstrapCloud());
+    });
   }
 
   Future<void> _bootstrapCloud() async {

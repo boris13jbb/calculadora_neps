@@ -12,11 +12,13 @@ class RecordsTable extends StatelessWidget {
     required this.appState,
     required this.records,
     required this.onDelete,
+    this.onEdit,
   });
 
   final AppState appState;
   final List<NepRecord> records;
   final Future<void> Function(String id) onDelete;
+  final Future<void> Function(NepRecord record)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -38,11 +40,13 @@ class RecordsTable extends StatelessWidget {
                     appState: appState,
                     records: records,
                     onDelete: onDelete,
+                    onEdit: onEdit,
                   )
                 : _DesktopRecordsTable(
                     appState: appState,
                     records: records,
                     onDelete: onDelete,
+                    onEdit: onEdit,
                   ),
           ),
         );
@@ -56,11 +60,13 @@ class _MobileRecordsList extends StatelessWidget {
     required this.appState,
     required this.records,
     required this.onDelete,
+    this.onEdit,
   });
 
   final AppState appState;
   final List<NepRecord> records;
   final Future<void> Function(String id) onDelete;
+  final Future<void> Function(NepRecord record)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -87,6 +93,7 @@ class _MobileRecordsList extends StatelessWidget {
           dense: true,
           visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
           minVerticalPadding: 0,
+          onTap: onEdit != null ? () => onEdit!(item) : null,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
           leading: CircleAvatar(
@@ -115,17 +122,40 @@ class _MobileRecordsList extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: IconButton(
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            icon: const Icon(Icons.delete_outline,
-                color: AppColors.danger, size: 18),
-            onPressed: () async {
-              if (await confirmDeleteRecord(context)) {
-                await onDelete(item.id);
-              }
-            },
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (onEdit != null)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  tooltip: 'Editar',
+                  icon: const Icon(
+                    Icons.edit_outlined,
+                    color: AppColors.primaryBlue,
+                    size: 18,
+                  ),
+                  onPressed: () => onEdit!(item),
+                ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: 'Eliminar',
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.danger,
+                  size: 18,
+                ),
+                onPressed: () async {
+                  if (await confirmDeleteRecord(context)) {
+                    await onDelete(item.id);
+                  }
+                },
+              ),
+            ],
           ),
         );
       },
@@ -138,11 +168,13 @@ class _DesktopRecordsTable extends StatelessWidget {
     required this.appState,
     required this.records,
     required this.onDelete,
+    this.onEdit,
   });
 
   final AppState appState;
   final List<NepRecord> records;
   final Future<void> Function(String id) onDelete;
+  final Future<void> Function(NepRecord record)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -193,7 +225,17 @@ class _DesktopRecordsTable extends StatelessWidget {
                         DataCell(
                           Text(appState.formatDateTime(item.createdAt)),
                         ),
-                        DataCell(Text(item.loteTrama)),
+                        DataCell(
+                          Text(
+                            item.loteTrama,
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
                         DataCell(Text(item.tela)),
                         DataCell(Text(item.telar)),
                         DataCell(Text(appState.formatDecimal(item.neps))),
@@ -210,17 +252,31 @@ class _DesktopRecordsTable extends StatelessWidget {
                           ),
                         ),
                         DataCell(
-                          IconButton(
-                            tooltip: 'Eliminar',
-                            onPressed: () async {
-                              if (await confirmDeleteRecord(context)) {
-                                await onDelete(item.id);
-                              }
-                            },
-                            icon: const Icon(
-                              Icons.delete,
-                              color: AppColors.danger,
-                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (onEdit != null)
+                                IconButton(
+                                  tooltip: 'Editar',
+                                  onPressed: () => onEdit!(item),
+                                  icon: const Icon(
+                                    Icons.edit_outlined,
+                                    color: AppColors.primaryBlue,
+                                  ),
+                                ),
+                              IconButton(
+                                tooltip: 'Eliminar',
+                                onPressed: () async {
+                                  if (await confirmDeleteRecord(context)) {
+                                    await onDelete(item.id);
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.delete,
+                                  color: AppColors.danger,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],

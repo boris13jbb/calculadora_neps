@@ -8,5 +8,7 @@ const String cloudMigrationKey = 'vicunha_cloud_migration_v1';
 const String cloudWorkspaceId = 'vicunha';
 
 const String loteTramaPrefix = '63E264';
+const String loteTramaPrefixStorageKey = 'vicunha_lote_trama_prefix_v1';
+const String loteTramaFullEntryStorageKey = 'vicunha_lote_trama_full_entry_v1';
 
 const String manualFabricOption = '__manual_fabric__';

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
@@ -28,6 +29,11 @@ class AppState extends ChangeNotifier {
   static final GlobalKey<ScaffoldMessengerState> messengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
+  static bool _supportsCloudSync() {
+    if (kIsWeb) return true;
+    return defaultTargetPlatform == TargetPlatform.android;
+  }
+
   factory AppState({
     FabricCatalogService? fabricCatalogService,
     RecordImportService? recordImportService,
@@ -36,7 +42,7 @@ class AppState extends ChangeNotifier {
     CloudSyncPort? cloudSyncService,
   }) {
     final syncService =
-        cloudSyncService ?? (kIsWeb ? CloudSyncService() : null);
+        cloudSyncService ?? (_supportsCloudSync() ? CloudSyncService() : null);
 
     return AppState._(
       cloudSyncService: syncService,
@@ -70,8 +76,12 @@ class AppState extends ChangeNotifier {
   final RecordFilters filters = RecordFilters();
   final TextEditingController telarController = TextEditingController();
   final TextEditingController nepsController = TextEditingController();
+  final TextEditingController lotePrefixController =
+      TextEditingController(text: loteTramaPrefix);
   final TextEditingController loteSuffixController = TextEditingController();
+  final TextEditingController loteFullController = TextEditingController();
   final TextEditingController manualTelaController = TextEditingController();
+  bool loteFullEntryMode = false;
 
   List<NepRecord> records = [];
   List<String> fabrics = [];
@@ -108,6 +118,8 @@ class AppState extends ChangeNotifier {
   Future<void> initialize({Uri? launchUri}) async {
     nepsController.addListener(notifyListeners);
     loteSuffixController.addListener(notifyListeners);
+    loteFullController.addListener(notifyListeners);
+    lotePrefixController.addListener(notifyListeners);
     await loadData();
     if (launchUri != null) {
       await applyLaunchParameters(launchUri);
@@ -135,7 +147,17 @@ class AppState extends ChangeNotifier {
 
     if (telar != null) telarController.text = telar;
     if (neps != null) nepsController.text = neps;
-    if (lote != null) loteSuffixController.text = lote;
+    if (lote != null) {
+      final parts = LoteTramaHelper.split(
+        lote,
+        fallbackPrefix: lotePrefixController.text,
+      );
+      lotePrefixController.text = parts.prefix;
+      loteSuffixController.text = parts.suffix;
+      loteFullController.text = parts.full;
+      loteFullEntryMode =
+          parts.suffix.isNotEmpty && lote.contains(parts.prefix);
+    }
 
     if (tela != null) {
       if (fabrics.contains(tela)) {
@@ -160,9 +182,13 @@ class AppState extends ChangeNotifier {
     _fabricsSubscription?.cancel();
     nepsController.removeListener(notifyListeners);
     loteSuffixController.removeListener(notifyListeners);
+    loteFullController.removeListener(notifyListeners);
+    lotePrefixController.removeListener(notifyListeners);
     telarController.dispose();
     nepsController.dispose();
+    lotePrefixController.dispose();
     loteSuffixController.dispose();
+    loteFullController.dispose();
     manualTelaController.dispose();
     super.dispose();
   }
@@ -213,7 +239,58 @@ class AppState extends ChangeNotifier {
   Future<void> _loadLocalData() async {
     records = await _loadLocalRecords();
     fabrics = await fabricCatalogService.loadFabrics();
+    await _loadLotePreferences();
     _syncFabricSelection();
+  }
+
+  Future<void> _loadLotePreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedPrefix = prefs.getString(loteTramaPrefixStorageKey);
+    if (savedPrefix != null && savedPrefix.trim().isNotEmpty) {
+      lotePrefixController.text = LoteTramaHelper.normalizePrefix(savedPrefix);
+    }
+    loteFullEntryMode = prefs.getBool(loteTramaFullEntryStorageKey) ?? false;
+  }
+
+  Future<void> _saveLotePreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      loteTramaPrefixStorageKey,
+      LoteTramaHelper.normalizePrefix(lotePrefixController.text),
+    );
+    await prefs.setBool(loteTramaFullEntryStorageKey, loteFullEntryMode);
+  }
+
+  void setLoteFullEntryMode(bool value) {
+    if (loteFullEntryMode == value) return;
+    loteFullEntryMode = value;
+    unawaited(_saveLotePreferences());
+    notifyListeners();
+  }
+
+  void persistLotePrefix() {
+    unawaited(_saveLotePreferences());
+    notifyListeners();
+  }
+
+  String? resolveLoteTramaForSave() {
+    if (loteFullEntryMode) {
+      final full = LoteTramaHelper.normalizeFull(loteFullController.text);
+      if (!LoteTramaHelper.isValidFull(full)) return null;
+      return full;
+    }
+
+    if (!LoteTramaHelper.isValidParts(
+      prefix: lotePrefixController.text,
+      suffix: loteSuffixController.text,
+    )) {
+      return null;
+    }
+
+    return LoteTramaHelper.buildFull(
+      prefix: lotePrefixController.text,
+      suffix: loteSuffixController.text,
+    );
   }
 
   Future<List<NepRecord>> _loadLocalRecords() async {
@@ -782,8 +859,10 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    if (!LoteTramaHelper.isValidSuffix(loteSuffixController.text)) {
-      showMessage('Complete el lote de trama despues de $loteTramaPrefix.');
+    final loteTrama = resolveLoteTramaForSave();
+    if (loteTrama == null) {
+      showMessage(
+          'Complete el lote de trama (base y sufijo, o lote completo).');
       return;
     }
 
@@ -801,16 +880,78 @@ class AppState extends ChangeNotifier {
       telar: telar,
       neps: parseNumber(nepsText),
       tela: tela,
-      loteTrama: LoteTramaHelper.buildFullLote(loteSuffixController.text),
+      loteTrama: loteTrama,
     );
 
     await _persistRecord(record);
     telarController.clear();
     nepsController.clear();
+    if (!loteFullEntryMode) {
+      loteSuffixController.clear();
+    } else {
+      loteFullController.clear();
+    }
     if (!cloudSyncEnabled) {
       notifyListeners();
     }
     showMessage('Registro agregado correctamente.');
+  }
+
+  Future<void> updateRecord({
+    required String id,
+    required String telar,
+    required double neps,
+    required String tela,
+    required String loteTrama,
+    required DateTime createdAt,
+  }) async {
+    final index = records.indexWhere((record) => record.id == id);
+    if (index < 0) {
+      showMessage('Registro no encontrado.');
+      return;
+    }
+
+    final updated = NepRecord(
+      id: id,
+      telar: telar.trim(),
+      neps: neps,
+      tela: tela.trim(),
+      loteTrama: loteTrama,
+      createdAt: createdAt,
+    );
+
+    await _updateRecord(updated);
+    showMessage('Registro actualizado correctamente.');
+  }
+
+  Future<void> _updateRecord(NepRecord record) async {
+    if (cloudSyncService != null && await _ensureCloudReady()) {
+      try {
+        await cloudSyncService!.upsertRecord(record);
+        if (_recordsSubscription == null) {
+          records = [
+            for (final item in records)
+              if (item.id == record.id) record else item,
+          ];
+          await _cacheRecordsLocally(records);
+          notifyListeners();
+        }
+        return;
+      } catch (error) {
+        cloudSyncEnabled = false;
+        debugPrint('Error al actualizar en Firebase: $error');
+        showMessage(
+          'No se pudo sincronizar con Firebase. Cambio guardado localmente.',
+        );
+      }
+    }
+
+    records = [
+      for (final item in records)
+        if (item.id == record.id) record else item,
+    ];
+    await _cacheRecordsLocally(records);
+    notifyListeners();
   }
 
   Future<void> deleteRecord(String recordId) async {

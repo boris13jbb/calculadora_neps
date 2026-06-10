@@ -1,397 +1,284 @@
 <!DOCTYPE html>
-
 <html lang="es">
-
 <head>
-
   <base href="$FLUTTER_BASE_HREF">
 
-
-
   <meta charset="UTF-8">
-
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-
   <meta name="description" content="Calculadora VICUNHA de Neps dividido para 0.09 m. Compatible con Atajos de iOS y Siri.">
 
-
-
-  <!-- PWA / iOS -->
-
   <meta name="mobile-web-app-capable" content="yes">
-
   <meta name="apple-mobile-web-app-capable" content="yes">
-
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
   <meta name="apple-mobile-web-app-title" content="Neps VICUNHA">
-
   <meta name="format-detection" content="telephone=no">
-
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
-
-
   <link rel="icon" type="image/png" href="favicon.png"/>
-
   <link rel="manifest" href="manifest.json">
-
   <title>VICUNHA Calculadora Neps</title>
-
   <style>
-
     #boot-loader {
-
       position: fixed;
-
       inset: 0;
-
       display: flex;
-
       flex-direction: column;
-
       align-items: center;
-
       justify-content: center;
-
       gap: 16px;
-
       background: #f4f6f8;
-
       color: #1f2933;
-
       font-family: Roboto, Arial, sans-serif;
-
       z-index: 9999;
-
+      padding: 24px;
+      text-align: center;
     }
-
-
 
     #boot-loader.hidden {
-
       display: none;
-
     }
 
-
+    #boot-status {
+      max-width: 420px;
+      font-size: 14px;
+      line-height: 1.45;
+      color: #52606d;
+    }
 
     #boot-error {
-
       display: none;
-
       position: fixed;
-
       inset: 0;
-
       padding: 24px;
-
       background: #f4f6f8;
-
       color: #1f2933;
-
       font-family: Roboto, Arial, sans-serif;
-
       z-index: 10000;
-
       text-align: center;
-
       align-content: center;
-
     }
-
-
 
     #boot-error.visible {
-
       display: grid;
-
       place-items: center;
-
     }
-
-
 
     #boot-error button {
-
       margin-top: 16px;
-
       padding: 12px 20px;
-
       border: 0;
-
       border-radius: 8px;
-
       background: #2f855a;
-
       color: #fff;
-
       font-size: 16px;
-
       cursor: pointer;
-
     }
-
-
 
     .boot-spinner {
-
       width: 42px;
-
       height: 42px;
-
       border: 4px solid #d9e2ec;
-
       border-top-color: #2f855a;
-
       border-radius: 50%;
-
       animation: boot-spin 0.9s linear infinite;
-
     }
-
-
 
     @keyframes boot-spin {
-
       to { transform: rotate(360deg); }
-
     }
-
   </style>
-
 </head>
-
 <body>
-
   <div id="boot-loader" aria-live="polite">
-
     <div class="boot-spinner" aria-hidden="true"></div>
-
     <div>Cargando VICUNHA Neps...</div>
-
+    <div id="boot-status">Preparando la aplicacion. La primera carga puede tardar unos segundos.</div>
   </div>
-
-
 
   <div id="boot-error" role="alert">
-
     <div>
-
       <h2>No se pudo cargar la aplicacion</h2>
-
       <p id="boot-error-detail">Hay una version antigua en cache del navegador.</p>
-
       <button type="button" id="boot-error-reload">Recargar pagina</button>
-
     </div>
-
   </div>
 
-
-
   <script>
-
     (function () {
-
-      var BOOT_VERSION = '20260605b';
-
+      var BOOT_VERSION = '20260610c';
+      var VERSION_KEY = 'vicunha_boot_version';
       var bootstrapUrl = 'flutter_bootstrap.js?v=' + BOOT_VERSION;
+      var appStarted = false;
+      var bootStatus = document.getElementById('boot-status');
 
+      window.VICUNHA_APP_VERSION = BOOT_VERSION;
 
+      function setBootStatus(text) {
+        if (bootStatus) bootStatus.textContent = text;
+      }
 
       function hideBootLoader() {
-
         var loader = document.getElementById('boot-loader');
-
         if (loader) loader.classList.add('hidden');
-
       }
-
-
 
       function showBootError(detail) {
-
+        if (appStarted) return;
         hideBootLoader();
-
         var panel = document.getElementById('boot-error');
-
         var text = document.getElementById('boot-error-detail');
-
         if (text && detail) text.textContent = detail;
-
         if (panel) panel.classList.add('visible');
-
       }
-
-
 
       function enableFlutterSemantics() {
-
         var placeholder = document.querySelector('flt-semantics-placeholder');
-
         if (!placeholder) return false;
-
         placeholder.click();
-
         return true;
-
       }
-
-
 
       window.addEventListener('flutter-first-frame', function () {
-
+        appStarted = true;
         hideBootLoader();
-
         enableFlutterSemantics();
-
       });
-
-
 
       var semanticsAttempts = 0;
-
       var semanticsTimer = setInterval(function () {
-
         semanticsAttempts += 1;
-
         if (enableFlutterSemantics() || semanticsAttempts >= 40) {
-
           clearInterval(semanticsTimer);
-
         }
-
       }, 250);
 
-
-
-      setTimeout(hideBootLoader, 20000);
-
-
-
-      window.addEventListener('error', function (event) {
-
-        var message = event && event.message ? event.message : 'Error inesperado';
-
-        if (message.indexOf('Firebase') !== -1 || message.indexOf('no-app') !== -1) {
-
-          showBootError('Version antigua detectada. Pulse Recargar para obtener la version nueva.');
-
-        }
-
-      });
-
-
-
-      window.addEventListener('unhandledrejection', function (event) {
-
-        var reason = event && event.reason ? String(event.reason) : '';
-
-        if (reason.indexOf('Firebase') !== -1 || reason.indexOf('no-app') !== -1) {
-
-          showBootError('Version antigua detectada. Pulse Recargar para obtener la version nueva.');
-
-        }
-
-      });
-
-
-
-      document.getElementById('boot-error-reload').addEventListener('click', function () {
-
-        var url = new URL(window.location.href);
-
-        url.searchParams.set('v', String(Date.now()));
-
-        window.location.replace(url.toString());
-
-      });
-
-
-
-      function clearWebCaches() {
-
-        var tasks = [];
-
-
-
-        if ('serviceWorker' in navigator) {
-
-          tasks.push(
-
-            navigator.serviceWorker.getRegistrations().then(function (registrations) {
-
-              return Promise.all(
-
-                registrations.map(function (registration) {
-
-                  return registration.unregister();
-
-                }),
-
-              );
-
-            }),
-
+      setTimeout(function () {
+        if (!appStarted) {
+          setBootStatus(
+            'Sigue descargando recursos (~10 MB en la primera visita). ' +
+            'Espere un momento o revise su conexion.',
           );
-
         }
+      }, 8000);
 
-
-
-        if ('caches' in window) {
-
-          tasks.push(
-
-            caches.keys().then(function (keys) {
-
-              return Promise.all(keys.map(function (key) { return caches.delete(key); }));
-
-            }),
-
+      setTimeout(function () {
+        if (!appStarted) {
+          showBootError(
+            'La carga esta tardando mas de lo normal. Pulse Recargar. ' +
+            'Si persiste, borre datos del sitio o use Ctrl+Shift+R.',
           );
-
         }
+      }, 45000);
 
-
-
-        return Promise.all(tasks);
-
+      function isCriticalBootError(message) {
+        if (!message) return false;
+        return (
+          message.indexOf('main.dart.js') !== -1 ||
+          message.indexOf('flutter_bootstrap.js') !== -1 ||
+          message.indexOf('FlutterLoader') !== -1 ||
+          message.indexOf('Canvaskit') !== -1 ||
+          message.indexOf('Failed to fetch') !== -1 ||
+          message.indexOf('ChunkLoadError') !== -1
+        );
       }
 
+      window.addEventListener('error', function (event) {
+        if (appStarted) return;
+        var message = event && event.message ? event.message : '';
+        if (isCriticalBootError(message)) {
+          showBootError(
+            'No se pudieron descargar los archivos de la app. Pulse Recargar.',
+          );
+        }
+      });
 
+      window.addEventListener('unhandledrejection', function (event) {
+        if (appStarted) return;
+        var reason = event && event.reason ? String(event.reason) : '';
+        if (isCriticalBootError(reason)) {
+          showBootError(
+            'Error al iniciar la app. Pulse Recargar para intentar de nuevo.',
+          );
+        }
+      });
 
-      clearWebCaches()
+      document.getElementById('boot-error-reload').addEventListener('click', function () {
+        var url = new URL(window.location.href);
+        url.searchParams.set('v', String(Date.now()));
+        window.location.replace(url.toString());
+      });
 
-        .catch(function () {})
+      function clearWebCaches() {
+        var tasks = [];
 
-        .then(function () {
+        if ('serviceWorker' in navigator) {
+          tasks.push(
+            navigator.serviceWorker.getRegistrations().then(function (registrations) {
+              return Promise.all(
+                registrations.map(function (registration) {
+                  return registration.unregister();
+                }),
+              );
+            }),
+          );
+        }
 
-          var script = document.createElement('script');
+        if ('caches' in window) {
+          tasks.push(
+            caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+            }),
+          );
+        }
 
-          script.src = bootstrapUrl;
+        return Promise.all(tasks);
+      }
 
-          script.async = false;
+      function shouldClearCaches() {
+        var url = new URL(window.location.href);
+        if (url.searchParams.has('v')) return true;
 
-          script.onerror = function () {
+        try {
+          return localStorage.getItem(VERSION_KEY) !== BOOT_VERSION;
+        } catch (_) {
+          return true;
+        }
+      }
 
-            showBootError('No se pudo descargar flutter_bootstrap.js. Revise su conexion.');
+      function rememberBootVersion() {
+        try {
+          localStorage.setItem(VERSION_KEY, BOOT_VERSION);
+        } catch (_) {}
+      }
 
-          };
+      function loadBootstrap() {
+        setBootStatus('Descargando motor de la aplicacion...');
+        var script = document.createElement('script');
+        script.src = bootstrapUrl;
+        script.async = false;
+        script.onload = function () {
+          setBootStatus('Iniciando interfaz...');
+        };
+        script.onerror = function () {
+          showBootError('No se pudo descargar flutter_bootstrap.js. Revise su conexion.');
+        };
+        document.body.appendChild(script);
+      }
 
-          document.body.appendChild(script);
-
-        });
-
+      if (shouldClearCaches()) {
+        setBootStatus('Actualizando version...');
+        clearWebCaches()
+          .catch(function () {})
+          .then(function () {
+            rememberBootVersion();
+            loadBootstrap();
+          });
+      } else {
+        rememberBootVersion();
+        loadBootstrap();
+      }
     })();
-
   </script>
-
 </body>
-
 </html>
-
-
