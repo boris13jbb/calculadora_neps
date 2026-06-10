@@ -20,6 +20,14 @@ dependencies:
   path_provider: ^2.1.5
   path_provider_windows: ^2.3.0
   share_plus: ^10.1.4
+  file_picker: ^10.3.10
+  provider: ^6.1.2
+  firebase_core: ^4.10.0
+  firebase_core_web: ^3.4.0
+  cloud_firestore: ^6.5.0
+  cloud_firestore_web: ^5.2.0
+  firebase_auth: ^6.5.2
+  firebase_auth_web: ^6.2.0
 
 dev_dependencies:
   flutter_test:

@@ -1,0 +1,1039 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/constants.dart';
+import '../../core/layout/breakpoints.dart';
+import '../../core/layout/responsive_layout.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_input_decoration.dart';
+import '../../core/widgets/app_page.dart';
+import '../../core/widgets/capture_session_actions.dart';
+import '../../core/widgets/compact_records_panel.dart';
+import '../../core/widgets/report_actions.dart';
+import '../../providers/app_state.dart';
+
+class CaptureScreen extends StatefulWidget {
+  const CaptureScreen({super.key});
+
+  @override
+  State<CaptureScreen> createState() => _CaptureScreenState();
+}
+
+class _CaptureScreenState extends State<CaptureScreen>
+    with SingleTickerProviderStateMixin {
+  TabController? _tabController;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isDesktop = MediaQuery.sizeOf(context).width >= AppBreakpoints.tablet;
+
+    if (!isDesktop && _tabController == null) {
+      _tabController = TabController(length: 2, vsync: this);
+    } else if (isDesktop && _tabController != null) {
+      _tabController!.dispose();
+      _tabController = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
+    final isDesktop = MediaQuery.sizeOf(context).width >= AppBreakpoints.tablet;
+    final showHeaderActions = isDesktop;
+
+    return AppPage(
+      title: 'Captura de registros',
+      subtitle:
+          isDesktop ? 'Ingrese datos y revise la tabla en tiempo real' : null,
+      fillViewport: true,
+      maxContentWidth: 1400,
+      compactPadding: true,
+      denseOnPhone: true,
+      actions:
+          showHeaderActions ? _buildHeaderActions(context, appState) : null,
+      child: isDesktop
+          ? _DesktopCaptureLayout(appState: appState)
+          : _tabController == null
+              ? const Center(child: CircularProgressIndicator())
+              : _MobileCaptureLayout(
+                  appState: appState,
+                  tabController: _tabController!,
+                  onRecordAdded: () => _tabController?.animateTo(1),
+                ),
+    );
+  }
+
+  List<Widget> _buildHeaderActions(BuildContext context, AppState appState) {
+    final compact = MediaQuery.sizeOf(context).width < AppBreakpoints.wide;
+
+    Widget actionButton({
+      required VoidCallback? onPressed,
+      required IconData icon,
+      required String label,
+      required Color background,
+      Color? foreground,
+      bool outlined = false,
+    }) {
+      if (compact) {
+        return IconButton.filled(
+          style: IconButton.styleFrom(
+            backgroundColor: outlined ? Colors.transparent : background,
+            foregroundColor: foreground ?? Colors.white,
+            side: outlined
+                ? const BorderSide(color: AppColors.danger)
+                : BorderSide.none,
+          ),
+          tooltip: label,
+          onPressed: onPressed,
+          icon: Icon(icon, size: 20),
+        );
+      }
+
+      if (outlined) {
+        return OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.danger,
+            side: const BorderSide(color: AppColors.danger),
+          ),
+          onPressed: onPressed,
+          icon: Icon(icon, size: 18),
+          label: Text(label),
+        );
+      }
+
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(backgroundColor: background),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+      );
+    }
+
+    return [
+      actionButton(
+        onPressed: captureActionsEnabled(appState)
+            ? () => promptSaveReport(context, appState)
+            : null,
+        icon: Icons.save,
+        label: 'Guardar',
+        background: AppColors.primaryBlue,
+      ),
+      actionButton(
+        onPressed: captureActionsEnabled(appState)
+            ? () => showShareReportMenu(context, appState)
+            : null,
+        icon: Icons.ios_share,
+        label: 'Compartir',
+        background: AppColors.primaryGreen,
+      ),
+      actionButton(
+        onPressed: () => promptNewCaptureSession(context, appState),
+        icon: Icons.note_add_outlined,
+        label: 'Nueva sesion',
+        background: AppColors.danger,
+        outlined: true,
+      ),
+      if (compact)
+        actionButton(
+          onPressed: () => appState.setNavigationIndex(3),
+          icon: Icons.texture,
+          label: 'Telas',
+          background: AppColors.surfaceAlt,
+          foreground: AppColors.textDark,
+        )
+      else
+        TextButton.icon(
+          onPressed: () => appState.setNavigationIndex(3),
+          icon: const Icon(Icons.texture, size: 18),
+          label: const Text('Telas'),
+        ),
+      if (compact)
+        actionButton(
+          onPressed: () => appState.setNavigationIndex(2),
+          icon: Icons.tune,
+          label: 'Filtros',
+          background: AppColors.surfaceAlt,
+          foreground: AppColors.textDark,
+        )
+      else
+        TextButton.icon(
+          onPressed: () => appState.setNavigationIndex(2),
+          icon: const Icon(Icons.tune, size: 18),
+          label: const Text('Filtros'),
+        ),
+    ];
+  }
+}
+
+class _DesktopCaptureLayout extends StatelessWidget {
+  const _DesktopCaptureLayout({required this.appState});
+
+  final AppState appState;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final formPanel = _CaptureFormPanel(appState: appState);
+        final recordsPanel = CompactRecordsPanel(
+          appState: appState,
+          records: appState.records,
+          onDelete: appState.deleteRecord,
+          onClearAll: () => promptNewCaptureSession(context, appState),
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CompactSessionBar(appState: appState),
+            const SizedBox(height: 10),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    width:
+                        constraints.maxWidth >= AppBreakpoints.wide ? 360 : 300,
+                    child: formPanel,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: recordsPanel),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _MobileCaptureLayout extends StatelessWidget {
+  const _MobileCaptureLayout({
+    required this.appState,
+    required this.tabController,
+    required this.onRecordAdded,
+  });
+
+  final AppState appState;
+  final TabController tabController;
+  final VoidCallback onRecordAdded;
+
+  @override
+  Widget build(BuildContext context) {
+    final recordCount = appState.records.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: AppColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(8),
+          child: TabBar(
+            controller: tabController,
+            labelStyle: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+            indicatorColor: AppColors.accentDark,
+            labelColor: AppColors.textDark,
+            unselectedLabelColor: AppColors.muted,
+            tabs: [
+              const Tab(
+                height: 40,
+                icon: Icon(Icons.edit_note, size: 18),
+                text: 'Capturar',
+              ),
+              Tab(
+                height: 40,
+                icon: const Icon(Icons.list_alt, size: 18),
+                text: 'Lista ($recordCount)',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: TabBarView(
+            controller: tabController,
+            children: [
+              _MobileCaptureTab(
+                appState: appState,
+                onRecordAdded: onRecordAdded,
+              ),
+              CompactRecordsPanel(
+                appState: appState,
+                records: appState.records,
+                onDelete: appState.deleteRecord,
+                onClearAll: () => promptNewCaptureSession(context, appState),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileCaptureTab extends StatelessWidget {
+  const _MobileCaptureTab({
+    required this.appState,
+    required this.onRecordAdded,
+  });
+
+  final AppState appState;
+  final VoidCallback onRecordAdded;
+
+  Future<void> _addRecord(BuildContext context) async {
+    final before = appState.records.length;
+    await appState.addRecord();
+    if (context.mounted && appState.records.length > before) {
+      onRecordAdded();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _CompactSessionBar(
+                  appState: appState,
+                  ultraCompact: true,
+                ),
+                const SizedBox(height: 6),
+                _CaptureFormPanel(
+                  appState: appState,
+                  ultraCompact: true,
+                  showSessionActions: false,
+                ),
+              ],
+            ),
+          ),
+        ),
+        _MobileCaptureActionBar(
+          appState: appState,
+          onAdd: () => _addRecord(context),
+        ),
+      ],
+    );
+  }
+}
+
+class _MobileCaptureActionBar extends StatelessWidget {
+  const _MobileCaptureActionBar({
+    required this.appState,
+    required this.onAdd,
+  });
+
+  final AppState appState;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surfaceAlt,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                IconButton.filled(
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(40, 40),
+                  ),
+                  tooltip: 'Guardar',
+                  onPressed: captureActionsEnabled(appState)
+                      ? () => promptSaveReport(context, appState)
+                      : null,
+                  icon: const Icon(Icons.save, size: 20),
+                ),
+                const SizedBox(width: 6),
+                IconButton.filled(
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.primaryGreen,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(40, 40),
+                  ),
+                  tooltip: 'Compartir',
+                  onPressed: captureActionsEnabled(appState)
+                      ? () => showShareReportMenu(context, appState)
+                      : null,
+                  icon: const Icon(Icons.ios_share, size: 20),
+                ),
+                const SizedBox(width: 6),
+                IconButton.outlined(
+                  style: IconButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: const BorderSide(color: AppColors.danger),
+                    minimumSize: const Size(40, 40),
+                  ),
+                  tooltip: 'Vaciar registros',
+                  onPressed: appState.records.isEmpty
+                      ? null
+                      : () => promptNewCaptureSession(context, appState),
+                  icon: const Icon(Icons.delete_sweep, size: 20),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: AppColors.textDark,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    onPressed: onAdd,
+                    icon: const Icon(Icons.add, size: 20),
+                    label: const Text(
+                      'Agregar',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: appState.clearCaptureFields,
+                  child: const Text('Limpiar', style: TextStyle(fontSize: 12)),
+                ),
+                TextButton.icon(
+                  onPressed: () => appState.setNavigationIndex(3),
+                  icon: const Icon(Icons.texture, size: 16),
+                  label: const Text('Telas', style: TextStyle(fontSize: 12)),
+                ),
+                TextButton.icon(
+                  onPressed: () => appState.setNavigationIndex(2),
+                  icon: const Icon(Icons.tune, size: 16),
+                  label: const Text('Filtros', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactSessionBar extends StatelessWidget {
+  const _CompactSessionBar({
+    required this.appState,
+    this.ultraCompact = false,
+  });
+
+  final AppState appState;
+  final bool ultraCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    final padding = ultraCompact
+        ? const EdgeInsets.symmetric(horizontal: 8, vertical: 6)
+        : const EdgeInsets.symmetric(horizontal: 12, vertical: 10);
+
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(ultraCompact ? 8 : 12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: ultraCompact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _FabricField(appState: appState, ultraCompact: true),
+                const SizedBox(height: 6),
+                _LoteField(appState: appState, ultraCompact: true),
+              ],
+            )
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < AppBreakpoints.phone;
+                if (stacked) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _FabricField(appState: appState),
+                      const SizedBox(height: 8),
+                      _LoteField(appState: appState),
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 3, child: _FabricField(appState: appState)),
+                    const SizedBox(width: 10),
+                    Expanded(flex: 2, child: _LoteField(appState: appState)),
+                  ],
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _FabricField extends StatelessWidget {
+  const _FabricField({
+    required this.appState,
+    this.ultraCompact = false,
+  });
+
+  final AppState appState;
+  final bool ultraCompact;
+
+  InputDecoration _decoration() => appInputDecoration(
+        ultraCompact ? 'Tela' : 'Seleccione',
+        compact: !ultraCompact,
+        ultraCompact: ultraCompact,
+      );
+
+  void _selectFabric(String? value) {
+    if (value == manualFabricOption) {
+      appState.setManualFabricMode(true);
+      appState.manualTelaController.clear();
+      return;
+    }
+    appState.setManualFabricMode(false);
+    appState.setSelectedFabric(value);
+  }
+
+  Future<void> _openFabricSheet(BuildContext context) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.55;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const Text(
+                  'Seleccionar tela',
+                  style: TextStyle(
+                    color: AppColors.textDark,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: appState.fabrics.length + 1,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      if (index == appState.fabrics.length) {
+                        return ListTile(
+                          dense: true,
+                          title: appDropdownItemText('Manual', compact: true),
+                          trailing: const Icon(
+                            Icons.edit_outlined,
+                            color: AppColors.textDark,
+                            size: 20,
+                          ),
+                          onTap: () =>
+                              Navigator.pop(sheetContext, manualFabricOption),
+                        );
+                      }
+
+                      final fabric = appState.fabrics[index];
+                      final isSelected = fabric == appState.selectedFabric;
+                      return ListTile(
+                        dense: true,
+                        selected: isSelected,
+                        selectedTileColor: AppColors.formulaBg,
+                        title: appDropdownItemText(fabric, compact: true),
+                        trailing: isSelected
+                            ? const Icon(
+                                Icons.check_circle,
+                                color: AppColors.primaryGreen,
+                                size: 20,
+                              )
+                            : null,
+                        onTap: () => Navigator.pop(sheetContext, fabric),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null) _selectFabric(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final decoration = _decoration();
+    final useSheet = ultraCompact || isPhoneLayout(context);
+
+    if (appState.fabrics.isEmpty || appState.useManualFabric) {
+      final canPickFromCatalog = appState.fabrics.isNotEmpty;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CompactLabel('Tela / Tejido', ultraCompact: ultraCompact),
+          TextField(
+            controller: appState.manualTelaController,
+            textCapitalization: TextCapitalization.characters,
+            style: appDropdownTextStyle(ultraCompact: ultraCompact),
+            decoration: decoration.copyWith(
+              hintText: 'Nombre de tela',
+              suffixIcon: canPickFromCatalog
+                  ? IconButton(
+                      tooltip: 'Seleccionar del catalogo',
+                      icon: const Icon(
+                        Icons.arrow_drop_down,
+                        color: AppColors.textDark,
+                      ),
+                      onPressed: () => _openFabricSheet(context),
+                    )
+                  : null,
+            ),
+          ),
+          if (canPickFromCatalog)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _openFabricSheet(context),
+                icon: const Icon(Icons.list_alt_outlined, size: 18),
+                label: const Text('Elegir del catalogo'),
+              ),
+            ),
+        ],
+      );
+    }
+
+    if (useSheet) {
+      final selectedLabel = appState.selectedFabric ?? 'Seleccione';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _CompactLabel('Tela / Tejido', ultraCompact: ultraCompact),
+          InkWell(
+            borderRadius: BorderRadius.circular(ultraCompact ? 8 : 10),
+            onTap: () => _openFabricSheet(context),
+            child: InputDecorator(
+              decoration: decoration,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      selectedLabel,
+                      overflow: TextOverflow.ellipsis,
+                      style: appDropdownTextStyle(ultraCompact: ultraCompact),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.arrow_drop_down,
+                    color: AppColors.textDark,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CompactLabel('Tela / Tejido', ultraCompact: ultraCompact),
+        DropdownButtonFormField<String>(
+          key: ValueKey(
+            'fabric-${appState.selectedFabric}-${appState.fabrics.length}',
+          ),
+          initialValue: appState.selectedFabric,
+          isExpanded: true,
+          isDense: true,
+          iconEnabledColor: AppColors.textDark,
+          dropdownColor: Colors.white,
+          menuMaxHeight: MediaQuery.sizeOf(context).height * 0.45,
+          style: appDropdownTextStyle(ultraCompact: ultraCompact),
+          decoration: decoration,
+          items: [
+            ...appState.fabrics.map(
+              (fabric) => DropdownMenuItem(
+                value: fabric,
+                child: appDropdownItemText(fabric),
+              ),
+            ),
+            DropdownMenuItem(
+              value: manualFabricOption,
+              child: appDropdownItemText('Manual'),
+            ),
+          ],
+          onChanged: _selectFabric,
+        ),
+      ],
+    );
+  }
+}
+
+class _LoteField extends StatelessWidget {
+  const _LoteField({
+    required this.appState,
+    this.ultraCompact = false,
+  });
+
+  final AppState appState;
+  final bool ultraCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CompactLabel('Lote de trama', ultraCompact: ultraCompact),
+        TextField(
+          controller: appState.loteSuffixController,
+          textCapitalization: TextCapitalization.characters,
+          style: TextStyle(fontSize: ultraCompact ? 13 : 14),
+          decoration: appInputDecoration(
+            'Ej: 5387',
+            compact: !ultraCompact,
+            ultraCompact: ultraCompact,
+          ).copyWith(
+            prefixText: '$loteTramaPrefix ',
+            prefixStyle: TextStyle(
+              fontWeight: FontWeight.w900,
+              color: AppColors.textDark,
+              fontSize: ultraCompact ? 12 : 13,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CaptureFormPanel extends StatelessWidget {
+  const _CaptureFormPanel({
+    required this.appState,
+    this.showSessionActions = true,
+    this.ultraCompact = false,
+  });
+
+  final AppState appState;
+  final bool showSessionActions;
+  final bool ultraCompact;
+
+  InputDecoration _inputDecoration(String hint) {
+    return appInputDecoration(
+      hint,
+      compact: !ultraCompact,
+      ultraCompact: ultraCompact,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (ultraCompact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _CompactLabel('Telar', ultraCompact: true),
+                    TextField(
+                      controller: appState.telarController,
+                      textInputAction: TextInputAction.next,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: _inputDecoration('102'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const _CompactLabel('Neps', ultraCompact: true),
+                    TextField(
+                      controller: appState.nepsController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      textInputAction: TextInputAction.done,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: _inputDecoration('53'),
+                      onSubmitted: (_) => appState.addRecord(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Mts = Neps / 0.09',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                    color: AppColors.textGreen,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7DF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.accent),
+                ),
+                child: Text(
+                  appState.formatNumber(appState.previewValue),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    color: Color(0xFF2F4125),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Nuevo registro',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const _CompactLabel('Telar'),
+          TextField(
+            controller: appState.telarController,
+            textInputAction: TextInputAction.next,
+            decoration: _inputDecoration('Ej: 102'),
+          ),
+          const SizedBox(height: 8),
+          const _CompactLabel('Neps'),
+          TextField(
+            controller: appState.nepsController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            decoration: _inputDecoration('Ej: 53'),
+            onSubmitted: (_) => appState.addRecord(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(
+                child: _CompactLabel('Mts = Neps / 0.09'),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7DF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.accent),
+                ),
+                child: Text(
+                  appState.formatNumber(appState.previewValue),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                    color: Color(0xFF2F4125),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              foregroundColor: AppColors.textDark,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            onPressed: appState.addRecord,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text(
+              'Agregar',
+              style: TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          const SizedBox(height: 6),
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+            ),
+            onPressed: appState.clearCaptureFields,
+            child: const Text('Limpiar campos'),
+          ),
+          const SizedBox(height: 6),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.danger,
+              side: const BorderSide(color: AppColors.danger),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+            ),
+            onPressed: appState.records.isEmpty
+                ? null
+                : () => promptNewCaptureSession(context, appState),
+            icon: const Icon(Icons.delete_sweep, size: 18),
+            label: const Text('Vaciar registros'),
+          ),
+          if (showSessionActions) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1),
+            const SizedBox(height: 10),
+            const Text(
+              'Informe de sesion',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final stacked = constraints.maxWidth < 360;
+                final saveButton = FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                  ),
+                  onPressed: captureActionsEnabled(appState)
+                      ? () => promptSaveReport(context, appState)
+                      : null,
+                  icon: const Icon(Icons.save, size: 18),
+                  label: const Text('Guardar'),
+                );
+                final shareButton = FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.primaryGreen,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                  ),
+                  onPressed: captureActionsEnabled(appState)
+                      ? () => showShareReportMenu(context, appState)
+                      : null,
+                  icon: const Icon(Icons.ios_share, size: 18),
+                  label: const Text('Compartir'),
+                );
+
+                if (stacked) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      saveButton,
+                      const SizedBox(height: 8),
+                      shareButton,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    Expanded(child: saveButton),
+                    const SizedBox(width: 8),
+                    Expanded(child: shareButton),
+                  ],
+                );
+              },
+            ),
+            if (appState.isExporting)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: LinearProgressIndicator(minHeight: 3),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CompactLabel extends StatelessWidget {
+  const _CompactLabel(this.text, {this.ultraCompact = false});
+
+  final String text;
+  final bool ultraCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: ultraCompact ? 2 : 4),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: ultraCompact ? 10 : 11,
+          color: AppColors.textGreen,
+        ),
+      ),
+    );
+  }
+}

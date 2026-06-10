@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+
+<html lang="es">
+
+<head>
+
+  <base href="$FLUTTER_BASE_HREF">
+
+
+
+  <meta charset="UTF-8">
+
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  <meta name="description" content="Calculadora VICUNHA de Neps dividido para 0.09 m. Compatible con Atajos de iOS y Siri.">
+
+
+
+  <!-- PWA / iOS -->
+
+  <meta name="mobile-web-app-capable" content="yes">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <meta name="apple-mobile-web-app-title" content="Neps VICUNHA">
+
+  <meta name="format-detection" content="telephone=no">
+
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <link rel="manifest" href="manifest.json">
+
+  <title>VICUNHA Calculadora Neps</title>
+
+  <style>
+
+    #boot-loader {
+
+      position: fixed;
+
+      inset: 0;
+
+      display: flex;
+
+      flex-direction: column;
+
+      align-items: center;
+
+      justify-content: center;
+
+      gap: 16px;
+
+      background: #f4f6f8;
+
+      color: #1f2933;
+
+      font-family: Roboto, Arial, sans-serif;
+
+      z-index: 9999;
+
+    }
+
+
+
+    #boot-loader.hidden {
+
+      display: none;
+
+    }
+
+
+
+    #boot-error {
+
+      display: none;
+
+      position: fixed;
+
+      inset: 0;
+
+      padding: 24px;
+
+      background: #f4f6f8;
+
+      color: #1f2933;
+
+      font-family: Roboto, Arial, sans-serif;
+
+      z-index: 10000;
+
+      text-align: center;
+
+      align-content: center;
+
+    }
+
+
+
+    #boot-error.visible {
+
+      display: grid;
+
+      place-items: center;
+
+    }
+
+
+
+    #boot-error button {
+
+      margin-top: 16px;
+
+      padding: 12px 20px;
+
+      border: 0;
+
+      border-radius: 8px;
+
+      background: #2f855a;
+
+      color: #fff;
+
+      font-size: 16px;
+
+      cursor: pointer;
+
+    }
+
+
+
+    .boot-spinner {
+
+      width: 42px;
+
+      height: 42px;
+
+      border: 4px solid #d9e2ec;
+
+      border-top-color: #2f855a;
+
+      border-radius: 50%;
+
+      animation: boot-spin 0.9s linear infinite;
+
+    }
+
+
+
+    @keyframes boot-spin {
+
+      to { transform: rotate(360deg); }
+
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+  <div id="boot-loader" aria-live="polite">
+
+    <div class="boot-spinner" aria-hidden="true"></div>
+
+    <div>Cargando VICUNHA Neps...</div>
+
+  </div>
+
+
+
+  <div id="boot-error" role="alert">
+
+    <div>
+
+      <h2>No se pudo cargar la aplicacion</h2>
+
+      <p id="boot-error-detail">Hay una version antigua en cache del navegador.</p>
+
+      <button type="button" id="boot-error-reload">Recargar pagina</button>
+
+    </div>
+
+  </div>
+
+
+
+  <script>
+
+    (function () {
+
+      var BOOT_VERSION = '20260605b';
+
+      var bootstrapUrl = 'flutter_bootstrap.js?v=' + BOOT_VERSION;
+
+
+
+      function hideBootLoader() {
+
+        var loader = document.getElementById('boot-loader');
+
+        if (loader) loader.classList.add('hidden');
+
+      }
+
+
+
+      function showBootError(detail) {
+
+        hideBootLoader();
+
+        var panel = document.getElementById('boot-error');
+
+        var text = document.getElementById('boot-error-detail');
+
+        if (text && detail) text.textContent = detail;
+
+        if (panel) panel.classList.add('visible');
+
+      }
+
+
+
+      function enableFlutterSemantics() {
+
+        var placeholder = document.querySelector('flt-semantics-placeholder');
+
+        if (!placeholder) return false;
+
+        placeholder.click();
+
+        return true;
+
+      }
+
+
+
+      window.addEventListener('flutter-first-frame', function () {
+
+        hideBootLoader();
+
+        enableFlutterSemantics();
+
+      });
+
+
+
+      var semanticsAttempts = 0;
+
+      var semanticsTimer = setInterval(function () {
+
+        semanticsAttempts += 1;
+
+        if (enableFlutterSemantics() || semanticsAttempts >= 40) {
+
+          clearInterval(semanticsTimer);
+
+        }
+
+      }, 250);
+
+
+
+      setTimeout(hideBootLoader, 20000);
+
+
+
+      window.addEventListener('error', function (event) {
+
+        var message = event && event.message ? event.message : 'Error inesperado';
+
+        if (message.indexOf('Firebase') !== -1 || message.indexOf('no-app') !== -1) {
+
+          showBootError('Version antigua detectada. Pulse Recargar para obtener la version nueva.');
+
+        }
+
+      });
+
+
+
+      window.addEventListener('unhandledrejection', function (event) {
+
+        var reason = event && event.reason ? String(event.reason) : '';
+
+        if (reason.indexOf('Firebase') !== -1 || reason.indexOf('no-app') !== -1) {
+
+          showBootError('Version antigua detectada. Pulse Recargar para obtener la version nueva.');
+
+        }
+
+      });
+
+
+
+      document.getElementById('boot-error-reload').addEventListener('click', function () {
+
+        var url = new URL(window.location.href);
+
+        url.searchParams.set('v', String(Date.now()));
+
+        window.location.replace(url.toString());
+
+      });
+
+
+
+      function clearWebCaches() {
+
+        var tasks = [];
+
+
+
+        if ('serviceWorker' in navigator) {
+
+          tasks.push(
+
+            navigator.serviceWorker.getRegistrations().then(function (registrations) {
+
+              return Promise.all(
+
+                registrations.map(function (registration) {
+
+                  return registration.unregister();
+
+                }),
+
+              );
+
+            }),
+
+          );
+
+        }
+
+
+
+        if ('caches' in window) {
+
+          tasks.push(
+
+            caches.keys().then(function (keys) {
+
+              return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+
+            }),
+
+          );
+
+        }
+
+
+
+        return Promise.all(tasks);
+
+      }
+
+
+
+      clearWebCaches()
+
+        .catch(function () {})
+
+        .then(function () {
+
+          var script = document.createElement('script');
+
+          script.src = bootstrapUrl;
+
+          script.async = false;
+
+          script.onerror = function () {
+
+            showBootError('No se pudo descargar flutter_bootstrap.js. Revise su conexion.');
+
+          };
+
+          document.body.appendChild(script);
+
+        });
+
+    })();
+
+  </script>
+
+</body>
+
+</html>
+
+

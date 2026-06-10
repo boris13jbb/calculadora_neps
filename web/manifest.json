@@ -1,0 +1,80 @@
+{
+    "name": "VICUNHA Calculadora Neps",
+    "short_name": "Neps VICUNHA",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#0175C2",
+    "theme_color": "#0175C2",
+    "description": "Calculadora VICUNHA de Neps dividido para 0.09 m. Compatible con Atajos de iOS y Siri.",
+    "orientation": "any",
+    "prefer_related_applications": false,
+    "categories": ["productivity", "utilities"],
+    "lang": "es",
+    "dir": "ltr",
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Captura de registros",
+            "short_name": "Captura",
+            "description": "Abrir pantalla de captura de neps",
+            "url": "/?pantalla=captura",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Ver registros",
+            "short_name": "Registros",
+            "description": "Consultar tabla de registros",
+            "url": "/?pantalla=registros",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Agregar neps",
+            "short_name": "Agregar",
+            "description": "Atajo para Siri: abre captura lista para agregar",
+            "url": "/?pantalla=captura&accion=agregar",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        }
+    ]
+}
