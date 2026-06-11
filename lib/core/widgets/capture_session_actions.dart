@@ -13,7 +13,11 @@ Future<void> promptNewCaptureSession(
     return;
   }
 
-  if (await confirmNewCaptureSession(context) && context.mounted) {
+  if (await confirmNewCaptureSession(
+        context,
+        recordCount: appState.records.length,
+      ) &&
+      context.mounted) {
     await appState.startNewCaptureSession();
   }
 }
@@ -28,7 +32,11 @@ Future<void> goToNewCaptureSession(
     return;
   }
 
-  if (await confirmNewCaptureSession(context) && context.mounted) {
+  if (await confirmNewCaptureSession(
+        context,
+        recordCount: appState.records.length,
+      ) &&
+      context.mounted) {
     await appState.startNewCaptureSession();
     appState.setNavigationIndex(1);
   }

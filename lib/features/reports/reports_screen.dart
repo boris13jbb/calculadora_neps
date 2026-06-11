@@ -23,12 +23,17 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
+  static const int _reportsTabIndex = 4;
+
   late final ReportShareHelper shareHelper;
   List<SavedReport> reports = [];
   final Set<String> selectedReportIds = {};
   RecordFilters reportFilters = RecordFilters();
   bool isLoading = true;
   bool isWorking = false;
+  String? loadError;
+  int? _lastSeenNavIndex;
+  bool _cloudWasReady = false;
 
   @override
   void initState() {
@@ -38,17 +43,46 @@ class _ReportsScreenState extends State<ReportsScreen> {
     _loadReports();
   }
 
-  Future<void> _loadReports() async {
-    setState(() => isLoading = true);
+  void _scheduleReloadIfNeeded(AppState appState) {
+    final navIndex = appState.navigationIndex;
+    final enteringTab =
+        navIndex == _reportsTabIndex && _lastSeenNavIndex != _reportsTabIndex;
+    final cloudJustReady = appState.cloudSyncEnabled && !_cloudWasReady;
+
+    if (navIndex == _reportsTabIndex && (enteringTab || cloudJustReady)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadReports(showLoader: !isLoading);
+      });
+    }
+
+    _lastSeenNavIndex = navIndex;
+    _cloudWasReady = appState.cloudSyncEnabled;
+  }
+
+  Future<void> _loadReports({bool showLoader = true}) async {
+    if (showLoader) {
+      setState(() => isLoading = true);
+    }
     try {
       final appState = context.read<AppState>();
-      reports = await appState.reportStorageService.loadReports();
+      final loaded = await appState.reportStorageService.loadReports();
       selectedReportIds.removeWhere(
-        (id) => !reports.any((report) => report.id == id),
+        (id) => !loaded.any((report) => report.id == id),
       );
+      if (mounted) {
+        setState(() {
+          reports = loaded;
+          loadError = null;
+        });
+      }
     } catch (error) {
-      reports = [];
       debugPrint('Error al cargar informes: $error');
+      if (mounted) {
+        setState(() {
+          reports = [];
+          loadError = 'No se pudieron cargar los informes. Intente actualizar.';
+        });
+      }
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -508,10 +542,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
         border: Border.all(color: AppColors.border),
       ),
       child: filtered.isEmpty
-          ? const Center(
-              child: Text(
-                'No hay informes guardados.',
-                style: TextStyle(fontSize: 12),
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  loadError ??
+                      (reports.isEmpty
+                          ? 'No hay informes guardados.\n'
+                              'Guarde un informe desde Captura o Exportar '
+                              'para compartirlo con el equipo.'
+                          : 'Ningun informe coincide con los filtros.'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color:
+                        loadError != null ? AppColors.danger : AppColors.muted,
+                  ),
+                ),
               ),
             )
           : ListView.separated(
@@ -597,6 +644,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    _scheduleReloadIfNeeded(appState);
     final filtered = visibleReports;
 
     final phone = isPhoneLayout(context);
@@ -605,7 +653,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (isLoading) {
       return AppPage(
         title: 'Informes guardados',
-        subtitle: phone ? null : 'Historial de informes exportados',
+        subtitle: phone
+            ? 'Visibles para todo el equipo'
+            : 'Informes compartidos visibles para todo el equipo',
         denseOnPhone: true,
         compactPadding: true,
         child: const Center(child: CircularProgressIndicator()),
@@ -614,7 +664,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
     return AppPage(
       title: 'Informes guardados',
-      subtitle: phone ? null : 'Cargar, compartir y administrar informes',
+      subtitle: phone
+          ? 'Compartidos con el equipo'
+          : 'Informes compartidos: cargar, exportar y administrar',
       fillViewport: true,
       compactPadding: true,
       denseOnPhone: true,

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'bootstrap/firebase_init.dart';
+import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/app_shell.dart';
 import 'providers/app_state.dart';
@@ -24,9 +25,11 @@ class _NepsAppState extends State<NepsApp> {
     super.initState();
     _appState = AppState()..initialize(launchUri: _launchUri);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_bootstrapCloud());
-    });
+    if (DefaultFirebaseOptions.isSupported) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_bootstrapCloud());
+      });
+    }
   }
 
   Future<void> _bootstrapCloud() async {

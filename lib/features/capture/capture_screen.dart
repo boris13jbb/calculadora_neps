@@ -65,8 +65,9 @@ class _CaptureScreenState extends State<CaptureScreen>
 
     return AppPage(
       title: 'Captura de registros',
-      subtitle:
-          isDesktop ? 'Ingrese datos y revise la tabla en tiempo real' : null,
+      subtitle: isDesktop
+          ? 'Su tabla personal. Guarde informes para compartir con el equipo.'
+          : 'Su tabla personal',
       fillViewport: true,
       maxContentWidth: 1400,
       compactPadding: true,

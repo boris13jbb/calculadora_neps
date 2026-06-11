@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -29,9 +29,20 @@ class ReportStorageService {
   Future<List<SavedReport>> loadReports() async {
     final cloudSync = _cloudSync;
     if (cloudSync != null) {
-      return cloudSync.fetchReports();
+      try {
+        final remote = await cloudSync.fetchReports();
+        await _persistReportsLocally(remote);
+        return remote;
+      } catch (error, stackTrace) {
+        debugPrint('Error al cargar informes desde Firebase: $error');
+        debugPrint('$stackTrace');
+      }
     }
 
+    return _loadReportsLocally();
+  }
+
+  Future<List<SavedReport>> _loadReportsLocally() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(savedReportsStorageKey);
     if (saved == null || saved.isEmpty) return [];
@@ -42,7 +53,8 @@ class ReportStorageService {
           .map((item) => SavedReport.fromJson(Map<String, dynamic>.from(item)))
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    } catch (_) {
+    } catch (error) {
+      debugPrint('Error al leer informes locales: $error');
       return [];
     }
   }
@@ -51,6 +63,19 @@ class ReportStorageService {
     final prefs = await SharedPreferences.getInstance();
     final data = reports.map((report) => report.toJson()).toList();
     await prefs.setString(savedReportsStorageKey, jsonEncode(data));
+  }
+
+  Future<void> _upsertReportLocally(SavedReport report) async {
+    final reports = await _loadReportsLocally();
+    reports.removeWhere((item) => item.id == report.id);
+    reports.insert(0, report);
+    await _persistReportsLocally(reports);
+  }
+
+  Future<void> _removeReportLocally(String id) async {
+    final reports = await _loadReportsLocally();
+    reports.removeWhere((report) => report.id == id);
+    await _persistReportsLocally(reports);
   }
 
   Future<SavedReport> saveReport({
@@ -80,12 +105,17 @@ class ReportStorageService {
 
     final cloudSync = _cloudSync;
     if (cloudSync != null) {
-      return cloudSync.saveReport(report);
+      try {
+        final saved = await cloudSync.saveReport(report);
+        await _upsertReportLocally(saved);
+        return saved;
+      } catch (error, stackTrace) {
+        debugPrint('Error al guardar informe en Firebase: $error');
+        debugPrint('$stackTrace');
+      }
     }
 
-    final reports = await loadReports();
-    reports.insert(0, report);
-    await _persistReportsLocally(reports);
+    await _upsertReportLocally(report);
 
     if (saveFiles && !kIsWeb) {
       await _saveReportFiles(report);
@@ -97,13 +127,17 @@ class ReportStorageService {
   Future<void> deleteReport(String id) async {
     final cloudSync = _cloudSync;
     if (cloudSync != null) {
-      await cloudSync.deleteReport(id);
-      return;
+      try {
+        await cloudSync.deleteReport(id);
+        await _removeReportLocally(id);
+        return;
+      } catch (error, stackTrace) {
+        debugPrint('Error al eliminar informe en Firebase: $error');
+        debugPrint('$stackTrace');
+      }
     }
 
-    final reports = await loadReports();
-    reports.removeWhere((report) => report.id == id);
-    await _persistReportsLocally(reports);
+    await _removeReportLocally(id);
   }
 
   Future<Directory> getReportsDirectory() async {

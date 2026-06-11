@@ -6,20 +6,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants.dart';
 import '../firebase_options.dart';
 import '../models/nep_record.dart';
+import '../utils/firestore_json_helper.dart';
 import '../models/saved_report.dart';
 import 'cloud_sync_port.dart';
 
 class CloudSyncService implements CloudSyncPort {
   bool _bootstrapped = false;
   Future<void>? _bootstrapFuture;
+  String? _userId;
 
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
   DocumentReference<Map<String, dynamic>> get _workspace =>
       _firestore.collection('workspaces').doc(cloudWorkspaceId);
-
-  CollectionReference<Map<String, dynamic>> get _records =>
-      _workspace.collection('records');
 
   CollectionReference<Map<String, dynamic>> get _reports =>
       _workspace.collection('reports');
@@ -49,9 +48,21 @@ class CloudSyncService implements CloudSyncPort {
       await FirebaseAuth.instance.signInAnonymously();
     }
 
+    _userId = FirebaseAuth.instance.currentUser?.uid;
+    if (_userId == null) {
+      throw StateError('No se pudo autenticar el usuario para sincronizar.');
+    }
+
     await _workspace.set(
       {
         'name': 'VICUNHA',
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await _workspace.collection('users').doc(_userId).set(
+      {
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -61,14 +72,35 @@ class CloudSyncService implements CloudSyncPort {
     _bootstrapFuture = null;
   }
 
+  Future<String> _requireUserId() async {
+    await bootstrap();
+    final uid = _userId ?? FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      throw StateError('Usuario no autenticado.');
+    }
+    _userId = uid;
+    return uid;
+  }
+
+  CollectionReference<Map<String, dynamic>> _userRecords(String userId) {
+    return _workspace.collection('users').doc(userId).collection('records');
+  }
+
+  String _userMigrationKey(String userId) =>
+      '$cloudUserMigrationKeyPrefix$userId';
+
   @override
   Stream<List<NepRecord>> watchRecords() {
-    return _records.orderBy('createdAt').snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = Map<String, dynamic>.from(doc.data());
-        data['id'] ??= doc.id;
-        return NepRecord.fromJson(data);
-      }).toList();
+    return Stream.fromFuture(_requireUserId()).asyncExpand((userId) {
+      return _userRecords(userId).orderBy('createdAt').snapshots().map(
+        (snapshot) {
+          return snapshot.docs.map((doc) {
+            final data = Map<String, dynamic>.from(doc.data());
+            data['id'] ??= doc.id;
+            return NepRecord.fromJson(data);
+          }).toList();
+        },
+      );
     });
   }
 
@@ -85,10 +117,11 @@ class CloudSyncService implements CloudSyncPort {
     required List<NepRecord> localRecords,
     required List<String> localFabrics,
   }) async {
-    await bootstrap();
-
+    final userId = await _requireUserId();
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(cloudMigrationKey) == true) return;
+    final migrationKey = _userMigrationKey(userId);
+
+    if (prefs.getBool(migrationKey) == true) return;
 
     if (localRecords.isNotEmpty) {
       await upsertRecords(localRecords);
@@ -98,7 +131,7 @@ class CloudSyncService implements CloudSyncPort {
       await syncFabricsWithLocal(localFabrics);
     }
 
-    await prefs.setBool(cloudMigrationKey, true);
+    await prefs.setBool(migrationKey, true);
   }
 
   @override
@@ -131,15 +164,15 @@ class CloudSyncService implements CloudSyncPort {
 
   @override
   Future<void> upsertRecord(NepRecord record) async {
-    await bootstrap();
-    await _records
+    final userId = await _requireUserId();
+    await _userRecords(userId)
         .doc(record.id)
         .set(_recordData(record), SetOptions(merge: true));
   }
 
   @override
   Future<void> upsertRecords(List<NepRecord> records) async {
-    await bootstrap();
+    final userId = await _requireUserId();
 
     for (var start = 0; start < records.length; start += 450) {
       final batch = _firestore.batch();
@@ -147,7 +180,7 @@ class CloudSyncService implements CloudSyncPort {
 
       for (final record in chunk) {
         batch.set(
-          _records.doc(record.id),
+          _userRecords(userId).doc(record.id),
           _recordData(record),
           SetOptions(merge: true),
         );
@@ -159,20 +192,20 @@ class CloudSyncService implements CloudSyncPort {
 
   @override
   Future<void> deleteRecord(String recordId) async {
-    await bootstrap();
-    await _records.doc(recordId).delete();
+    final userId = await _requireUserId();
+    await _userRecords(userId).doc(recordId).delete();
   }
 
   @override
   Future<void> clearRecords() async {
-    await bootstrap();
-    await _deleteCollection(_records);
+    final userId = await _requireUserId();
+    await _deleteCollection(_userRecords(userId));
   }
 
   @override
   Future<void> replaceRecords(List<NepRecord> records) async {
-    await bootstrap();
     await clearRecords();
+    if (records.isEmpty) return;
     await upsertRecords(records);
   }
 
@@ -180,13 +213,23 @@ class CloudSyncService implements CloudSyncPort {
   Future<List<SavedReport>> fetchReports() async {
     await bootstrap();
 
-    final snapshot =
-        await _reports.orderBy('createdAt', descending: true).get();
-    return snapshot.docs.map((doc) {
-      final data = Map<String, dynamic>.from(doc.data());
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await _reports.orderBy('createdAt', descending: true).get();
+    } catch (_) {
+      snapshot = await _reports.get();
+    }
+
+    final reports = snapshot.docs.map((doc) {
+      final data = FirestoreJsonHelper.normalizeMap(
+        Map<String, dynamic>.from(doc.data()),
+      );
       data['id'] ??= doc.id;
       return SavedReport.fromJson(data);
     }).toList();
+
+    reports.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return reports;
   }
 
   @override

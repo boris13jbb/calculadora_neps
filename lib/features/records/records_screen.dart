@@ -58,7 +58,12 @@ class _RecordsScreenState extends State<RecordsScreen> {
   }
 
   Future<void> _clearTable(AppState appState) async {
-    if (!await confirmClearTable(context)) return;
+    if (!await confirmClearTable(
+      context,
+      recordCount: appState.records.length,
+    )) {
+      return;
+    }
     await appState.clearTable();
   }
 
@@ -78,7 +83,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
 
     return AppPage(
       title: 'Registros',
-      subtitle: phone ? null : 'Tabla, filtros, importacion y resumen de datos',
+      subtitle: phone
+          ? 'Su tabla personal'
+          : 'Su tabla personal: filtros, importacion y resumen',
       fillViewport: true,
       maxContentWidth: 1400,
       compactPadding: true,
