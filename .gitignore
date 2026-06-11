@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/build/
+
+# Firebase local cache (hosting deploy artifacts)
+.firebase/
+
+# Windows accidental artifact (reserved device name)
+NUL
