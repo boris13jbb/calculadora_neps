@@ -918,7 +918,6 @@ class AppState extends ChangeNotifier {
     required double neps,
     required String tela,
     required String loteTrama,
-    required DateTime createdAt,
   }) async {
     final index = records.indexWhere((record) => record.id == id);
     if (index < 0) {
@@ -932,7 +931,7 @@ class AppState extends ChangeNotifier {
       neps: neps,
       tela: tela.trim(),
       loteTrama: loteTrama,
-      createdAt: createdAt,
+      createdAt: DateTime.now(),
     );
 
     await _updateRecord(updated);

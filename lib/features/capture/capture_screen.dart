@@ -14,6 +14,7 @@ import '../../core/widgets/lote_trama_field.dart';
 import '../../core/widgets/report_actions.dart';
 import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
+import '../../utils/numeric_input_formatters.dart';
 
 Future<void> _editCaptureRecord(
   BuildContext context,
@@ -639,10 +640,11 @@ class _FabricField extends StatelessWidget {
           _CompactLabel('Tela / Tejido', ultraCompact: ultraCompact),
           TextField(
             controller: appState.manualTelaController,
-            textCapitalization: TextCapitalization.characters,
+            keyboardType: TextInputType.number,
+            inputFormatters: digitsOnlyInputFormatters,
             style: appDropdownTextStyle(ultraCompact: ultraCompact),
             decoration: decoration.copyWith(
-              hintText: 'Nombre de tela',
+              hintText: 'Codigo de tela',
               suffixIcon: canPickFromCatalog
                   ? IconButton(
                       tooltip: 'Seleccionar del catalogo',
@@ -794,6 +796,8 @@ class _CaptureFormPanel extends StatelessWidget {
                     const _CompactLabel('Telar', ultraCompact: true),
                     TextField(
                       controller: appState.telarController,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: digitsOnlyInputFormatters,
                       textInputAction: TextInputAction.next,
                       style: const TextStyle(fontSize: 13),
                       decoration: _inputDecoration('102'),
@@ -811,6 +815,7 @@ class _CaptureFormPanel extends StatelessWidget {
                       controller: appState.nepsController,
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: decimalNumberInputFormatters,
                       textInputAction: TextInputAction.done,
                       style: const TextStyle(fontSize: 13),
                       decoration: _inputDecoration('53'),
@@ -879,6 +884,8 @@ class _CaptureFormPanel extends StatelessWidget {
           const _CompactLabel('Telar'),
           TextField(
             controller: appState.telarController,
+            keyboardType: TextInputType.number,
+            inputFormatters: digitsOnlyInputFormatters,
             textInputAction: TextInputAction.next,
             decoration: _inputDecoration('Ej: 102'),
           ),
@@ -887,6 +894,7 @@ class _CaptureFormPanel extends StatelessWidget {
           TextField(
             controller: appState.nepsController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: decimalNumberInputFormatters,
             textInputAction: TextInputAction.done,
             decoration: _inputDecoration('Ej: 53'),
             onSubmitted: (_) => appState.addRecord(),

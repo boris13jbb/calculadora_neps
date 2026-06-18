@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../core/constants.dart';
 import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
 import '../../utils/lote_trama_helper.dart';
+import '../../utils/numeric_input_formatters.dart';
 import '../theme/app_theme.dart';
 import 'app_input_decoration.dart';
 import 'lote_trama_field.dart';
@@ -150,7 +150,6 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
         neps: widget.appState.parseNumber(nepsText),
         tela: tela,
         loteTrama: loteTrama,
-        createdAt: widget.record.createdAt,
       );
       if (mounted) Navigator.of(context).pop(true);
     } finally {
@@ -180,14 +179,19 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Fecha: ${widget.appState.formatDateTime(widget.record.createdAt)}',
+                'Fecha actual: ${widget.appState.formatDateTime(widget.record.createdAt)}',
                 style: const TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Al guardar, la fecha y hora se actualizaran al momento actual.',
+                style: TextStyle(color: AppColors.muted, fontSize: 11),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: telarController,
                 keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                inputFormatters: digitsOnlyInputFormatters,
                 decoration: decoration.copyWith(labelText: 'Telar'),
               ),
               const SizedBox(height: 10),
@@ -196,6 +200,7 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
+                inputFormatters: decimalNumberInputFormatters,
                 decoration: decoration.copyWith(labelText: 'Neps'),
               ),
               const SizedBox(height: 10),
@@ -234,7 +239,8 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
               else ...[
                 TextField(
                   controller: manualTelaController,
-                  textCapitalization: TextCapitalization.characters,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: digitsOnlyInputFormatters,
                   decoration: decoration.copyWith(
                     labelText: 'Tela / Tejido',
                     suffixIcon: fabrics.isNotEmpty
