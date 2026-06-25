@@ -219,7 +219,9 @@ class _DesktopCaptureLayout extends StatelessWidget {
                   SizedBox(
                     width:
                         constraints.maxWidth >= AppBreakpoints.wide ? 360 : 300,
-                    child: formPanel,
+                    child: SingleChildScrollView(
+                      child: formPanel,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(child: recordsPanel),

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart' as xls;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -9,6 +10,9 @@ import '../models/export_column.dart';
 import '../models/nep_record.dart';
 
 class ReportExportService {
+  static pw.Font? _pdfBaseFont;
+  static pw.Font? _pdfBoldFont;
+
   double calculateMts(double neps) => neps / testLengthM;
 
   String formatNumber(double value) {
@@ -185,6 +189,19 @@ class ReportExportService {
     return xls.TextCellValue(value);
   }
 
+  Future<pw.ThemeData> _pdfTheme() async {
+    _pdfBaseFont ??= pw.Font.ttf(
+      await rootBundle.load('assets/fonts/OpenSans-Regular.ttf'),
+    );
+    _pdfBoldFont ??= pw.Font.ttf(
+      await rootBundle.load('assets/fonts/OpenSans-Bold.ttf'),
+    );
+    return pw.ThemeData.withFont(
+      base: _pdfBaseFont!,
+      bold: _pdfBoldFont!,
+    );
+  }
+
   Future<Uint8List> buildPdfBytes({
     required List<NepRecord> records,
     String title = 'Reporte Neps VICUNHA',
@@ -194,6 +211,9 @@ class ReportExportService {
     final selected = _columns(columns ?? ExportColumn.defaultSelection());
     final summary = summarize(records);
     final doc = pw.Document();
+    final theme = await _pdfTheme();
+    final baseFont = _pdfBaseFont!;
+    final boldFont = _pdfBoldFont!;
 
     final tableData = records.asMap().entries.map((entry) {
       return _dataRow(entry.value, entry.key, selected);
@@ -205,6 +225,7 @@ class ReportExportService {
 
     doc.addPage(
       pw.MultiPage(
+        theme: theme,
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(24),
         build: (context) {
@@ -221,15 +242,16 @@ class ReportExportService {
                   pw.Text(
                     'VICUNHA  jeansidentity',
                     style: pw.TextStyle(
+                      font: boldFont,
                       color: PdfColor.fromHex('#F7EAC5'),
                       fontSize: 22,
-                      fontWeight: pw.FontWeight.bold,
                     ),
                   ),
                   pw.SizedBox(height: 4),
                   pw.Text(
                     title,
                     style: pw.TextStyle(
+                      font: baseFont,
                       color: PdfColor.fromHex('#CFD8C5'),
                       fontSize: 10,
                     ),
@@ -241,8 +263,8 @@ class ReportExportService {
             pw.Text(
               'Formula utilizada: Mts calculados = Neps / 0.09',
               style: pw.TextStyle(
+                font: boldFont,
                 fontSize: 12,
-                fontWeight: pw.FontWeight.bold,
               ),
             ),
             if (filtersDescription != null &&
@@ -250,7 +272,7 @@ class ReportExportService {
               pw.SizedBox(height: 6),
               pw.Text(
                 'Filtros: $filtersDescription',
-                style: const pw.TextStyle(fontSize: 10),
+                style: pw.TextStyle(font: baseFont, fontSize: 10),
               ),
             ],
             pw.SizedBox(height: 10),
@@ -261,12 +283,12 @@ class ReportExportService {
                 color: PdfColor.fromHex('#1F2A2E'),
               ),
               headerStyle: pw.TextStyle(
+                font: boldFont,
                 color: PdfColor.fromHex('#F7EAC5'),
-                fontWeight: pw.FontWeight.bold,
                 fontSize: 8,
               ),
               cellAlignment: pw.Alignment.center,
-              cellStyle: const pw.TextStyle(fontSize: 8),
+              cellStyle: pw.TextStyle(font: baseFont, fontSize: 8),
             ),
             pw.SizedBox(height: 14),
             pw.Container(
@@ -278,13 +300,18 @@ class ReportExportService {
               child: pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Text('Total registros: ${records.length}'),
+                  pw.Text(
+                    'Total registros: ${records.length}',
+                    style: pw.TextStyle(font: baseFont),
+                  ),
                   if (selected.contains(ExportColumn.neps)) ...[
                     pw.Text(
                       'Total neps: ${formatDecimal(summary['totalNeps']!)}',
+                      style: pw.TextStyle(font: baseFont),
                     ),
                     pw.Text(
                       'Promedio neps: ${formatDecimal(summary['averageNeps']!)}',
+                      style: pw.TextStyle(font: baseFont),
                     ),
                   ],
                 ],

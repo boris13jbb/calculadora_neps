@@ -21,10 +21,9 @@ service cloud.firestore {
         allow read, write: if request.auth != null;
       }
 
-      // Registros legacy (solo lectura para migracion; sin escritura nueva).
+      // Registros compartidos del workspace (equipo VICUNHA).
       match /records/{recordId} {
-        allow read: if request.auth != null;
-        allow write: if false;
+        allow read, write: if request.auth != null;
       }
     }
   }

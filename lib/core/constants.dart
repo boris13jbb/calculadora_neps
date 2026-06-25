@@ -6,6 +6,8 @@ const String fabricCatalogStorageKey = 'vicunha_fabric_catalog_v1';
 const String savedReportsStorageKey = 'vicunha_saved_reports_v1';
 const String cloudMigrationKey = 'vicunha_cloud_migration_v1';
 const String cloudUserMigrationKeyPrefix = 'vicunha_cloud_user_migration_v1_';
+const String cloudUserToWorkspaceMigrationKeyPrefix =
+    'vicunha_cloud_user_to_workspace_migration_v1_';
 const String cloudWorkspaceId = 'vicunha';
 
 const String loteTramaPrefix = '63E264';

@@ -1,13 +1,17 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
+import '../debug/agent_debug_log.dart';
 import '../firebase_options.dart';
 import '../models/nep_record.dart';
 import '../utils/firestore_json_helper.dart';
 import '../models/saved_report.dart';
+import '../utils/nep_record_merge_helper.dart';
 import 'cloud_sync_port.dart';
 
 class CloudSyncService implements CloudSyncPort {
@@ -19,6 +23,9 @@ class CloudSyncService implements CloudSyncPort {
 
   DocumentReference<Map<String, dynamic>> get _workspace =>
       _firestore.collection('workspaces').doc(cloudWorkspaceId);
+
+  CollectionReference<Map<String, dynamic>> get _records =>
+      _workspace.collection('records');
 
   CollectionReference<Map<String, dynamic>> get _reports =>
       _workspace.collection('reports');
@@ -38,38 +45,145 @@ class CloudSyncService implements CloudSyncPort {
   }
 
   Future<void> _doBootstrap() async {
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'cloud_sync_service.dart:_doBootstrap',
+      message: 'Inicio bootstrap Firebase',
+      hypothesisId: 'B',
+      data: {'firebaseAppsEmpty': Firebase.apps.isEmpty},
+    );
+    // #endregion
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
     }
 
+    _firestore.settings = const Settings(
+      persistenceEnabled: false,
+    );
+
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'cloud_sync_service.dart:_doBootstrap',
+      message: 'Firebase.initializeApp OK, iniciando auth anonima',
+      hypothesisId: 'B',
+    );
+    // #endregion
+
     if (FirebaseAuth.instance.currentUser == null) {
-      await FirebaseAuth.instance.signInAnonymously();
+      await FirebaseAuth.instance.signInAnonymously().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw TimeoutException(
+            'Tiempo de espera agotado al autenticar con Firebase.',
+          );
+        },
+      );
     }
+
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'cloud_sync_service.dart:_doBootstrap',
+      message: 'Auth anonima completada',
+      hypothesisId: 'B',
+      runId: 'post-fix',
+      data: {'hasUserId': FirebaseAuth.instance.currentUser != null},
+    );
+    // #endregion
 
     _userId = FirebaseAuth.instance.currentUser?.uid;
     if (_userId == null) {
       throw StateError('No se pudo autenticar el usuario para sincronizar.');
     }
 
-    await _workspace.set(
-      {
-        'name': 'VICUNHA',
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-
-    await _workspace.collection('users').doc(_userId).set(
-      {
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    // Metadatos opcionales: no bloquean la sincronizacion de registros.
+    unawaited(_writeWorkspaceMetadata());
 
     _bootstrapped = true;
     _bootstrapFuture = null;
+
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'cloud_sync_service.dart:_doBootstrap',
+      message: 'Firebase bootstrap completado',
+      hypothesisId: 'B',
+      data: {
+        'hasUserId': _userId != null,
+        'userIdLength': _userId?.length ?? 0,
+      },
+    );
+    // #endregion
+  }
+
+  Future<void> _writeWorkspaceMetadata() async {
+    const timeout = Duration(seconds: 15);
+
+    try {
+      await _workspace
+          .set(
+            {
+              'name': 'VICUNHA',
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          )
+          .timeout(timeout);
+
+      // #region agent log
+      AgentDebugLog.write(
+        location: 'cloud_sync_service.dart:_writeWorkspaceMetadata',
+        message: 'Workspace doc escrito',
+        hypothesisId: 'C',
+        runId: 'post-fix',
+      );
+      // #endregion
+    } catch (error) {
+      // #region agent log
+      AgentDebugLog.write(
+        location: 'cloud_sync_service.dart:_writeWorkspaceMetadata',
+        message: 'Fallo al escribir workspace doc (no bloqueante)',
+        hypothesisId: 'C',
+        runId: 'post-fix',
+        data: {'error': error.toString()},
+      );
+      // #endregion
+    }
+
+    final userId = _userId;
+    if (userId == null) return;
+
+    try {
+      await _workspace
+          .collection('users')
+          .doc(userId)
+          .set(
+            {
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          )
+          .timeout(timeout);
+
+      // #region agent log
+      AgentDebugLog.write(
+        location: 'cloud_sync_service.dart:_writeWorkspaceMetadata',
+        message: 'User meta doc escrito',
+        hypothesisId: 'C',
+        runId: 'post-fix',
+      );
+      // #endregion
+    } catch (error) {
+      // #region agent log
+      AgentDebugLog.write(
+        location: 'cloud_sync_service.dart:_writeWorkspaceMetadata',
+        message: 'Fallo al escribir user meta doc (no bloqueante)',
+        hypothesisId: 'C',
+        runId: 'post-fix',
+        data: {'error': error.toString()},
+      );
+      // #endregion
+    }
   }
 
   Future<String> _requireUserId() async {
@@ -89,18 +203,21 @@ class CloudSyncService implements CloudSyncPort {
   String _userMigrationKey(String userId) =>
       '$cloudUserMigrationKeyPrefix$userId';
 
+  String _userToWorkspaceMigrationKey(String userId) =>
+      '$cloudUserToWorkspaceMigrationKeyPrefix$userId';
+
+  NepRecord _recordFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = Map<String, dynamic>.from(doc.data());
+    data['id'] ??= doc.id;
+    return NepRecord.fromJson(data);
+  }
+
   @override
   Stream<List<NepRecord>> watchRecords() {
-    return Stream.fromFuture(_requireUserId()).asyncExpand((userId) {
-      return _userRecords(userId).orderBy('createdAt').snapshots().map(
-        (snapshot) {
-          return snapshot.docs.map((doc) {
-            final data = Map<String, dynamic>.from(doc.data());
-            data['id'] ??= doc.id;
-            return NepRecord.fromJson(data);
-          }).toList();
-        },
-      );
+    return Stream.fromFuture(bootstrap()).asyncExpand((_) {
+      return _records.orderBy('createdAt').snapshots().map((snapshot) {
+        return snapshot.docs.map(_recordFromDoc).toList();
+      });
     });
   }
 
@@ -118,10 +235,27 @@ class CloudSyncService implements CloudSyncPort {
     required List<String> localFabrics,
   }) async {
     final userId = await _requireUserId();
+    await _migrateUserScopedRecordsToWorkspace(userId);
+
     final prefs = await SharedPreferences.getInstance();
     final migrationKey = _userMigrationKey(userId);
 
-    if (prefs.getBool(migrationKey) == true) return;
+    final migrationDone = prefs.getBool(migrationKey) == true;
+
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'cloud_sync_service.dart:migrateLocalDataIfNeeded',
+      message: 'Estado migracion local',
+      hypothesisId: 'D',
+      data: {
+        'migrationDone': migrationDone,
+        'localRecordsCount': localRecords.length,
+        'localFabricsCount': localFabrics.length,
+      },
+    );
+    // #endregion
+
+    if (migrationDone) return;
 
     if (localRecords.isNotEmpty) {
       await upsertRecords(localRecords);
@@ -134,11 +268,35 @@ class CloudSyncService implements CloudSyncPort {
     await prefs.setBool(migrationKey, true);
   }
 
+  /// Migra registros historicos por usuario a la coleccion compartida del workspace.
+  Future<void> _migrateUserScopedRecordsToWorkspace(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final migrationKey = _userToWorkspaceMigrationKey(userId);
+    if (prefs.getBool(migrationKey) == true) return;
+
+    await bootstrap();
+
+    final userSnapshot = await _userRecords(userId).get();
+    if (userSnapshot.docs.isEmpty) {
+      await prefs.setBool(migrationKey, true);
+      return;
+    }
+
+    final userRecords = userSnapshot.docs.map(_recordFromDoc).toList();
+    final workspaceSnapshot = await _records.get();
+    final workspaceRecords = workspaceSnapshot.docs.map(_recordFromDoc).toList();
+    final merged = NepRecordMergeHelper.mergeById(workspaceRecords, userRecords);
+
+    await _upsertRecordsToWorkspace(merged);
+
+    await prefs.setBool(migrationKey, true);
+  }
+
   @override
   Future<void> syncFabricsWithLocal(List<String> localFabrics) async {
     await bootstrap();
 
-    final snapshot = await _fabricsDoc.get();
+    final snapshot = await _fabricsDoc.get().timeout(const Duration(seconds: 15));
     final cloudFabrics = _readStringList(snapshot.data()?['items']);
     final merged = _normalizeFabrics([...cloudFabrics, ...localFabrics]);
 
@@ -164,23 +322,49 @@ class CloudSyncService implements CloudSyncPort {
 
   @override
   Future<void> upsertRecord(NepRecord record) async {
-    final userId = await _requireUserId();
-    await _userRecords(userId)
-        .doc(record.id)
-        .set(_recordData(record), SetOptions(merge: true));
+    await bootstrap();
+    try {
+      await _records
+          .doc(record.id)
+          .set(_recordData(record), SetOptions(merge: true));
+      // #region agent log
+      AgentDebugLog.write(
+        location: 'cloud_sync_service.dart:upsertRecord',
+        message: 'Registro guardado en workspace',
+        hypothesisId: 'C',
+        data: {'recordId': record.id},
+      );
+      // #endregion
+    } catch (error) {
+      // #region agent log
+      AgentDebugLog.write(
+        location: 'cloud_sync_service.dart:upsertRecord',
+        message: 'Fallo al guardar registro',
+        hypothesisId: 'C',
+        data: {
+          'recordId': record.id,
+          'error': error.toString(),
+        },
+      );
+      // #endregion
+      rethrow;
+    }
   }
 
   @override
   Future<void> upsertRecords(List<NepRecord> records) async {
-    final userId = await _requireUserId();
+    await bootstrap();
+    await _upsertRecordsToWorkspace(records);
+  }
 
+  Future<void> _upsertRecordsToWorkspace(List<NepRecord> records) async {
     for (var start = 0; start < records.length; start += 450) {
       final batch = _firestore.batch();
       final chunk = records.skip(start).take(450);
 
       for (final record in chunk) {
         batch.set(
-          _userRecords(userId).doc(record.id),
+          _records.doc(record.id),
           _recordData(record),
           SetOptions(merge: true),
         );
@@ -192,14 +376,14 @@ class CloudSyncService implements CloudSyncPort {
 
   @override
   Future<void> deleteRecord(String recordId) async {
-    final userId = await _requireUserId();
-    await _userRecords(userId).doc(recordId).delete();
+    await bootstrap();
+    await _records.doc(recordId).delete();
   }
 
   @override
   Future<void> clearRecords() async {
-    final userId = await _requireUserId();
-    await _deleteCollection(_userRecords(userId));
+    await bootstrap();
+    await _deleteCollection(_records);
   }
 
   @override

@@ -2,13 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
+    show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
+import '../debug/agent_debug_log.dart';
+import '../firebase_options.dart';
 import '../models/export_column.dart';
 import '../models/nep_record.dart';
 import '../models/record_filters.dart';
@@ -31,8 +33,7 @@ class AppState extends ChangeNotifier {
 
   static bool _supportsCloudSync() {
     if (_isRunningInWidgetTest()) return false;
-    if (kIsWeb) return true;
-    return defaultTargetPlatform == TargetPlatform.android;
+    return DefaultFirebaseOptions.isSupported;
   }
 
   static bool _isRunningInWidgetTest() {
@@ -77,6 +78,7 @@ class AppState extends ChangeNotifier {
 
   bool cloudSyncEnabled = false;
   String? cloudSyncError;
+  bool _cloudConnectionInFlight = false;
   StreamSubscription<List<NepRecord>>? _recordsSubscription;
   StreamSubscription<List<String>>? _fabricsSubscription;
 
@@ -209,6 +211,18 @@ class AppState extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
 
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'app_state.dart:loadData',
+      message: 'Inicio carga de datos',
+      hypothesisId: 'A',
+      data: {
+        'cloudSyncServiceNull': cloudSyncService == null,
+        'firebaseSupported': DefaultFirebaseOptions.isSupported,
+      },
+    );
+    // #endregion
+
     await _loadLocalData();
 
     isLoading = false;
@@ -236,10 +250,22 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _connectCloudInBackground() async {
+    if (_cloudConnectionInFlight || cloudSyncEnabled) return;
+    _cloudConnectionInFlight = true;
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'app_state.dart:_connectCloudInBackground',
+      message: 'Iniciando conexion cloud en background',
+      hypothesisId: 'B',
+      runId: 'post-fix',
+    );
+    // #endregion
     try {
       await _loadCloudData();
     } catch (error, stackTrace) {
       _markCloudUnavailable(error, stackTrace);
+    } finally {
+      _cloudConnectionInFlight = false;
     }
   }
 
@@ -317,18 +343,72 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadCloudData() async {
     final cloud = cloudSyncService!;
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'app_state.dart:_loadCloudData',
+      message: 'Antes de bootstrap cloud',
+      hypothesisId: 'B',
+    );
+    // #endregion
     await cloud.bootstrap();
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'app_state.dart:_loadCloudData',
+      message: 'Despues de bootstrap cloud',
+      hypothesisId: 'B',
+    );
+    // #endregion
     cloudSyncEnabled = true;
 
     final localRecords = await _loadLocalRecords();
     final localFabrics = await fabricCatalogService.loadFabrics();
+
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'app_state.dart:_loadCloudData',
+      message: 'Bootstrap cloud OK, iniciando migracion',
+      hypothesisId: 'B',
+      data: {
+        'localRecordsCount': localRecords.length,
+        'localFabricsCount': localFabrics.length,
+      },
+    );
+    // #endregion
+
     await cloud.migrateLocalDataIfNeeded(
       localRecords: localRecords,
       localFabrics: localFabrics,
     );
-    await cloud.syncFabricsWithLocal(localFabrics);
 
-    await _bindCloudSubscriptions(waitForFirstSnapshot: true);
+    // Telas: sincronizar en segundo plano para no bloquear registros.
+    unawaited(
+      cloud.syncFabricsWithLocal(localFabrics).catchError((Object error) {
+        // #region agent log
+        AgentDebugLog.write(
+          location: 'app_state.dart:_loadCloudData',
+          message: 'syncFabricsWithLocal fallo en background',
+          hypothesisId: 'C,E',
+          runId: 'post-fix',
+          data: {'error': error.toString()},
+        );
+        // #endregion
+      }),
+    );
+
+    await _bindCloudSubscriptions(waitForFirstSnapshot: false);
+
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'app_state.dart:_loadCloudData',
+      message: 'Cloud conectado y suscripciones activas',
+      hypothesisId: 'E',
+      data: {
+        'recordsCount': records.length,
+        'fabricsCount': fabrics.length,
+        'cloudSyncEnabled': cloudSyncEnabled,
+      },
+    );
+    // #endregion
   }
 
   Future<void> _bindCloudSubscriptions({
@@ -343,12 +423,28 @@ class AppState extends ChangeNotifier {
 
     _recordsSubscription = cloud.watchRecords().listen(
       (data) {
+        // #region agent log
+        AgentDebugLog.write(
+          location: 'app_state.dart:watchRecords',
+          message: 'Snapshot de registros recibido',
+          hypothesisId: 'D,E',
+          data: {'recordsCount': data.length},
+        );
+        // #endregion
         records = data;
         unawaited(_cacheRecordsLocally(data));
         if (!recordsReady.isCompleted) recordsReady.complete();
         notifyListeners();
       },
       onError: (error) {
+        // #region agent log
+        AgentDebugLog.write(
+          location: 'app_state.dart:watchRecords:onError',
+          message: 'Error en stream de registros',
+          hypothesisId: 'C,E',
+          data: {'error': error.toString()},
+        );
+        // #endregion
         if (!recordsReady.isCompleted) recordsReady.completeError(error);
       },
     );
@@ -400,6 +496,19 @@ class AppState extends ChangeNotifier {
   void _markCloudUnavailable(Object error, StackTrace stackTrace) {
     cloudSyncEnabled = false;
     cloudSyncError = error.toString();
+    // #region agent log
+    AgentDebugLog.write(
+      location: 'app_state.dart:_markCloudUnavailable',
+      message: 'Cloud marcado no disponible',
+      hypothesisId: 'B,C',
+      data: {
+        'errorType': error.runtimeType.toString(),
+        'error': error.toString().length > 200
+            ? error.toString().substring(0, 200)
+            : error.toString(),
+      },
+    );
+    // #endregion
     debugPrint('Sincronizacion en la nube no disponible: $error');
     debugPrint('$stackTrace');
     showMessage('Firebase no disponible: ${_shortCloudError(error)}');
@@ -426,7 +535,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> reconnectCloudIfNeeded() async {
-    if (cloudSyncService == null || cloudSyncEnabled) return;
+    if (cloudSyncService == null ||
+        cloudSyncEnabled ||
+        _cloudConnectionInFlight) {
+      return;
+    }
 
     try {
       await _connectCloudInBackground();
