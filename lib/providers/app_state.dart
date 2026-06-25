@@ -2,14 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
-    show debugPrint, kIsWeb;
+    show debugPrint, defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
-import '../debug/agent_debug_log.dart';
 import '../firebase_options.dart';
 import '../models/export_column.dart';
 import '../models/nep_record.dart';
@@ -18,6 +17,7 @@ import '../models/saved_report.dart';
 import '../services/cloud_sync_port.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/fabric_catalog_service.dart';
+import '../services/lote_trama_catalog_service.dart';
 import '../services/record_import_service.dart';
 import '../services/report_export_service.dart';
 import '../services/report_storage_service.dart';
@@ -44,6 +44,7 @@ class AppState extends ChangeNotifier {
 
   factory AppState({
     FabricCatalogService? fabricCatalogService,
+    LoteTramaCatalogService? loteTramaCatalogService,
     RecordImportService? recordImportService,
     ReportStorageService? reportStorageService,
     ReportExportService? reportExportService,
@@ -55,6 +56,8 @@ class AppState extends ChangeNotifier {
     return AppState._(
       cloudSyncService: syncService,
       fabricCatalogService: fabricCatalogService ?? FabricCatalogService(),
+      loteTramaCatalogService:
+          loteTramaCatalogService ?? LoteTramaCatalogService(),
       recordImportService: recordImportService ?? RecordImportService(),
       reportStorageService:
           reportStorageService ?? ReportStorageService(cloudSync: syncService),
@@ -65,6 +68,7 @@ class AppState extends ChangeNotifier {
   AppState._({
     this.cloudSyncService,
     required this.fabricCatalogService,
+    required this.loteTramaCatalogService,
     required this.recordImportService,
     required this.reportStorageService,
     required this.reportExportService,
@@ -72,6 +76,7 @@ class AppState extends ChangeNotifier {
 
   CloudSyncPort? cloudSyncService;
   final FabricCatalogService fabricCatalogService;
+  final LoteTramaCatalogService loteTramaCatalogService;
   final RecordImportService recordImportService;
   final ReportStorageService reportStorageService;
   final ReportExportService reportExportService;
@@ -85,15 +90,12 @@ class AppState extends ChangeNotifier {
   final RecordFilters filters = RecordFilters();
   final TextEditingController telarController = TextEditingController();
   final TextEditingController nepsController = TextEditingController();
-  final TextEditingController lotePrefixController =
-      TextEditingController(text: loteTramaPrefix);
-  final TextEditingController loteSuffixController = TextEditingController();
   final TextEditingController loteFullController = TextEditingController();
   final TextEditingController manualTelaController = TextEditingController();
-  bool loteFullEntryMode = false;
 
   List<NepRecord> records = [];
   List<String> fabrics = [];
+  List<String> loteTramaPresets = [];
   String? selectedFabric;
   bool useManualFabric = false;
   bool isLoading = true;
@@ -126,9 +128,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> initialize({Uri? launchUri}) async {
     nepsController.addListener(notifyListeners);
-    loteSuffixController.addListener(notifyListeners);
-    loteFullController.addListener(notifyListeners);
-    lotePrefixController.addListener(notifyListeners);
+    loteFullController.addListener(_onLoteFullChanged);
     await loadData();
     if (launchUri != null) {
       await applyLaunchParameters(launchUri);
@@ -157,15 +157,7 @@ class AppState extends ChangeNotifier {
     if (telar != null) telarController.text = telar;
     if (neps != null) nepsController.text = neps;
     if (lote != null) {
-      final parts = LoteTramaHelper.split(
-        lote,
-        fallbackPrefix: lotePrefixController.text,
-      );
-      lotePrefixController.text = parts.prefix;
-      loteSuffixController.text = parts.suffix;
-      loteFullController.text = parts.full;
-      loteFullEntryMode =
-          parts.suffix.isNotEmpty && lote.contains(parts.prefix);
+      loteFullController.text = LoteTramaHelper.normalizeFull(lote);
     }
 
     if (tela != null) {
@@ -190,13 +182,9 @@ class AppState extends ChangeNotifier {
     _recordsSubscription?.cancel();
     _fabricsSubscription?.cancel();
     nepsController.removeListener(notifyListeners);
-    loteSuffixController.removeListener(notifyListeners);
-    loteFullController.removeListener(notifyListeners);
-    lotePrefixController.removeListener(notifyListeners);
+    loteFullController.removeListener(_onLoteFullChanged);
     telarController.dispose();
     nepsController.dispose();
-    lotePrefixController.dispose();
-    loteSuffixController.dispose();
     loteFullController.dispose();
     manualTelaController.dispose();
     super.dispose();
@@ -210,18 +198,6 @@ class AppState extends ChangeNotifier {
   Future<void> loadData() async {
     isLoading = true;
     notifyListeners();
-
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'app_state.dart:loadData',
-      message: 'Inicio carga de datos',
-      hypothesisId: 'A',
-      data: {
-        'cloudSyncServiceNull': cloudSyncService == null,
-        'firebaseSupported': DefaultFirebaseOptions.isSupported,
-      },
-    );
-    // #endregion
 
     await _loadLocalData();
 
@@ -252,14 +228,6 @@ class AppState extends ChangeNotifier {
   Future<void> _connectCloudInBackground() async {
     if (_cloudConnectionInFlight || cloudSyncEnabled) return;
     _cloudConnectionInFlight = true;
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'app_state.dart:_connectCloudInBackground',
-      message: 'Iniciando conexion cloud en background',
-      hypothesisId: 'B',
-      runId: 'post-fix',
-    );
-    // #endregion
     try {
       await _loadCloudData();
     } catch (error, stackTrace) {
@@ -272,58 +240,87 @@ class AppState extends ChangeNotifier {
   Future<void> _loadLocalData() async {
     records = await _loadLocalRecords();
     fabrics = await fabricCatalogService.loadFabrics();
+    loteTramaPresets = await loteTramaCatalogService.loadPresets();
     await _loadLotePreferences();
     _syncFabricSelection();
   }
 
+  void _onLoteFullChanged() {
+    notifyListeners();
+    unawaited(_saveLoteFull());
+  }
+
   Future<void> _loadLotePreferences() async {
     final prefs = await SharedPreferences.getInstance();
+    final savedFull = prefs.getString(loteTramaFullStorageKey);
+    if (savedFull != null && savedFull.trim().isNotEmpty) {
+      loteFullController.text = LoteTramaHelper.normalizeFull(savedFull);
+      return;
+    }
+
+    // Migracion legacy: solo existia el prefijo guardado (sin sufijo persistido).
     final savedPrefix = prefs.getString(loteTramaPrefixStorageKey);
     if (savedPrefix != null && savedPrefix.trim().isNotEmpty) {
-      lotePrefixController.text = LoteTramaHelper.normalizePrefix(savedPrefix);
+      await prefs.remove(loteTramaPrefixStorageKey);
+      await prefs.remove(loteTramaFullEntryStorageKey);
     }
-    loteFullEntryMode = prefs.getBool(loteTramaFullEntryStorageKey) ?? false;
   }
 
-  Future<void> _saveLotePreferences() async {
+  Future<void> _saveLoteFull() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      loteTramaPrefixStorageKey,
-      LoteTramaHelper.normalizePrefix(lotePrefixController.text),
-    );
-    await prefs.setBool(loteTramaFullEntryStorageKey, loteFullEntryMode);
+    final full = LoteTramaHelper.normalizeFull(loteFullController.text);
+    if (full.isEmpty) {
+      await prefs.remove(loteTramaFullStorageKey);
+    } else {
+      await prefs.setString(loteTramaFullStorageKey, full);
+    }
   }
 
-  void setLoteFullEntryMode(bool value) {
-    if (loteFullEntryMode == value) return;
-    loteFullEntryMode = value;
-    unawaited(_saveLotePreferences());
+  void applyLoteTramaPreset(String fullLote) {
+    final normalized = LoteTramaCatalogService.normalize(fullLote);
+    if (normalized.isEmpty) return;
+
+    loteFullController.text = normalized;
     notifyListeners();
+    unawaited(_saveLoteFull());
   }
 
-  void persistLotePrefix() {
-    unawaited(_saveLotePreferences());
+  Future<void> addLoteTramaPreset(String value) async {
+    final normalized = LoteTramaCatalogService.normalize(value);
+    if (normalized.isEmpty) {
+      showMessage('Ingrese un lote de trama valido.');
+      return;
+    }
+    if (!LoteTramaHelper.isValidFull(normalized)) {
+      showMessage('El lote de trama no tiene un formato valido.');
+      return;
+    }
+
+    if (loteTramaPresets.contains(normalized)) {
+      showMessage('Ese lote ya existe en la lista.');
+      applyLoteTramaPreset(normalized);
+      return;
+    }
+
+    loteTramaPresets = [...loteTramaPresets, normalized]..sort();
+    await loteTramaCatalogService.savePresets(loteTramaPresets);
+    applyLoteTramaPreset(normalized);
+    showMessage('Lote $normalized agregado a la lista.');
+  }
+
+  Future<void> removeLoteTramaPreset(String value) async {
+    final normalized = LoteTramaCatalogService.normalize(value);
+    loteTramaPresets =
+        loteTramaPresets.where((item) => item != normalized).toList();
+    await loteTramaCatalogService.savePresets(loteTramaPresets);
     notifyListeners();
+    showMessage('Lote $normalized eliminado de la lista.');
   }
 
   String? resolveLoteTramaForSave() {
-    if (loteFullEntryMode) {
-      final full = LoteTramaHelper.normalizeFull(loteFullController.text);
-      if (!LoteTramaHelper.isValidFull(full)) return null;
-      return full;
-    }
-
-    if (!LoteTramaHelper.isValidParts(
-      prefix: lotePrefixController.text,
-      suffix: loteSuffixController.text,
-    )) {
-      return null;
-    }
-
-    return LoteTramaHelper.buildFull(
-      prefix: lotePrefixController.text,
-      suffix: loteSuffixController.text,
-    );
+    final full = LoteTramaHelper.normalizeFull(loteFullController.text);
+    if (!LoteTramaHelper.isValidFull(full)) return null;
+    return full;
   }
 
   Future<List<NepRecord>> _loadLocalRecords() async {
@@ -343,37 +340,11 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadCloudData() async {
     final cloud = cloudSyncService!;
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'app_state.dart:_loadCloudData',
-      message: 'Antes de bootstrap cloud',
-      hypothesisId: 'B',
-    );
-    // #endregion
     await cloud.bootstrap();
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'app_state.dart:_loadCloudData',
-      message: 'Despues de bootstrap cloud',
-      hypothesisId: 'B',
-    );
-    // #endregion
     cloudSyncEnabled = true;
 
     final localRecords = await _loadLocalRecords();
     final localFabrics = await fabricCatalogService.loadFabrics();
-
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'app_state.dart:_loadCloudData',
-      message: 'Bootstrap cloud OK, iniciando migracion',
-      hypothesisId: 'B',
-      data: {
-        'localRecordsCount': localRecords.length,
-        'localFabricsCount': localFabrics.length,
-      },
-    );
-    // #endregion
 
     await cloud.migrateLocalDataIfNeeded(
       localRecords: localRecords,
@@ -382,33 +353,10 @@ class AppState extends ChangeNotifier {
 
     // Telas: sincronizar en segundo plano para no bloquear registros.
     unawaited(
-      cloud.syncFabricsWithLocal(localFabrics).catchError((Object error) {
-        // #region agent log
-        AgentDebugLog.write(
-          location: 'app_state.dart:_loadCloudData',
-          message: 'syncFabricsWithLocal fallo en background',
-          hypothesisId: 'C,E',
-          runId: 'post-fix',
-          data: {'error': error.toString()},
-        );
-        // #endregion
-      }),
+      cloud.syncFabricsWithLocal(localFabrics).catchError((_) {}),
     );
 
     await _bindCloudSubscriptions(waitForFirstSnapshot: false);
-
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'app_state.dart:_loadCloudData',
-      message: 'Cloud conectado y suscripciones activas',
-      hypothesisId: 'E',
-      data: {
-        'recordsCount': records.length,
-        'fabricsCount': fabrics.length,
-        'cloudSyncEnabled': cloudSyncEnabled,
-      },
-    );
-    // #endregion
   }
 
   Future<void> _bindCloudSubscriptions({
@@ -423,28 +371,12 @@ class AppState extends ChangeNotifier {
 
     _recordsSubscription = cloud.watchRecords().listen(
       (data) {
-        // #region agent log
-        AgentDebugLog.write(
-          location: 'app_state.dart:watchRecords',
-          message: 'Snapshot de registros recibido',
-          hypothesisId: 'D,E',
-          data: {'recordsCount': data.length},
-        );
-        // #endregion
         records = data;
         unawaited(_cacheRecordsLocally(data));
         if (!recordsReady.isCompleted) recordsReady.complete();
         notifyListeners();
       },
       onError: (error) {
-        // #region agent log
-        AgentDebugLog.write(
-          location: 'app_state.dart:watchRecords:onError',
-          message: 'Error en stream de registros',
-          hypothesisId: 'C,E',
-          data: {'error': error.toString()},
-        );
-        // #endregion
         if (!recordsReady.isCompleted) recordsReady.completeError(error);
       },
     );
@@ -496,19 +428,6 @@ class AppState extends ChangeNotifier {
   void _markCloudUnavailable(Object error, StackTrace stackTrace) {
     cloudSyncEnabled = false;
     cloudSyncError = error.toString();
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'app_state.dart:_markCloudUnavailable',
-      message: 'Cloud marcado no disponible',
-      hypothesisId: 'B,C',
-      data: {
-        'errorType': error.runtimeType.toString(),
-        'error': error.toString().length > 200
-            ? error.toString().substring(0, 200)
-            : error.toString(),
-      },
-    );
-    // #endregion
     debugPrint('Sincronizacion en la nube no disponible: $error');
     debugPrint('$stackTrace');
     showMessage('Firebase no disponible: ${_shortCloudError(error)}');
@@ -758,12 +677,29 @@ class AppState extends ChangeNotifier {
   Future<void> exportCsv({Set<ExportColumn>? columns}) async {
     final selected = columns ?? exportColumns;
     await runExport(() async {
+      final content = reportExportService.buildCsvText(
+        visibleRecords,
+        columns: selected,
+      );
+      final fileName = 'reporte_neps_$timestamp.csv';
+      if (FileShareHelper.isDesktopNative) {
+        final saved = await FileShareHelper.promptSaveBytes(
+          bytes: Uint8List.fromList(utf8.encode('\uFEFF$content')),
+          fileName: fileName,
+          dialogTitle: 'Guardar reporte CSV',
+          allowedExtensions: const ['csv'],
+        );
+        showMessage(
+          saved
+              ? 'Reporte CSV guardado correctamente.'
+              : 'Exportación CSV cancelada.',
+        );
+        return;
+      }
+
       await FileShareHelper.shareTextContent(
-        content: reportExportService.buildCsvText(
-          visibleRecords,
-          columns: selected,
-        ),
-        fileName: 'reporte_neps_$timestamp.csv',
+        content: content,
+        fileName: fileName,
         mimeType: 'text/csv',
         shareText: 'Reporte CSV de Neps',
         bom: true,
@@ -783,9 +719,26 @@ class AppState extends ChangeNotifier {
         showMessage('No se pudo generar el archivo Excel.');
         return;
       }
+
+      final fileName = 'reporte_neps_$timestamp.xlsx';
+      if (FileShareHelper.isDesktopNative) {
+        final saved = await FileShareHelper.promptSaveBytes(
+          bytes: bytes,
+          fileName: fileName,
+          dialogTitle: 'Guardar reporte Excel',
+          allowedExtensions: const ['xlsx'],
+        );
+        showMessage(
+          saved
+              ? 'Reporte Excel guardado correctamente.'
+              : 'Exportación Excel cancelada.',
+        );
+        return;
+      }
+
       await FileShareHelper.shareBytes(
         bytes: bytes,
-        fileName: 'reporte_neps_$timestamp.xlsx',
+        fileName: fileName,
         mimeType: FileShareHelper.excelMimeType,
         shareText: 'Reporte Excel de Neps',
       );
@@ -807,10 +760,39 @@ class AppState extends ChangeNotifier {
   Future<void> exportPdf({Set<ExportColumn>? columns}) async {
     await runExport(() async {
       final bytes = await buildPdfBytes(columns: columns);
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'reporte_neps_$timestamp.pdf',
-      );
+      final fileName = 'reporte_neps_$timestamp.pdf';
+
+      if (FileShareHelper.isDesktopNative) {
+        final saved = await FileShareHelper.promptSaveBytes(
+          bytes: bytes,
+          fileName: fileName,
+          dialogTitle: 'Guardar reporte PDF',
+          allowedExtensions: const ['pdf'],
+        );
+        showMessage(
+          saved
+              ? 'Reporte PDF guardado correctamente.'
+              : 'Exportación PDF cancelada.',
+        );
+        return;
+      }
+
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        await FileShareHelper.shareBytes(
+          bytes: bytes,
+          fileName: fileName,
+          mimeType: 'application/pdf',
+          shareText: 'Reporte PDF de Neps',
+        );
+      } else {
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: fileName,
+        );
+      }
+      showMessage('Reporte PDF listo para compartir o descargar.');
     });
   }
 
@@ -990,7 +972,7 @@ class AppState extends ChangeNotifier {
     final loteTrama = resolveLoteTramaForSave();
     if (loteTrama == null) {
       showMessage(
-          'Complete el lote de trama (base y sufijo, o lote completo).');
+          'Complete el lote de trama (ingrese el lote completo).');
       return;
     }
 
@@ -1014,11 +996,7 @@ class AppState extends ChangeNotifier {
     await _persistRecord(record);
     telarController.clear();
     nepsController.clear();
-    if (!loteFullEntryMode) {
-      loteSuffixController.clear();
-    } else {
-      loteFullController.clear();
-    }
+    loteFullController.clear();
     if (!cloudSyncEnabled) {
       notifyListeners();
     }

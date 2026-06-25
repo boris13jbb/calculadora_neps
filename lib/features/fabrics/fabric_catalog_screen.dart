@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/layout/responsive_layout.dart';
+import '../../core/theme/app_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_input_decoration.dart';
 import '../../core/widgets/app_page.dart';
@@ -139,45 +140,45 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
 
     return AppPage(
       title: 'Catalogo de telas',
-      subtitle: phone ? null : 'Importar, exportar y administrar tejidos',
+      subtitle: phone
+          ? 'Importar, exportar y administrar tejidos'
+          : 'Gestiona tu catalogo de tejidos de forma rapida y segura.',
+      breadcrumb: const ['Inicio', 'Telas', 'Catalogo de telas'],
       fillViewport: true,
       compactPadding: true,
       denseOnPhone: true,
+      actions: [
+        _ActionChip(
+          compact: phone,
+          color: AppColors.accent,
+          foreground: AppColors.textDark,
+          onPressed: isBusy ? null : () => _importExcel(appState),
+          icon: isImporting ? null : Icons.upload_file,
+          loading: isImporting,
+          label: phone ? 'Importar' : 'Importar Excel',
+        ),
+        _ActionChip(
+          compact: phone,
+          color: AppColors.primaryGreen,
+          onPressed: isBusy
+              ? null
+              : () => _exportFabrics(appState, asExcel: true),
+          icon: Icons.download,
+          label: phone ? 'Excel' : 'Exportar Excel',
+        ),
+        _ActionChip(
+          compact: phone,
+          color: AppColors.primaryGreen,
+          onPressed: isBusy
+              ? null
+              : () => _exportFabrics(appState, asExcel: false),
+          icon: Icons.table_chart,
+          label: phone ? 'CSV' : 'Exportar CSV',
+        ),
+      ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _ActionChip(
-                compact: phone,
-                onPressed: isBusy ? null : () => _importExcel(appState),
-                icon: isImporting ? null : Icons.upload_file,
-                loading: isImporting,
-                label: phone ? 'Importar' : 'Importar Excel',
-              ),
-              _ActionChip(
-                compact: phone,
-                color: AppColors.primaryGreen,
-                onPressed: isBusy
-                    ? null
-                    : () => _exportFabrics(appState, asExcel: true),
-                icon: Icons.download,
-                label: phone ? 'Excel' : 'Exportar Excel',
-              ),
-              _ActionChip(
-                compact: phone,
-                color: AppColors.primaryGreen,
-                onPressed: isBusy
-                    ? null
-                    : () => _exportFabrics(appState, asExcel: false),
-                icon: Icons.table_chart,
-                label: phone ? 'CSV' : 'Exportar CSV',
-              ),
-            ],
-          ),
-          SizedBox(height: spacing),
           phone
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -216,6 +217,10 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
                     ),
                     const SizedBox(width: 8),
                     IconButton.filled(
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: AppColors.textDark,
+                      ),
                       onPressed: () => _addManual(appState),
                       icon: const Icon(Icons.add),
                       tooltip: 'Agregar',
@@ -271,11 +276,7 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
           const SizedBox(height: 6),
           Expanded(
             child: Container(
-              decoration: BoxDecoration(
-                color: AppColors.surfaceAlt,
-                borderRadius: BorderRadius.circular(sectionRadius(context)),
-                border: Border.all(color: AppColors.border),
-              ),
+              decoration: AppDecorations.card(color: AppColors.surface),
               child: appState.fabrics.isEmpty
                   ? const Center(
                       child: Padding(
@@ -342,6 +343,7 @@ class _ActionChip extends StatelessWidget {
     required this.label,
     this.icon,
     this.color,
+    this.foreground,
     this.compact = false,
     this.loading = false,
   });
@@ -350,37 +352,48 @@ class _ActionChip extends StatelessWidget {
   final String label;
   final IconData? icon;
   final Color? color;
+  final Color? foreground;
   final bool compact;
   final bool loading;
 
   @override
   Widget build(BuildContext context) {
+    final fg = foreground ?? Colors.white;
+
     if (compact) {
-      return FilledButton(
+      return FilledButton.icon(
         style: FilledButton.styleFrom(
           backgroundColor: color,
+          foregroundColor: fg,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           minimumSize: const Size(0, 36),
         ),
         onPressed: onPressed,
-        child: loading
-            ? const SizedBox(
+        icon: loading
+            ? SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(strokeWidth: 2, color: fg),
               )
-            : Text(label, style: const TextStyle(fontSize: 12)),
+            : Icon(icon ?? Icons.circle, size: 18),
+        label: Text(
+          loading ? 'Procesando...' : label,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+        ),
       );
     }
 
     return FilledButton.icon(
-      style: FilledButton.styleFrom(backgroundColor: color),
+      style: FilledButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: fg,
+      ),
       onPressed: onPressed,
       icon: loading
-          ? const SizedBox(
+          ? SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: CircularProgressIndicator(strokeWidth: 2, color: fg),
             )
           : Icon(icon ?? Icons.circle),
       label: Text(loading ? 'Procesando...' : label),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
+import '../theme/app_styles.dart';
 import '../theme/app_theme.dart';
 import 'confirm_dialogs.dart';
 
@@ -33,11 +34,7 @@ class CompactRecordsPanel extends StatelessWidget {
     );
 
     return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
+      decoration: AppDecorations.card(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -50,11 +47,37 @@ class CompactRecordsPanel extends StatelessWidget {
           const Divider(height: 1),
           Expanded(
             child: sorted.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Sin registros. Agregue el primero con el formulario.',
-                      style: TextStyle(color: AppColors.muted, fontSize: 12),
-                      textAlign: TextAlign.center,
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.assignment_outlined,
+                            size: 48,
+                            color: AppColors.muted.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'Aun no hay registros.',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Agregue el primer registro usando el formulario para comenzar.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.muted.withValues(alpha: 0.9),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   )
                 : LayoutBuilder(

@@ -16,13 +16,13 @@ class ReportShareHelper {
 
   final ReportExportService exportService;
 
-  Future<List<XFile>> buildShareFiles({
+  Future<List<PreparedShareFile>> buildShareFiles({
     required List<SavedReport> reports,
     required Set<ReportShareFormat> formats,
     Set<ExportColumn>? columns,
   }) async {
     final selected = columns ?? ExportColumn.defaultSelection();
-    final files = <XFile>[];
+    final files = <PreparedShareFile>[];
 
     for (final report in reports) {
       final safeName = _safeFileName(report.name);
@@ -33,11 +33,15 @@ class ReportShareHelper {
           report.records,
           columns: selected,
         );
+        final fileName = '${safeName}_$stamp.csv';
         files.add(
-          XFile.fromData(
-            Uint8List.fromList(utf8.encode('\uFEFF$content')),
-            mimeType: 'text/csv',
-            name: '${safeName}_$stamp.csv',
+          PreparedShareFile(
+            fileName: fileName,
+            file: XFile.fromData(
+              Uint8List.fromList(utf8.encode('\uFEFF$content')),
+              mimeType: 'text/csv',
+              name: fileName,
+            ),
           ),
         );
       }
@@ -46,11 +50,15 @@ class ReportShareHelper {
         final bytes =
             exportService.buildExcelBytes(report.records, columns: selected);
         if (bytes != null) {
+          final fileName = '${safeName}_$stamp.xlsx';
           files.add(
-            XFile.fromData(
-              bytes,
-              mimeType: FileShareHelper.excelMimeType,
-              name: '${safeName}_$stamp.xlsx',
+            PreparedShareFile(
+              fileName: fileName,
+              file: XFile.fromData(
+                bytes,
+                mimeType: FileShareHelper.excelMimeType,
+                name: fileName,
+              ),
             ),
           );
         }
@@ -65,11 +73,15 @@ class ReportShareHelper {
               ? null
               : FilterDescriptionHelper.describe(report.appliedFilters!),
         );
+        final fileName = '${safeName}_$stamp.pdf';
         files.add(
-          XFile.fromData(
-            bytes,
-            mimeType: 'application/pdf',
-            name: '${safeName}_$stamp.pdf',
+          PreparedShareFile(
+            fileName: fileName,
+            file: XFile.fromData(
+              bytes,
+              mimeType: 'application/pdf',
+              name: fileName,
+            ),
           ),
         );
       }

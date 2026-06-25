@@ -79,44 +79,41 @@ class _RecordsScreenState extends State<RecordsScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final phone = isPhoneLayout(context);
-    final spacing = screenSpacing(context);
 
     return AppPage(
       title: 'Registros',
       subtitle: phone
-          ? 'Su tabla personal'
-          : 'Su tabla personal: filtros, importacion y resumen',
+          ? 'Gestiona y consulta tus registros'
+          : 'Gestiona y consulta los registros de neps y produccion de cada tela.',
+      breadcrumb: const ['Inicio', 'Registros'],
       fillViewport: true,
       maxContentWidth: 1400,
       compactPadding: true,
       denseOnPhone: true,
+      actions: [
+        _ActionChip(
+          compact: phone,
+          color: AppColors.accent,
+          foreground: AppColors.textDark,
+          onPressed: isImporting ? null : () => _importRecords(appState),
+          icon: isImporting ? null : Icons.upload_file,
+          loading: isImporting,
+          label: phone ? 'Importar' : 'Importar CSV/Excel',
+        ),
+        _ActionChip(
+          compact: phone,
+          color: AppColors.danger,
+          outlined: true,
+          onPressed: appState.records.isEmpty
+              ? null
+              : () => _clearTable(appState),
+          icon: Icons.delete_sweep,
+          label: phone ? 'Vaciar' : 'Vaciar tabla',
+        ),
+      ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _ActionChip(
-                compact: phone,
-                color: AppColors.primaryBlue,
-                onPressed: isImporting ? null : () => _importRecords(appState),
-                icon: isImporting ? null : Icons.upload_file,
-                loading: isImporting,
-                label: phone ? 'Importar' : 'Importar CSV/Excel',
-              ),
-              _ActionChip(
-                compact: phone,
-                color: AppColors.danger,
-                onPressed: appState.records.isEmpty
-                    ? null
-                    : () => _clearTable(appState),
-                icon: Icons.delete_sweep,
-                label: phone ? 'Vaciar' : 'Vaciar tabla',
-              ),
-            ],
-          ),
-          SizedBox(height: spacing),
           if (phone)
             Expanded(
               child: Column(
@@ -225,34 +222,63 @@ class _ActionChip extends StatelessWidget {
     required this.label,
     this.icon,
     this.color,
+    this.foreground,
     this.compact = false,
     this.loading = false,
+    this.outlined = false,
   });
 
   final VoidCallback? onPressed;
   final String label;
   final IconData? icon;
   final Color? color;
+  final Color? foreground;
   final bool compact;
   final bool loading;
+  final bool outlined;
 
   @override
   Widget build(BuildContext context) {
+    final fg = foreground ?? Colors.white;
+
+    if (outlined) {
+      return OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: color ?? AppColors.danger,
+          side: BorderSide(color: color ?? AppColors.danger),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 12 : 16,
+            vertical: compact ? 10 : 12,
+          ),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon ?? Icons.circle, size: compact ? 18 : 20),
+        label: Text(
+          label,
+          style: TextStyle(
+            fontSize: compact ? 12 : 14,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+    }
+
     if (compact) {
       return FilledButton.icon(
         style: FilledButton.styleFrom(
           backgroundColor: color,
+          foregroundColor: fg,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           minimumSize: const Size(0, 40),
         ),
         onPressed: onPressed,
         icon: loading
-            ? const SizedBox(
+            ? SizedBox(
                 width: 16,
                 height: 16,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: fg,
                 ),
               )
             : Icon(icon ?? Icons.circle, size: 18),
@@ -264,15 +290,18 @@ class _ActionChip extends StatelessWidget {
     }
 
     return FilledButton.icon(
-      style: FilledButton.styleFrom(backgroundColor: color),
+      style: FilledButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: fg,
+      ),
       onPressed: onPressed,
       icon: loading
-          ? const SizedBox(
+          ? SizedBox(
               width: 18,
               height: 18,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
-                color: Colors.white,
+                color: fg,
               ),
             )
           : Icon(icon ?? Icons.circle),

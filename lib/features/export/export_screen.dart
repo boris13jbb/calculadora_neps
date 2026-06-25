@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../../core/layout/responsive_layout.dart';
 
+import '../../core/theme/app_styles.dart';
+
 import '../../core/theme/app_theme.dart';
 
 import '../../core/widgets/app_page.dart';
@@ -34,8 +36,9 @@ class ExportScreen extends StatelessWidget {
     return AppPage(
       title: 'Exportar y compartir',
       subtitle: phone
-          ? null
-          : 'Generar archivos e informes de los registros visibles',
+          ? 'Generar archivos e informes'
+          : 'Selecciona los datos y el formato para generar o compartir tu informe.',
+      breadcrumb: const ['Inicio', 'Exportar y compartir'],
       fillViewport: phone,
       compactPadding: true,
       denseOnPhone: true,
@@ -214,36 +217,68 @@ class _DataInfoCard extends StatelessWidget {
     final phone = isPhoneLayout(context);
 
     return Container(
-      padding: pad,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Datos a exportar',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: phone ? 13 : 15,
-            ),
-          ),
-          SizedBox(height: phone ? 4 : 8),
-          Text(
-            'Visibles: ${appState.visibleRecords.length} / ${appState.records.length}',
-            style: TextStyle(fontSize: phone ? 12 : 14),
-          ),
-          if (appState.filters.hasActiveFilters)
-            Text(
-              'Filtros activos de Registros aplicados.',
-              style: TextStyle(
-                color: AppColors.muted,
-                fontSize: phone ? 11 : 12,
+      decoration: AppDecorations.card(color: AppColors.formulaBg),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 4, color: AppColors.accent),
+            Expanded(
+              child: Padding(
+                padding: pad,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.description_outlined,
+                        color: AppColors.accentDark,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Datos a exportar',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: phone ? 13 : 15,
+                            ),
+                          ),
+                          SizedBox(height: phone ? 4 : 8),
+                          Text(
+                            'Visibles: ${appState.visibleRecords.length} / ${appState.records.length}',
+                            style: TextStyle(
+                              fontSize: phone ? 12 : 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (appState.filters.hasActiveFilters)
+                            Text(
+                              'Filtros activos de Registros aplicados.',
+                              style: TextStyle(
+                                color: AppColors.muted,
+                                fontSize: phone ? 11 : 12,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -269,11 +304,7 @@ class _ColumnSelectorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: pad,
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: AppColors.border),
-      ),
+      decoration: AppDecorations.card(),
       child: ExportColumnSelector(
         compact: compact,
         selected: appState.exportColumns,

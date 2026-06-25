@@ -10,37 +10,38 @@ import '../../features/reports/reports_screen.dart';
 import '../../providers/app_state.dart';
 import '../layout/breakpoints.dart';
 import '../theme/app_theme.dart';
+import 'vicunha_sidebar.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key});
 
   static const _destinations = [
-    _NavItem(
+    VicunhaNavDestination(
       label: 'Inicio',
       icon: Icons.home_outlined,
       selectedIcon: Icons.home,
     ),
-    _NavItem(
+    VicunhaNavDestination(
       label: 'Captura',
       icon: Icons.add_circle_outline,
       selectedIcon: Icons.add_circle,
     ),
-    _NavItem(
+    VicunhaNavDestination(
       label: 'Registros',
       icon: Icons.table_chart_outlined,
       selectedIcon: Icons.table_chart,
     ),
-    _NavItem(
+    VicunhaNavDestination(
       label: 'Telas',
       icon: Icons.texture_outlined,
       selectedIcon: Icons.texture,
     ),
-    _NavItem(
+    VicunhaNavDestination(
       label: 'Informes',
       icon: Icons.folder_special_outlined,
       selectedIcon: Icons.folder_special,
     ),
-    _NavItem(
+    VicunhaNavDestination(
       label: 'Exportar',
       icon: Icons.ios_share_outlined,
       selectedIcon: Icons.ios_share,
@@ -62,6 +63,7 @@ class AppShell extends StatelessWidget {
 
     if (appState.isLoading) {
       return const Scaffold(
+        backgroundColor: AppColors.backgroundGradientStart,
         body: Center(child: CircularProgressIndicator()),
       );
     }
@@ -72,38 +74,16 @@ class AppShell extends StatelessWidget {
 
         if (useRail) {
           return Scaffold(
+            backgroundColor: AppColors.backgroundGradientStart,
             body: SafeArea(
               child: Row(
                 children: [
-                  NavigationRail(
+                  VicunhaSidebar(
                     extended: constraints.maxWidth >= AppBreakpoints.wide,
-                    minExtendedWidth: 180,
                     selectedIndex: appState.navigationIndex,
                     onDestinationSelected: appState.setNavigationIndex,
-                    labelType: constraints.maxWidth >= AppBreakpoints.wide
-                        ? NavigationRailLabelType.none
-                        : NavigationRailLabelType.all,
-                    backgroundColor: AppColors.header,
-                    indicatorColor: AppColors.accent,
-                    leading: const Padding(
-                      padding: EdgeInsets.only(top: 16, bottom: 8),
-                      child: Icon(
-                        Icons.calculate_outlined,
-                        color: AppColors.accent,
-                        size: 32,
-                      ),
-                    ),
-                    destinations: _destinations
-                        .map(
-                          (item) => NavigationRailDestination(
-                            icon: Icon(item.icon),
-                            selectedIcon: Icon(item.selectedIcon),
-                            label: Text(item.label),
-                          ),
-                        )
-                        .toList(),
+                    destinations: _destinations,
                   ),
-                  const VerticalDivider(width: 1, thickness: 1),
                   Expanded(
                     child: IndexedStack(
                       index: appState.navigationIndex,
@@ -117,6 +97,7 @@ class AppShell extends StatelessWidget {
         }
 
         return Scaffold(
+          backgroundColor: AppColors.backgroundGradientStart,
           body: SafeArea(
             child: IndexedStack(
               index: appState.navigationIndex,
@@ -142,16 +123,4 @@ class AppShell extends StatelessWidget {
       },
     );
   }
-}
-
-class _NavItem {
-  const _NavItem({
-    required this.label,
-    required this.icon,
-    required this.selectedIcon,
-  });
-
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
 }

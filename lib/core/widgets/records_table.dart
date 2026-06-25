@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
 import '../layout/breakpoints.dart';
+import '../theme/app_styles.dart';
 import '../theme/app_theme.dart';
 import 'confirm_dialogs.dart';
 
@@ -26,28 +27,30 @@ class RecordsTable extends StatelessWidget {
       builder: (context, constraints) {
         final useMobileList = constraints.maxWidth < AppBreakpoints.phone;
 
-        return Container(
+        final tableHeight =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : null;
+
+        return SizedBox(
+          height: tableHeight,
           width: double.infinity,
-          decoration: BoxDecoration(
-            color: AppColors.surfaceAlt,
-            borderRadius: BorderRadius.circular(useMobileList ? 10 : 18),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(useMobileList ? 10 : 18),
-            child: useMobileList
-                ? _MobileRecordsList(
-                    appState: appState,
-                    records: records,
-                    onDelete: onDelete,
-                    onEdit: onEdit,
-                  )
-                : _DesktopRecordsTable(
-                    appState: appState,
-                    records: records,
-                    onDelete: onDelete,
-                    onEdit: onEdit,
-                  ),
+          child: Container(
+            decoration: AppDecorations.card(color: AppColors.surface),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(useMobileList ? 10 : 18),
+              child: useMobileList
+                  ? _MobileRecordsList(
+                      appState: appState,
+                      records: records,
+                      onDelete: onDelete,
+                      onEdit: onEdit,
+                    )
+                  : _DesktopRecordsTable(
+                      appState: appState,
+                      records: records,
+                      onDelete: onDelete,
+                      onEdit: onEdit,
+                    ),
+            ),
           ),
         );
       },
@@ -71,12 +74,27 @@ class _MobileRecordsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (records.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(24),
+      return Padding(
+        padding: const EdgeInsets.all(24),
         child: Center(
-          child: Text(
-            'Sin datos para mostrar.',
-            style: TextStyle(color: AppColors.muted, fontSize: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.inbox_outlined,
+                size: 40,
+                color: AppColors.muted.withValues(alpha: 0.45),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Sin datos para mostrar.',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textDark,
+                  fontSize: 13,
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -178,6 +196,49 @@ class _DesktopRecordsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (records.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _DesktopTableHeader(),
+          Expanded(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.inbox_outlined,
+                      size: 56,
+                      color: AppColors.muted.withValues(alpha: 0.45),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No hay registros para mostrar.',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Aun no se han importado datos.',
+                      style: TextStyle(
+                        color: AppColors.muted.withValues(alpha: 0.9),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     return SingleChildScrollView(
       primary: false,
       child: SingleChildScrollView(
@@ -202,22 +263,7 @@ class _DesktopRecordsTable extends StatelessWidget {
               DataColumn(label: Text('MTS CALCULADOS\nNEPS / 0.09')),
               DataColumn(label: Text('ACCION')),
             ],
-            rows: records.isEmpty
-                ? [
-                    const DataRow(
-                      cells: [
-                        DataCell(Text('-')),
-                        DataCell(Text('-')),
-                        DataCell(Text('-')),
-                        DataCell(Text('Sin datos')),
-                        DataCell(Text('-')),
-                        DataCell(Text('-')),
-                        DataCell(Text('-')),
-                        DataCell(Text('-')),
-                      ],
-                    ),
-                  ]
-                : List.generate(records.length, (index) {
+            rows: List.generate(records.length, (index) {
                     final item = records[index];
                     return DataRow(
                       cells: [
@@ -287,4 +333,37 @@ class _DesktopRecordsTable extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DesktopTableHeader extends StatelessWidget {
+  const _DesktopTableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.header,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: const Row(
+        children: [
+          SizedBox(width: 36, child: Text('#', style: _headerStyle)),
+          Expanded(flex: 2, child: Text('FECHA', style: _headerStyle)),
+          Expanded(flex: 2, child: Text('LOTE DE TRAMA', style: _headerStyle)),
+          Expanded(flex: 2, child: Text('TELA', style: _headerStyle)),
+          Expanded(child: Text('TELAR', style: _headerStyle)),
+          Expanded(child: Text('NEPS', style: _headerStyle)),
+          Expanded(
+            flex: 2,
+            child: Text('MTS CALCULADOS', style: _headerStyle),
+          ),
+          SizedBox(width: 88, child: Text('ACCION', style: _headerStyle)),
+        ],
+      ),
+    );
+  }
+
+  static const _headerStyle = TextStyle(
+    color: Color(0xFFF7EAC5),
+    fontWeight: FontWeight.w900,
+    fontSize: 11,
+  );
 }

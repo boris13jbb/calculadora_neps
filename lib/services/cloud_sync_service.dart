@@ -6,7 +6,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
-import '../debug/agent_debug_log.dart';
 import '../firebase_options.dart';
 import '../models/nep_record.dart';
 import '../utils/firestore_json_helper.dart';
@@ -45,14 +44,6 @@ class CloudSyncService implements CloudSyncPort {
   }
 
   Future<void> _doBootstrap() async {
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'cloud_sync_service.dart:_doBootstrap',
-      message: 'Inicio bootstrap Firebase',
-      hypothesisId: 'B',
-      data: {'firebaseAppsEmpty': Firebase.apps.isEmpty},
-    );
-    // #endregion
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
@@ -62,14 +53,6 @@ class CloudSyncService implements CloudSyncPort {
     _firestore.settings = const Settings(
       persistenceEnabled: false,
     );
-
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'cloud_sync_service.dart:_doBootstrap',
-      message: 'Firebase.initializeApp OK, iniciando auth anonima',
-      hypothesisId: 'B',
-    );
-    // #endregion
 
     if (FirebaseAuth.instance.currentUser == null) {
       await FirebaseAuth.instance.signInAnonymously().timeout(
@@ -82,16 +65,6 @@ class CloudSyncService implements CloudSyncPort {
       );
     }
 
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'cloud_sync_service.dart:_doBootstrap',
-      message: 'Auth anonima completada',
-      hypothesisId: 'B',
-      runId: 'post-fix',
-      data: {'hasUserId': FirebaseAuth.instance.currentUser != null},
-    );
-    // #endregion
-
     _userId = FirebaseAuth.instance.currentUser?.uid;
     if (_userId == null) {
       throw StateError('No se pudo autenticar el usuario para sincronizar.');
@@ -102,18 +75,6 @@ class CloudSyncService implements CloudSyncPort {
 
     _bootstrapped = true;
     _bootstrapFuture = null;
-
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'cloud_sync_service.dart:_doBootstrap',
-      message: 'Firebase bootstrap completado',
-      hypothesisId: 'B',
-      data: {
-        'hasUserId': _userId != null,
-        'userIdLength': _userId?.length ?? 0,
-      },
-    );
-    // #endregion
   }
 
   Future<void> _writeWorkspaceMetadata() async {
@@ -129,25 +90,7 @@ class CloudSyncService implements CloudSyncPort {
             SetOptions(merge: true),
           )
           .timeout(timeout);
-
-      // #region agent log
-      AgentDebugLog.write(
-        location: 'cloud_sync_service.dart:_writeWorkspaceMetadata',
-        message: 'Workspace doc escrito',
-        hypothesisId: 'C',
-        runId: 'post-fix',
-      );
-      // #endregion
-    } catch (error) {
-      // #region agent log
-      AgentDebugLog.write(
-        location: 'cloud_sync_service.dart:_writeWorkspaceMetadata',
-        message: 'Fallo al escribir workspace doc (no bloqueante)',
-        hypothesisId: 'C',
-        runId: 'post-fix',
-        data: {'error': error.toString()},
-      );
-      // #endregion
+    } catch (_) {
     }
 
     final userId = _userId;
@@ -164,25 +107,7 @@ class CloudSyncService implements CloudSyncPort {
             SetOptions(merge: true),
           )
           .timeout(timeout);
-
-      // #region agent log
-      AgentDebugLog.write(
-        location: 'cloud_sync_service.dart:_writeWorkspaceMetadata',
-        message: 'User meta doc escrito',
-        hypothesisId: 'C',
-        runId: 'post-fix',
-      );
-      // #endregion
-    } catch (error) {
-      // #region agent log
-      AgentDebugLog.write(
-        location: 'cloud_sync_service.dart:_writeWorkspaceMetadata',
-        message: 'Fallo al escribir user meta doc (no bloqueante)',
-        hypothesisId: 'C',
-        runId: 'post-fix',
-        data: {'error': error.toString()},
-      );
-      // #endregion
+    } catch (_) {
     }
   }
 
@@ -241,19 +166,6 @@ class CloudSyncService implements CloudSyncPort {
     final migrationKey = _userMigrationKey(userId);
 
     final migrationDone = prefs.getBool(migrationKey) == true;
-
-    // #region agent log
-    AgentDebugLog.write(
-      location: 'cloud_sync_service.dart:migrateLocalDataIfNeeded',
-      message: 'Estado migracion local',
-      hypothesisId: 'D',
-      data: {
-        'migrationDone': migrationDone,
-        'localRecordsCount': localRecords.length,
-        'localFabricsCount': localFabrics.length,
-      },
-    );
-    // #endregion
 
     if (migrationDone) return;
 
@@ -323,32 +235,9 @@ class CloudSyncService implements CloudSyncPort {
   @override
   Future<void> upsertRecord(NepRecord record) async {
     await bootstrap();
-    try {
-      await _records
-          .doc(record.id)
-          .set(_recordData(record), SetOptions(merge: true));
-      // #region agent log
-      AgentDebugLog.write(
-        location: 'cloud_sync_service.dart:upsertRecord',
-        message: 'Registro guardado en workspace',
-        hypothesisId: 'C',
-        data: {'recordId': record.id},
-      );
-      // #endregion
-    } catch (error) {
-      // #region agent log
-      AgentDebugLog.write(
-        location: 'cloud_sync_service.dart:upsertRecord',
-        message: 'Fallo al guardar registro',
-        hypothesisId: 'C',
-        data: {
-          'recordId': record.id,
-          'error': error.toString(),
-        },
-      );
-      // #endregion
-      rethrow;
-    }
+    await _records
+        .doc(record.id)
+        .set(_recordData(record), SetOptions(merge: true));
   }
 
   @override

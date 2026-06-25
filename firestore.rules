@@ -1,29 +1,132 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isVicunhaWorkspace(workspaceId) {
+      return workspaceId == 'vicunha';
+    }
+
+    function optionalTimestamp(field) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] is timestamp;
+    }
+
+    function validNepRecordFields(data) {
+      return data.keys().hasAll(['id', 'telar', 'neps', 'tela', 'loteTrama', 'createdAt'])
+        && data.id is string
+        && data.id.size() > 0
+        && data.id.size() <= 128
+        && data.telar is string
+        && data.telar.size() > 0
+        && data.telar.size() <= 32
+        && data.tela is string
+        && data.tela.size() <= 120
+        && data.loteTrama is string
+        && data.loteTrama.size() > 0
+        && data.loteTrama.size() <= 64
+        && data.neps is number
+        && data.neps > 0
+        && data.neps <= 1000000
+        && data.createdAt is string
+        && data.createdAt.size() > 0
+        && data.createdAt.size() <= 40;
+    }
+
+    function validWorkspaceRecordWrite(recordId) {
+      return validNepRecordFields(request.resource.data)
+        && request.resource.data.id == recordId
+        && optionalTimestamp('updatedAt');
+    }
+
+    function validFabricMetaWrite() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['items'])
+        && data.items is list
+        && data.items.size() <= 500
+        && optionalTimestamp('updatedAt');
+    }
+
+    function validReportWrite(reportId) {
+      let data = request.resource.data;
+      return data.keys().hasAll(['id', 'name', 'createdAt', 'records'])
+        && data.id is string
+        && data.id == reportId
+        && data.id.size() > 0
+        && data.id.size() <= 128
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 200
+        && data.createdAt is string
+        && data.createdAt.size() > 0
+        && data.records is list
+        && data.records.size() <= 5000
+        && optionalTimestamp('updatedAt');
+    }
+
     match /workspaces/{workspaceId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isAuthed() && isVicunhaWorkspace(workspaceId);
+      allow create, update: if isAuthed()
+        && isVicunhaWorkspace(workspaceId)
+        && optionalTimestamp('updatedAt')
+        && (
+          !('name' in request.resource.data)
+          || (
+            request.resource.data.name is string
+            && request.resource.data.name.size() <= 80
+          )
+        );
+      allow delete: if false;
 
       match /users/{userId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if isAuthed()
+          && isVicunhaWorkspace(workspaceId)
+          && request.auth.uid == userId
+          && optionalTimestamp('updatedAt');
 
         match /records/{recordId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+          allow read: if isAuthed()
+            && isVicunhaWorkspace(workspaceId)
+            && request.auth.uid == userId;
+          allow create, update: if isAuthed()
+            && isVicunhaWorkspace(workspaceId)
+            && request.auth.uid == userId
+            && validWorkspaceRecordWrite(recordId);
+          allow delete: if isAuthed()
+            && isVicunhaWorkspace(workspaceId)
+            && request.auth.uid == userId;
         }
       }
 
       match /reports/{reportId} {
-        allow read, write: if request.auth != null;
+        allow read: if isAuthed() && isVicunhaWorkspace(workspaceId);
+        allow create, update: if isAuthed()
+          && isVicunhaWorkspace(workspaceId)
+          && validReportWrite(reportId);
+        allow delete: if isAuthed() && isVicunhaWorkspace(workspaceId);
       }
 
       match /meta/{docId} {
-        allow read, write: if request.auth != null;
+        allow read: if isAuthed() && isVicunhaWorkspace(workspaceId);
+        allow create, update: if isAuthed()
+          && isVicunhaWorkspace(workspaceId)
+          && (
+            docId != 'fabrics' || validFabricMetaWrite()
+          )
+          && optionalTimestamp('updatedAt');
+        allow delete: if false;
       }
 
       // Registros compartidos del workspace (equipo VICUNHA).
       match /records/{recordId} {
-        allow read, write: if request.auth != null;
+        allow read: if isAuthed() && isVicunhaWorkspace(workspaceId);
+        allow create, update: if isAuthed()
+          && isVicunhaWorkspace(workspaceId)
+          && validWorkspaceRecordWrite(recordId);
+        allow delete: if isAuthed() && isVicunhaWorkspace(workspaceId);
       }
     }
   }

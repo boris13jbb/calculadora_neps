@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
@@ -11,6 +10,7 @@ import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
 import '../../models/saved_report.dart';
 import '../../providers/app_state.dart';
+import '../../utils/file_share_helper.dart';
 import '../../utils/record_filter_helper.dart';
 import '../../utils/report_share_helper.dart';
 import '../../widgets/record_filters_panel.dart';
@@ -204,6 +204,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
         .read<AppState>()
         .reportStorageService
         .getReportsDirectory();
+    if (!kIsWeb) {
+      await FileShareHelper.openDirectoryInShell(dir);
+    }
     _showMessage('Carpeta de informes: ${dir.path}');
   }
 
@@ -217,6 +220,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
 
     setState(() => isWorking = true);
+    final shareOrigin = _shareOrigin(context);
     try {
       final appState = context.read<AppState>();
       final files = await shareHelper.buildShareFiles(
@@ -235,16 +239,27 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ? reportsToShare.first.name
           : '${reportsToShare.length} informes';
 
-      await Share.shareXFiles(
-        files,
+      await FileShareHelper.deliverPreparedFiles(
+        files: files,
         text: 'Informes VICUNHA - $countLabel ($formatLabel)',
         subject: 'Informes VICUNHA',
-      );
+        sharePositionOrigin: shareOrigin,
+      ).then((desktopMessage) {
+        if (desktopMessage != null && mounted) {
+          _showMessage(desktopMessage);
+        }
+      });
     } catch (e) {
       _showMessage('Error al compartir informes: $e');
     } finally {
       if (mounted) setState(() => isWorking = false);
     }
+  }
+
+  Rect? _shareOrigin(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
   }
 
   String _formatLabel(Set<ReportShareFormat> formats) {
@@ -654,8 +669,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
       return AppPage(
         title: 'Informes guardados',
         subtitle: phone
-            ? 'Visibles para todo el equipo'
-            : 'Informes compartidos visibles para todo el equipo',
+            ? 'Gestiona y comparte informes'
+            : 'Gestiona y comparte tus informes de produccion',
+        breadcrumb: const ['Inicio', 'Informes guardados'],
         denseOnPhone: true,
         compactPadding: true,
         child: const Center(child: CircularProgressIndicator()),
@@ -666,7 +682,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
       title: 'Informes guardados',
       subtitle: phone
           ? 'Compartidos con el equipo'
-          : 'Informes compartidos: cargar, exportar y administrar',
+          : 'Gestiona y comparte tus informes de produccion',
+      breadcrumb: const ['Inicio', 'Informes guardados'],
       fillViewport: true,
       compactPadding: true,
       denseOnPhone: true,

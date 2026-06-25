@@ -28,4 +28,24 @@ void main() {
       expect(format('12.3', '12.3.4').text, '12.3');
     });
   });
+
+  group('fabricNameInputFormatters', () {
+    final formatter = fabricNameInputFormatters.first;
+
+    TextEditingValue format(String oldText, String newText) {
+      return formatter.formatEditUpdate(
+        TextEditingValue(text: oldText),
+        TextEditingValue(text: newText),
+      );
+    }
+
+    test('acepta nombres alfanumericos', () {
+      expect(format('', 'BOLTON').text, 'BOLTON');
+      expect(format('', 'DENIM 01').text, 'DENIM 01');
+    });
+
+    test('rechaza caracteres especiales', () {
+      expect(format('BOL', 'BOL@').text, 'BOL');
+    });
+  });
 }

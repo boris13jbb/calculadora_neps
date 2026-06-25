@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../core/layout/breakpoints.dart';
 import '../../core/layout/responsive_layout.dart';
+import '../../core/theme/app_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_input_decoration.dart';
 import '../../core/widgets/app_page.dart';
@@ -67,8 +68,9 @@ class _CaptureScreenState extends State<CaptureScreen>
     return AppPage(
       title: 'Captura de registros',
       subtitle: isDesktop
-          ? 'Su tabla personal. Guarde informes para compartir con el equipo.'
-          : 'Su tabla personal',
+          ? 'Capture neps y calcule automaticamente los metros del tejido.'
+          : 'Capture neps y calcule metros',
+      breadcrumb: const ['Inicio', 'Captura'],
       fillViewport: true,
       maxContentWidth: 1400,
       compactPadding: true,
@@ -140,7 +142,7 @@ class _CaptureScreenState extends State<CaptureScreen>
             : null,
         icon: Icons.save,
         label: 'Guardar',
-        background: AppColors.primaryBlue,
+        background: AppColors.primaryGreen,
       ),
       actionButton(
         onPressed: captureActionsEnabled(appState)
@@ -148,7 +150,7 @@ class _CaptureScreenState extends State<CaptureScreen>
             : null,
         icon: Icons.ios_share,
         label: 'Compartir',
-        background: AppColors.primaryGreen,
+        background: AppColors.primaryBlue,
       ),
       actionButton(
         onPressed: () => promptNewCaptureSession(context, appState),
@@ -162,11 +164,15 @@ class _CaptureScreenState extends State<CaptureScreen>
           onPressed: () => appState.setNavigationIndex(3),
           icon: Icons.texture,
           label: 'Telas',
-          background: AppColors.surfaceAlt,
+          background: AppColors.accent,
           foreground: AppColors.textDark,
         )
       else
-        TextButton.icon(
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.accent,
+            foregroundColor: AppColors.textDark,
+          ),
           onPressed: () => appState.setNavigationIndex(3),
           icon: const Icon(Icons.texture, size: 18),
           label: const Text('Telas'),
@@ -176,11 +182,15 @@ class _CaptureScreenState extends State<CaptureScreen>
           onPressed: () => appState.setNavigationIndex(2),
           icon: Icons.tune,
           label: 'Filtros',
-          background: AppColors.surfaceAlt,
+          background: AppColors.accent,
           foreground: AppColors.textDark,
         )
       else
-        TextButton.icon(
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.accent,
+            foregroundColor: AppColors.textDark,
+          ),
           onPressed: () => appState.setNavigationIndex(2),
           icon: const Icon(Icons.tune, size: 18),
           label: const Text('Filtros'),
@@ -196,41 +206,140 @@ class _DesktopCaptureLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final formPanel = _CaptureFormPanel(appState: appState);
-        final recordsPanel = CompactRecordsPanel(
-          appState: appState,
-          records: appState.records,
-          onDelete: appState.deleteRecord,
-          onEdit: (record) => _editCaptureRecord(context, appState, record),
-          onClearAll: () => promptNewCaptureSession(context, appState),
-        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 5,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _FabricPreviewCard(appState: appState),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _LoteTramaCard(appState: appState),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          flex: 6,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                width: 380,
+                child: SingleChildScrollView(
+                  child: _CaptureFormPanel(appState: appState),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: CompactRecordsPanel(
+                  appState: appState,
+                  records: appState.records,
+                  onDelete: appState.deleteRecord,
+                  onEdit: (record) =>
+                      _editCaptureRecord(context, appState, record),
+                  onClearAll: () =>
+                      promptNewCaptureSession(context, appState),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _CompactSessionBar(appState: appState),
-            const SizedBox(height: 10),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+class _FabricPreviewCard extends StatelessWidget {
+  const _FabricPreviewCard({required this.appState});
+
+  final AppState appState;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.card(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Tela / Tejido',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _FabricField(appState: appState),
+          const SizedBox(height: 12),
+          Expanded(
+            child: Container(
+              alignment: Alignment.center,
+              decoration: AppDecorations.section(),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  SizedBox(
-                    width:
-                        constraints.maxWidth >= AppBreakpoints.wide ? 360 : 300,
-                    child: SingleChildScrollView(
-                      child: formPanel,
+                  Icon(
+                    Icons.grid_on_outlined,
+                    size: 48,
+                    color: AppColors.muted.withValues(alpha: 0.45),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Vista previa del tejido',
+                    style: TextStyle(
+                      color: AppColors.muted.withValues(alpha: 0.8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(child: recordsPanel),
                 ],
               ),
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoteTramaCard extends StatelessWidget {
+  const _LoteTramaCard({required this.appState});
+
+  final AppState appState;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.card(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Lote de trama',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 15,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: SingleChildScrollView(
+              child: _LoteField(appState: appState),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -642,11 +751,11 @@ class _FabricField extends StatelessWidget {
           _CompactLabel('Tela / Tejido', ultraCompact: ultraCompact),
           TextField(
             controller: appState.manualTelaController,
-            keyboardType: TextInputType.number,
-            inputFormatters: digitsOnlyInputFormatters,
+            textCapitalization: TextCapitalization.characters,
+            inputFormatters: fabricNameInputFormatters,
             style: appDropdownTextStyle(ultraCompact: ultraCompact),
             decoration: decoration.copyWith(
-              hintText: 'Codigo de tela',
+              hintText: 'Ej: BOLTON',
               suffixIcon: canPickFromCatalog
                   ? IconButton(
                       tooltip: 'Seleccionar del catalogo',
@@ -751,12 +860,11 @@ class _LoteField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LoteTramaField(
-      prefixController: appState.lotePrefixController,
-      suffixController: appState.loteSuffixController,
       fullController: appState.loteFullController,
-      fullEntryMode: appState.loteFullEntryMode,
-      onFullEntryModeChanged: appState.setLoteFullEntryMode,
-      onPrefixPersist: appState.persistLotePrefix,
+      presets: appState.loteTramaPresets,
+      onPresetSelected: appState.applyLoteTramaPreset,
+      onAddPreset: appState.addLoteTramaPreset,
+      onRemovePreset: appState.removeLoteTramaPreset,
       ultraCompact: ultraCompact,
       compact: !ultraCompact,
     );
@@ -865,12 +973,8 @@ class _CaptureFormPanel extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
+      padding: const EdgeInsets.all(16),
+      decoration: AppDecorations.card(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

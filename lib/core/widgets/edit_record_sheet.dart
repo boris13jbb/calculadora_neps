@@ -40,13 +40,10 @@ class _EditRecordDialog extends StatefulWidget {
 class _EditRecordDialogState extends State<_EditRecordDialog> {
   late final TextEditingController telarController;
   late final TextEditingController nepsController;
-  late final TextEditingController lotePrefixController;
-  late final TextEditingController loteSuffixController;
   late final TextEditingController loteFullController;
   late final TextEditingController manualTelaController;
 
   late bool useManualFabric;
-  late bool loteFullEntryMode;
   String? selectedFabric;
   bool isSaving = false;
 
@@ -56,17 +53,14 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
     final record = widget.record;
     final loteParts = LoteTramaHelper.split(
       record.loteTrama,
-      fallbackPrefix: widget.appState.lotePrefixController.text,
+      fallbackPrefix: loteTramaPrefix,
     );
 
     telarController = TextEditingController(text: record.telar);
     nepsController = TextEditingController(
       text: widget.appState.formatDecimal(record.neps),
     );
-    lotePrefixController = TextEditingController(text: loteParts.prefix);
-    loteSuffixController = TextEditingController(text: loteParts.suffix);
     loteFullController = TextEditingController(text: loteParts.full);
-    loteFullEntryMode = widget.appState.loteFullEntryMode;
 
     final inCatalog = widget.appState.fabrics.contains(record.tela);
     useManualFabric = record.tela.isEmpty || !inCatalog;
@@ -80,11 +74,19 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
   void dispose() {
     telarController.dispose();
     nepsController.dispose();
-    lotePrefixController.dispose();
-    loteSuffixController.dispose();
     loteFullController.dispose();
     manualTelaController.dispose();
     super.dispose();
+  }
+
+  void _applyPresetToLocalControllers(String fullLote) {
+    loteFullController.text = LoteTramaHelper.normalizeFull(fullLote);
+  }
+
+  Future<void> _addPresetFromEditor(String value) async {
+    await widget.appState.addLoteTramaPreset(value);
+    if (!mounted) return;
+    setState(() => _applyPresetToLocalControllers(value));
   }
 
   String? _resolveTela() {
@@ -96,23 +98,9 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
   }
 
   String? _resolveLoteTrama() {
-    if (loteFullEntryMode) {
-      final full = LoteTramaHelper.normalizeFull(loteFullController.text);
-      if (!LoteTramaHelper.isValidFull(full)) return null;
-      return full;
-    }
-
-    if (!LoteTramaHelper.isValidParts(
-      prefix: lotePrefixController.text,
-      suffix: loteSuffixController.text,
-    )) {
-      return null;
-    }
-
-    return LoteTramaHelper.buildFull(
-      prefix: lotePrefixController.text,
-      suffix: loteSuffixController.text,
-    );
+    final full = LoteTramaHelper.normalizeFull(loteFullController.text);
+    if (!LoteTramaHelper.isValidFull(full)) return null;
+    return full;
   }
 
   Future<void> _save() async {
@@ -125,7 +113,7 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
     final loteTrama = _resolveLoteTrama();
     if (loteTrama == null) {
       widget.appState.showMessage(
-        'Complete el lote de trama (base y sufijo, o lote completo).',
+        'Ingrese un lote de trama completo valido.',
       );
       return;
     }
@@ -239,8 +227,8 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
               else ...[
                 TextField(
                   controller: manualTelaController,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: digitsOnlyInputFormatters,
+                  textCapitalization: TextCapitalization.characters,
+                  inputFormatters: fabricNameInputFormatters,
                   decoration: decoration.copyWith(
                     labelText: 'Tela / Tejido',
                     suffixIcon: fabrics.isNotEmpty
@@ -278,12 +266,13 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
               ],
               const SizedBox(height: 10),
               LoteTramaField(
-                prefixController: lotePrefixController,
-                suffixController: loteSuffixController,
                 fullController: loteFullController,
-                fullEntryMode: loteFullEntryMode,
-                onFullEntryModeChanged: (value) {
-                  setState(() => loteFullEntryMode = value);
+                presets: widget.appState.loteTramaPresets,
+                onPresetSelected: (_) => setState(() {}),
+                onAddPreset: _addPresetFromEditor,
+                onRemovePreset: (value) async {
+                  await widget.appState.removeLoteTramaPreset(value);
+                  if (mounted) setState(() {});
                 },
                 compact: true,
               ),

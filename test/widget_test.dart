@@ -24,7 +24,7 @@ void main() {
     await _pumpApp(tester, const Size(1280, 900));
 
     expect(find.text('VICUNHA'), findsOneWidget);
-    expect(find.text('Panel principal'), findsOneWidget);
+    expect(find.text('Inicio / Panel principal'), findsOneWidget);
     expect(find.text('Accesos rapidos'), findsOneWidget);
   });
 
@@ -33,7 +33,7 @@ void main() {
     await _pumpApp(tester, const Size(390, 844));
 
     expect(find.textContaining('VICUNHA'), findsOneWidget);
-    expect(find.text('Panel principal'), findsOneWidget);
+    expect(find.text('Inicio / Panel principal'), findsOneWidget);
     expect(find.text('Accesos rapidos'), findsOneWidget);
   });
 }
