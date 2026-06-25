@@ -38,10 +38,20 @@ Al conectar con Firebase, la app:
 1. Migra registros historicos de `users/{uid}/records` a `records` (una vez por dispositivo).
 2. Sube datos locales pendientes al workspace compartido.
 
-### Despliegue de reglas Firestore
+### Despliegue Web (Firebase Hosting + reglas)
+
+**Automatico (GitHub Actions):** cada push a `main` ejecuta el workflow **Deploy Web Firebase**.
+
+1. En [Firebase Console](https://console.firebase.google.com/) > Configuracion del proyecto > Cuentas de servicio, genera una clave JSON.
+2. La cuenta debe tener permisos de **Firebase Hosting Admin** y **Cloud Datastore User** (o rol **Firebase Admin**).
+3. En GitHub: **Settings > Secrets and variables > Actions** > crea `FIREBASE_SERVICE_ACCOUNT` con el JSON completo.
+4. Tras el primer push, revisa **Actions** y la URL https://vicunha-calculadora-neps.web.app
+
+**Manual (local):**
 
 ```bash
-firebase deploy --only firestore:rules
+flutter build web --release
+npx firebase-tools deploy --only firestore:rules,hosting --project vicunha-calculadora-neps
 ```
 
 Requiere Firebase CLI autenticado y proyecto `vicunha-calculadora-neps` seleccionado.
