@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
 import 'app.dart';
+import 'bootstrap/firebase_init.dart';
+import 'firebase_options.dart';
 import 'platform/platform_init.dart';
 
 Future<void> main() async {
@@ -13,6 +15,10 @@ Future<void> main() async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
       registerPlatformPlugins();
+
+      if (DefaultFirebaseOptions.isSupported) {
+        await initializeFirebaseApp();
+      }
 
       if (kIsWeb) {
         SemanticsBinding.instance.ensureSemantics();

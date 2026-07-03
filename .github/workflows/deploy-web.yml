@@ -1,0 +1,71 @@
+name: Deploy Web Firebase
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: firebase-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build Web y deploy Firebase
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verificar secret de Firebase
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "::error::Falta el secret FIREBASE_SERVICE_ACCOUNT en GitHub (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Descargar dependencias
+        run: flutter pub get
+
+      - name: Compilar Web release
+        run: flutter build web --release
+
+      - name: Autenticar en Firebase
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "${RUNNER_TEMP}/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=${RUNNER_TEMP}/firebase-sa.json" >> "$GITHUB_ENV"
+
+      - name: Desplegar Hosting y reglas Firestore
+        run: |
+          set +e
+          OUTPUT=$(npx firebase-tools@15.22.2 deploy \
+            --only firestore:rules,hosting \
+            --project vicunha-calculadora-neps \
+            --non-interactive 2>&1)
+          CODE=$?
+          echo "$OUTPUT"
+          if [ "$CODE" -ne 0 ]; then
+            if echo "$OUTPUT" | grep -q "is the current active version"; then
+              echo "Hosting ya tenia esta version activa; despliegue considerado exitoso."
+              exit 0
+            fi
+            exit "$CODE"
+          fi
+
+      - name: Resumen del despliegue
+        run: |
+          echo "### Despliegue completado" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Web:** https://vicunha-calculadora-neps.web.app" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Proyecto:** vicunha-calculadora-neps" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit:** ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"

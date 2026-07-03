@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_styles.dart';
 import '../theme/app_theme.dart';
 
 class FormulaBox extends StatelessWidget {
@@ -11,47 +12,116 @@ class FormulaBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: EdgeInsets.all(compact ? 10 : 16),
+      padding: EdgeInsets.all(compact ? 12 : 18),
       decoration: BoxDecoration(
         color: AppColors.formulaBg,
-        borderRadius: BorderRadius.circular(compact ? 10 : 18),
-        border: Border(
-          left: BorderSide(
+        borderRadius: BorderRadius.circular(compact ? 12 : 16),
+        border: Border.all(color: AppColors.borderLight),
+        boxShadow: AppShadows.soft,
+      ),
+      child: compact
+          ? _buildCompactContent()
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 520) {
+                  return _buildCompactContent();
+                }
+                return Row(
+                  children: [
+                    Expanded(child: _buildFormulaSide()),
+                    Container(
+                      width: 1,
+                      height: 72,
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      color: AppColors.border,
+                    ),
+                    Expanded(child: _buildExampleSide()),
+                  ],
+                );
+              },
+            ),
+    );
+  }
+
+  Widget _buildCompactContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildFormulaSide(),
+        const SizedBox(height: 10),
+        _buildExampleSide(),
+      ],
+    );
+  }
+
+  Widget _buildFormulaSide() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: compact ? 36 : 44,
+          height: compact ? 36 : 44,
+          decoration: BoxDecoration(
+            color: AppColors.accent.withValues(alpha: 0.2),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.calculate_outlined,
             color: AppColors.accentDark,
-            width: compact ? 5 : 8,
+            size: compact ? 20 : 24,
           ),
         ),
-      ),
-      child: Text.rich(
-        TextSpan(
-          children: [
-            const TextSpan(text: 'Formula: '),
-            TextSpan(
-              text: compact
-                  ? 'Mts = Neps / 0.09'
-                  : 'Mts calculados = Neps / 0.09\n',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppColors.textDark,
-              ),
-            ),
-            if (!compact) ...[
-              const TextSpan(text: 'Ejemplo: '),
-              const TextSpan(
-                text: '51 / 0.09 = 566.667',
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Formula de calculo',
                 style: TextStyle(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w800,
+                  fontSize: compact ? 12 : 13,
+                  color: AppColors.muted,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Mts calculados = Neps / 0.09',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: compact ? 14 : 16,
                   color: AppColors.textDark,
                 ),
               ),
             ],
-          ],
+          ),
         ),
-        style: TextStyle(
-          color: const Color(0xFF3B2F1C),
-          fontSize: compact ? 12 : 14,
+      ],
+    );
+  }
+
+  Widget _buildExampleSide() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Ejemplo',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: compact ? 12 : 13,
+            color: AppColors.muted,
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(
+          '51 / 0.09 = 566.667',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: compact ? 14 : 16,
+            color: AppColors.textDark,
+          ),
+        ),
+      ],
     );
   }
 }

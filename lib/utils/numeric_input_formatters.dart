@@ -1,8 +1,13 @@
 import 'package:flutter/services.dart';
 
-/// Solo digitos enteros (telar, codigo de tela manual, etc.).
+/// Solo digitos enteros (telar, etc.).
 final List<TextInputFormatter> digitsOnlyInputFormatters = [
   FilteringTextInputFormatter.digitsOnly,
+];
+
+/// Nombre de tela manual: letras, numeros y espacios.
+final List<TextInputFormatter> fabricNameInputFormatters = [
+  FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9 ]')),
 ];
 
 /// Numeros con un solo separador decimal (punto o coma).
