@@ -5,7 +5,13 @@ class AppColors {
   static const backgroundGradientEnd = Color(0xFFC2B280);
   static const surface = Color(0xFFFEF9E8);
   static const surfaceAlt = Color(0xFFFFFDF4);
+  /// Fondo de tarjetas (alias de surface para componentes UI VICUNHA).
+  static const card = surface;
   static const header = Color(0xFF1F2A2E);
+  /// Texto principal sobre fondo oscuro del header (barra VICUNHA).
+  static const headerText = Color(0xFFF7EAC5);
+  /// Texto secundario sobre fondo oscuro del header.
+  static const headerMuted = Color(0xFFCFD8C5);
   static const accent = Color(0xFFC5A059);
   static const accentDark = Color(0xFFB8860B);
   static const primaryGreen = Color(0xFF2F6B45);
@@ -13,6 +19,8 @@ class AppColors {
   static const danger = Color(0xFFB94D4D);
   static const muted = Color(0xFF7A6648);
   static const border = Color(0xFFD6C394);
+  /// Borde suave para tarjetas y secciones.
+  static const borderLight = border;
   static const formulaBg = Color(0xFFEBDFC3);
   static const textDark = Color(0xFF1F2A2E);
   static const textGreen = Color(0xFF2C3E2F);
