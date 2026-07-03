@@ -16,6 +16,11 @@ class AppColors {
   static const formulaBg = Color(0xFFEBDFC3);
   static const textDark = Color(0xFF1F2A2E);
   static const textGreen = Color(0xFF2C3E2F);
+
+  /// Colores de estado para alertas de calidad.
+  static const statusNormal = Color(0xFF2F6B45);
+  static const statusWarning = Color(0xFFE67E22);
+  static const statusCritical = Color(0xFFB94D4D);
 }
 
 class AppTheme {
@@ -73,6 +78,21 @@ class AppTheme {
           color: AppColors.textDark,
           fontWeight: FontWeight.w600,
         ),
+      ),
+      listTileTheme: const ListTileThemeData(
+        tileColor: AppColors.surfaceAlt,
+        selectedTileColor: AppColors.formulaBg,
+        selectedColor: AppColors.primaryGreen,
+        iconColor: AppColors.textDark,
+        textColor: AppColors.textDark,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: AppColors.surface,
+        surfaceTintColor: Colors.transparent,
       ),
     );
   }

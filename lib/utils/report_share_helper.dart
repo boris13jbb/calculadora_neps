@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/export_column.dart';
+import '../models/pdf_report_style.dart';
 import '../models/saved_report.dart';
 import '../services/report_export_service.dart';
 import '../utils/file_share_helper.dart';
@@ -20,6 +21,7 @@ class ReportShareHelper {
     required List<SavedReport> reports,
     required Set<ReportShareFormat> formats,
     Set<ExportColumn>? columns,
+    PdfReportStyle reportStyle = PdfReportStyle.completo,
   }) async {
     final selected = columns ?? ExportColumn.defaultSelection();
     final files = <XFile>[];
@@ -32,6 +34,7 @@ class ReportShareHelper {
         final content = exportService.buildCsvText(
           report.records,
           columns: selected,
+          style: reportStyle,
         );
         files.add(
           XFile.fromData(
@@ -43,8 +46,11 @@ class ReportShareHelper {
       }
 
       if (formats.contains(ReportShareFormat.excel)) {
-        final bytes =
-            exportService.buildExcelBytes(report.records, columns: selected);
+        final bytes = exportService.buildExcelBytes(
+          report.records,
+          columns: selected,
+          style: reportStyle,
+        );
         if (bytes != null) {
           files.add(
             XFile.fromData(
@@ -61,6 +67,7 @@ class ReportShareHelper {
           records: report.records,
           title: report.name,
           columns: selected,
+          style: reportStyle,
           filtersDescription: report.appliedFilters == null
               ? null
               : FilterDescriptionHelper.describe(report.appliedFilters!),

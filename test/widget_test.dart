@@ -19,21 +19,20 @@ Future<void> _pumpApp(WidgetTester tester, Size size) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('La app carga el panel principal en escritorio',
+  testWidgets('La app muestra pantalla de login sin sesión',
       (WidgetTester tester) async {
     await _pumpApp(tester, const Size(1280, 900));
 
-    expect(find.text('VICUNHA'), findsOneWidget);
-    expect(find.text('Panel principal'), findsOneWidget);
-    expect(find.text('Accesos rapidos'), findsOneWidget);
+    expect(find.text('VICUNHA Calculadora Neps'), findsOneWidget);
+    expect(find.text('Iniciar sesión'), findsOneWidget);
+    expect(find.text('Recuperar contraseña (solo super admin)'), findsOneWidget);
   });
 
-  testWidgets('La app carga en modo movil compacto',
-      (WidgetTester tester) async {
+  testWidgets('Login responsive en móvil', (WidgetTester tester) async {
     await _pumpApp(tester, const Size(390, 844));
 
     expect(find.textContaining('VICUNHA'), findsOneWidget);
-    expect(find.text('Panel principal'), findsOneWidget);
-    expect(find.text('Accesos rapidos'), findsOneWidget);
+    expect(find.text('Usuario'), findsOneWidget);
+    expect(find.text('Iniciar sesión'), findsOneWidget);
   });
 }

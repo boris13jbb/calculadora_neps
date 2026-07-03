@@ -1,6 +1,8 @@
 # Miscellaneous
 *.class
 *.log
+node_modules/
+deploy-functions-log.txt
 *.pyc
 *.swp
 .DS_Store
@@ -47,6 +49,13 @@ app.*.map.json
 
 # Firebase local cache (hosting deploy artifacts)
 .firebase/
+
+# Functions secrets (never commit)
+functions/.env
+functions/call_bootstrap.js
+
+# Auth exports (sensitive)
+auth_users.json
 
 # Windows accidental artifact (reserved device name)
 NUL

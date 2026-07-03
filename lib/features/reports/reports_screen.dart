@@ -5,8 +5,11 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_material_list_tile.dart';
 import '../../core/widgets/app_page.dart';
+import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/export_column_selector.dart';
+import '../../core/widgets/status_banner.dart';
 import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
 import '../../models/saved_report.dart';
@@ -23,7 +26,7 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
-  static const int _reportsTabIndex = 4;
+  static const int _reportsTabIndex = 5;
 
   late final ReportShareHelper shareHelper;
   List<SavedReport> reports = [];
@@ -65,7 +68,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
     try {
       final appState = context.read<AppState>();
-      final loaded = await appState.reportStorageService.loadReports();
+      final loaded = await appState.refreshReports();
       selectedReportIds.removeWhere(
         (id) => !loaded.any((report) => report.id == id),
       );
@@ -78,9 +81,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
     } catch (error) {
       debugPrint('Error al cargar informes: $error');
       if (mounted) {
+        final syncError = context.read<AppState>().cloudSyncError;
         setState(() {
           reports = [];
-          loadError = 'No se pudieron cargar los informes. Intente actualizar.';
+          loadError = syncError ??
+              'No se pudieron sincronizar los informes con Firebase. '
+              'Verifique conexión y autenticación anónima.';
         });
       }
     } finally {
@@ -223,6 +229,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         reports: reportsToShare,
         formats: formats,
         columns: appState.exportColumns,
+        reportStyle: appState.pdfReportStyle,
       );
 
       if (files.isEmpty) {
@@ -542,24 +549,41 @@ class _ReportsScreenState extends State<ReportsScreen> {
         border: Border.all(color: AppColors.border),
       ),
       child: filtered.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Text(
-                  loadError ??
-                      (reports.isEmpty
-                          ? 'No hay informes guardados.\n'
-                              'Guarde un informe desde Captura o Exportar '
-                              'para compartirlo con el equipo.'
-                          : 'Ningun informe coincide con los filtros.'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color:
-                        loadError != null ? AppColors.danger : AppColors.muted,
+          ? EmptyState(
+              compact: phone,
+              icon: loadError != null
+                  ? Icons.error_outline
+                  : Icons.folder_open_outlined,
+              title: loadError != null
+                  ? 'Error al cargar informes'
+                  : (reports.isEmpty ? 'Sin informes guardados' : 'Sin coincidencias'),
+              message: loadError ??
+                  (reports.isEmpty
+                      ? 'Guarde un informe desde Captura o Exportar para compartirlo con el equipo.'
+                      : 'Ningún informe coincide con los filtros activos.'),
+              iconColor:
+                  loadError != null ? AppColors.danger : AppColors.muted,
+              actions: [
+                if (loadError != null)
+                  EmptyStateAction(
+                    label: 'Reintentar',
+                    icon: Icons.refresh,
+                    onPressed: _loadReports,
+                  )
+                else if (reports.isNotEmpty)
+                  EmptyStateAction(
+                    label: 'Limpiar filtros',
+                    icon: Icons.clear_all,
+                    filled: false,
+                    onPressed: () => setState(reportFilters.clear),
+                  )
+                else
+                  EmptyStateAction(
+                    label: 'Ir a Exportar',
+                    icon: Icons.ios_share,
+                    onPressed: () => appState.setNavigationIndex(6),
                   ),
-                ),
-              ),
+              ],
             )
           : ListView.separated(
               padding: EdgeInsets.zero,
@@ -569,7 +593,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 final report = filtered[index];
                 final isSelected = selectedReportIds.contains(report.id);
 
-                return ListTile(
+                return AppMaterialListTile(
                   dense: phone,
                   visualDensity: phone ? VisualDensity.compact : null,
                   leading: Checkbox(
@@ -681,6 +705,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (!appState.cloudSyncEnabled) ...[
+                  StatusBanner(
+                    type: appState.cloudSyncError != null
+                        ? StatusBannerType.warning
+                        : StatusBannerType.info,
+                    message: appState.cloudSyncError != null
+                        ? 'Firebase no disponible: ${appState.cloudSyncError}'
+                        : 'Conectando con Firebase para sincronizar informes…',
+                  ),
+                  SizedBox(height: spacing),
+                ],
                 Flexible(
                   child: SingleChildScrollView(
                     child: _reportsToolsSection(
@@ -699,6 +734,17 @@ class _ReportsScreenState extends State<ReportsScreen> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (!appState.cloudSyncEnabled) ...[
+                  StatusBanner(
+                    type: appState.cloudSyncError != null
+                        ? StatusBannerType.warning
+                        : StatusBannerType.info,
+                    message: appState.cloudSyncError != null
+                        ? 'Firebase no disponible: ${appState.cloudSyncError}'
+                        : 'Conectando con Firebase para sincronizar informes…',
+                  ),
+                  SizedBox(height: spacing),
+                ],
                 _reportsToolsSection(
                   appState: appState,
                   spacing: spacing,

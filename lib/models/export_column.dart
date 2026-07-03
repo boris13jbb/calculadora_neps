@@ -5,7 +5,9 @@ enum ExportColumn {
   tela,
   telar,
   neps,
-  mts;
+  mts,
+  estadoAlerta,
+  recomendacion;
 
   String get label => switch (this) {
         ExportColumn.nro => 'Nro',
@@ -15,6 +17,8 @@ enum ExportColumn {
         ExportColumn.telar => 'Telar',
         ExportColumn.neps => 'Neps',
         ExportColumn.mts => 'Mts calculados',
+        ExportColumn.estadoAlerta => 'Estado alerta',
+        ExportColumn.recomendacion => 'Recomendación',
       };
 
   static const List<ExportColumn> ordered = [
@@ -25,6 +29,8 @@ enum ExportColumn {
     ExportColumn.telar,
     ExportColumn.neps,
     ExportColumn.mts,
+    ExportColumn.estadoAlerta,
+    ExportColumn.recomendacion,
   ];
 
   static Set<ExportColumn> defaultSelection() =>

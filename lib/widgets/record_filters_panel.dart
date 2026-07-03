@@ -7,6 +7,7 @@ import '../core/widgets/app_input_decoration.dart';
 import '../models/nep_record.dart';
 import '../models/record_filters.dart';
 import '../utils/record_filter_helper.dart';
+import 'alert_filter_fields.dart';
 
 class _FilterPalette {
   static const activeBg = Color(0xFFE8F5E9);
@@ -380,6 +381,12 @@ class _RecordFiltersPanelState extends State<RecordFiltersPanel>
           ]),
           SizedBox(height: _fieldGap),
           _searchField(context: context, filters: filters),
+          ExtendedRecordFilterFields(
+            records: widget.records,
+            filters: filters,
+            onChanged: widget.onChanged,
+            compact: true,
+          ),
         ],
       );
     }
@@ -502,6 +509,14 @@ class _RecordFiltersPanelState extends State<RecordFiltersPanel>
         SizedBox(
           width: 220,
           child: _searchField(context: context, filters: filters),
+        ),
+        SizedBox(
+          width: double.infinity,
+          child: ExtendedRecordFilterFields(
+            records: widget.records,
+            filters: filters,
+            onChanged: widget.onChanged,
+          ),
         ),
       ],
     );

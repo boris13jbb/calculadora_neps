@@ -9,9 +9,12 @@ class SiriShortcutService {
     'inicio': 0,
     'captura': 1,
     'registros': 2,
-    'telas': 3,
-    'informes': 4,
-    'exportar': 5,
+    'alertas': 3,
+    'telas': 4,
+    'informes': 5,
+    'exportar': 6,
+    'configuracion': 7,
+    'config': 7,
   };
 
   static int? resolveScreenIndex(String? screen) {

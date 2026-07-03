@@ -8,6 +8,7 @@ import '../../core/widgets/app_page.dart';
 import '../../core/widgets/compact_stats_row.dart';
 import '../../core/widgets/confirm_dialogs.dart';
 import '../../core/widgets/edit_record_sheet.dart';
+import '../../core/widgets/import_preview_dialog.dart';
 import '../../core/widgets/records_table.dart';
 import '../../models/nep_record.dart';
 import '../../core/widgets/summary_cards.dart';
@@ -46,15 +47,30 @@ class _RecordsScreenState extends State<RecordsScreen> {
         return;
       }
 
-      await appState.importRecords(
+      final preview = appState.previewImport(
         bytes: bytes,
         fileName: picked.name,
       );
+
+      if (!mounted) return;
+
+      final confirmed = await showImportPreviewDialog(
+        context: context,
+        preview: preview,
+      );
+
+      if (!confirmed || !mounted) return;
+
+      await appState.confirmImportRecords(preview.importableRecords);
     } catch (e) {
       appState.showMessage('Error al importar registros: $e');
     } finally {
       if (mounted) setState(() => isImporting = false);
     }
+  }
+
+  Future<void> _downloadTemplate(AppState appState) async {
+    await appState.downloadImportTemplate();
   }
 
   Future<void> _clearTable(AppState appState) async {
@@ -99,6 +115,13 @@ class _RecordsScreenState extends State<RecordsScreen> {
             children: [
               _ActionChip(
                 compact: phone,
+                color: AppColors.primaryGreen,
+                onPressed: () => _downloadTemplate(appState),
+                icon: Icons.download,
+                label: phone ? 'Plantilla' : 'Descargar plantilla',
+              ),
+              _ActionChip(
+                compact: phone,
                 color: AppColors.primaryBlue,
                 onPressed: isImporting ? null : () => _importRecords(appState),
                 icon: isImporting ? null : Icons.upload_file,
@@ -108,7 +131,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
               _ActionChip(
                 compact: phone,
                 color: AppColors.danger,
-                onPressed: appState.records.isEmpty
+                onPressed: !appState.canClearAllRecords || appState.records.isEmpty
                     ? null
                     : () => _clearTable(appState),
                 icon: Icons.delete_sweep,
@@ -156,7 +179,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
                   CompactStatsRow(
                     totalRecords: appState.visibleRecords.length,
                     totalNeps: appState.formatDecimal(appState.totalNeps),
-                    averageNeps: appState.formatDecimal(appState.averageNeps),
+                    averageNeps: appState.formatNumber(appState.averageNeps),
                   ),
                   const SizedBox(height: 4),
                   Expanded(
@@ -165,6 +188,9 @@ class _RecordsScreenState extends State<RecordsScreen> {
                       records: appState.visibleRecords,
                       onDelete: appState.deleteRecord,
                       onEdit: (record) => _editRecord(appState, record),
+                      totalSourceCount: appState.records.length,
+                      onClearFilters: appState.clearFilters,
+                      onGoToCapture: () => appState.setNavigationIndex(1),
                     ),
                   ),
                 ],
@@ -202,13 +228,16 @@ class _RecordsScreenState extends State<RecordsScreen> {
                       records: appState.visibleRecords,
                       onDelete: appState.deleteRecord,
                       onEdit: (record) => _editRecord(appState, record),
+                      totalSourceCount: appState.records.length,
+                      onClearFilters: appState.clearFilters,
+                      onGoToCapture: () => appState.setNavigationIndex(1),
                     ),
                   ),
                   const SizedBox(height: 10),
                   SummaryCards(
                     totalRecords: appState.visibleRecords.length,
                     totalNeps: appState.formatDecimal(appState.totalNeps),
-                    averageNeps: appState.formatDecimal(appState.averageNeps),
+                    averageNeps: appState.formatNumber(appState.averageNeps),
                   ),
                 ],
               ),

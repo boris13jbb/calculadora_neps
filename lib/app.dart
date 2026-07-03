@@ -8,7 +8,9 @@ import 'bootstrap/firebase_init.dart';
 import 'firebase_options.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/app_shell.dart';
+import 'features/auth/auth_gate.dart';
 import 'providers/app_state.dart';
+import 'providers/auth_provider.dart';
 
 class NepsApp extends StatefulWidget {
   const NepsApp({super.key});
@@ -18,26 +20,51 @@ class NepsApp extends StatefulWidget {
 }
 
 class _NepsAppState extends State<NepsApp> {
+  late final AuthProvider _authProvider;
   late final AppState _appState;
 
   @override
   void initState() {
     super.initState();
+    _authProvider = AuthProvider()..initialize();
     _appState = AppState()..initialize(launchUri: _launchUri);
+    _authProvider.addListener(_onAuthChanged);
 
     if (DefaultFirebaseOptions.isSupported) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_bootstrapCloud());
+        unawaited(_bootstrapFirebase());
+      });
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_appState.initializeNotifications());
       });
     }
   }
 
-  Future<void> _bootstrapCloud() async {
+  Future<void> _bootstrapFirebase() async {
     try {
       await initializeFirebaseApp();
-      await _appState.reconnectCloudIfNeeded();
+      _authProvider.initialize();
     } catch (error, stackTrace) {
       debugPrint('Firebase no disponible al iniciar: $error');
+      debugPrint('$stackTrace');
+    }
+  }
+
+  void _onAuthChanged() {
+    final profile = _authProvider.profile;
+    if (profile != null && _authProvider.isAuthenticated) {
+      _appState.applyAuthProfile(profile);
+      unawaited(_connectCloudAfterAuth());
+    }
+  }
+
+  Future<void> _connectCloudAfterAuth() async {
+    try {
+      await _appState.reconnectCloudIfNeeded();
+      await _appState.initializeNotifications();
+    } catch (error, stackTrace) {
+      debugPrint('Cloud sync tras login: $error');
       debugPrint('$stackTrace');
     }
   }
@@ -65,20 +92,25 @@ class _NepsAppState extends State<NepsApp> {
 
   @override
   void dispose() {
+    _authProvider.removeListener(_onAuthChanged);
+    _authProvider.dispose();
     _appState.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider.value(
-      value: _appState,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: _authProvider),
+        ChangeNotifierProvider.value(value: _appState),
+      ],
       child: MaterialApp(
         title: 'VICUNHA Calculadora Neps',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.build(),
         scaffoldMessengerKey: AppState.messengerKey,
-        home: const AppShell(),
+        home: const AuthGate(child: AppShell()),
       ),
     );
   }

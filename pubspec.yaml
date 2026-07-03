@@ -4,7 +4,7 @@ description: Calculadora VICUNHA de Neps dividido para 0.09 m con exportacion PD
 
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+13
 
 environment:
   sdk: '>=3.5.0 <4.0.0'
@@ -28,6 +28,11 @@ dependencies:
   cloud_firestore_web: ^5.2.0
   firebase_auth: ^6.5.2
   firebase_auth_web: ^6.2.0
+  cloud_functions: ^6.0.6
+  firebase_messaging: ^16.0.0
+  flutter_local_notifications: ^19.0.0
+  fl_chart: ^0.70.2
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:

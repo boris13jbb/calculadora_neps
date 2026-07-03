@@ -1,3 +1,17 @@
+import '../models/alert_level.dart';
+
+/// Rangos rápidos de fecha para filtros.
+enum DateQuickRange {
+  hoy('Hoy'),
+  ayer('Ayer'),
+  estaSemana('Esta semana'),
+  esteMes('Este mes');
+
+  const DateQuickRange(this.label);
+
+  final String label;
+}
+
 class RecordFilters {
   String? tela;
   String? loteTrama;
@@ -9,6 +23,13 @@ class RecordFilters {
   DateTime? dateFrom;
   DateTime? dateTo;
   String searchText = '';
+  AlertLevel? alertLevel;
+  String? turno;
+  String? operario;
+  String? lineaProduccion;
+  bool soloNoRevisados = false;
+  bool soloConAccionCorrectiva = false;
+  DateQuickRange? quickRange;
 
   bool get hasActiveFilters => activeFilterCount > 0;
 
@@ -19,8 +40,14 @@ class RecordFilters {
     if (telar != null) count++;
     if (nepsMin != null || nepsMax != null) count++;
     if (mtsMin != null || mtsMax != null) count++;
-    if (dateFrom != null || dateTo != null) count++;
+    if (dateFrom != null || dateTo != null || quickRange != null) count++;
     if (searchText.trim().isNotEmpty) count++;
+    if (alertLevel != null) count++;
+    if (turno != null) count++;
+    if (operario != null) count++;
+    if (lineaProduccion != null) count++;
+    if (soloNoRevisados) count++;
+    if (soloConAccionCorrectiva) count++;
     return count;
   }
 
@@ -35,6 +62,13 @@ class RecordFilters {
     dateFrom = null;
     dateTo = null;
     searchText = '';
+    alertLevel = null;
+    turno = null;
+    operario = null;
+    lineaProduccion = null;
+    soloNoRevisados = false;
+    soloConAccionCorrectiva = false;
+    quickRange = null;
   }
 
   RecordFilters copy() {
@@ -48,6 +82,13 @@ class RecordFilters {
       ..mtsMax = mtsMax
       ..dateFrom = dateFrom
       ..dateTo = dateTo
-      ..searchText = searchText;
+      ..searchText = searchText
+      ..alertLevel = alertLevel
+      ..turno = turno
+      ..operario = operario
+      ..lineaProduccion = lineaProduccion
+      ..soloNoRevisados = soloNoRevisados
+      ..soloConAccionCorrectiva = soloConAccionCorrectiva
+      ..quickRange = quickRange;
   }
 }

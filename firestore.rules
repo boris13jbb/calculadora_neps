@@ -1,29 +1,165 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function tokenRole() {
+      return request.auth.token.role != null
+        ? request.auth.token.role
+        : '';
+    }
+
+    function tokenRoleLower() {
+      return tokenRole().lower();
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        tokenRoleLower() == 'super_admin' ||
+        request.auth.token.isSuperAdmin == true ||
+        request.auth.token.superAdmin == true
+      );
+    }
+
+    function isAdminRole() {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        tokenRoleLower() == 'admin' ||
+        tokenRole() == 'ADMINISTRADOR'
+      );
+    }
+
+    function isSupervisorOrAbove() {
+      return isAuthenticated() && (
+        isAdminRole() ||
+        tokenRoleLower() == 'supervisor' ||
+        tokenRole() == 'SUPERVISOR'
+      );
+    }
+
+    function isGerencia() {
+      return isAuthenticated() && (
+        tokenRoleLower() == 'gerencia' ||
+        tokenRole() == 'GERENCIA'
+      );
+    }
+
+    function canWriteOperational() {
+      return isAuthenticated() && !isGerencia();
+    }
+
+    function workspaceIdOk(workspaceId) {
+      return workspaceId == 'vicunha';
+    }
+
     match /workspaces/{workspaceId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+      allow create, update: if isAuthenticated() && workspaceIdOk(workspaceId);
+      allow delete: if isAdminRole() && workspaceIdOk(workspaceId);
 
       match /users/{userId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if isAuthenticated() && workspaceIdOk(workspaceId) && (
+          request.auth.uid == userId ||
+          isSupervisorOrAbove() ||
+          isGerencia()
+        );
+
+        allow create, delete: if false;
+
+        allow update: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && request.auth.uid == userId
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'role', 'isActive', 'deletedAt', 'email', 'displayName', 'createdBy',
+            'username', 'internalEmail', 'realEmail', 'isSuperAdmin'
+          ])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'lastLoginAt', 'fcmToken', 'fcmUpdatedAt'
+          ]);
 
         match /records/{recordId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+          allow read: if isAuthenticated() && workspaceIdOk(workspaceId) && (
+            request.auth.uid == userId ||
+            isSupervisorOrAbove() ||
+            isGerencia()
+          );
+
+          allow create: if isAuthenticated()
+            && workspaceIdOk(workspaceId)
+            && request.auth.uid == userId
+            && canWriteOperational();
+
+          allow update: if isAuthenticated()
+            && workspaceIdOk(workspaceId)
+            && canWriteOperational()
+            && (request.auth.uid == userId || isSupervisorOrAbove());
+
+          allow delete: if isAuthenticated()
+            && workspaceIdOk(workspaceId)
+            && canWriteOperational()
+            && (request.auth.uid == userId || isSupervisorOrAbove());
         }
       }
 
       match /reports/{reportId} {
-        allow read, write: if request.auth != null;
+        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+        allow create, update: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && canWriteOperational();
+        allow delete: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && isSupervisorOrAbove();
+      }
+
+      match /meta/fabrics {
+        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+        allow write: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && isSupervisorOrAbove();
+      }
+
+      match /meta/config {
+        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+        allow write: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && isAdminRole();
       }
 
       match /meta/{docId} {
-        allow read, write: if request.auth != null;
+        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+        allow write: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && isSupervisorOrAbove()
+          && docId != 'config';
       }
 
-      // Registros legacy (solo lectura para migracion; sin escritura nueva).
+      match /audit_logs/{logId} {
+        allow read: if isSuperAdmin() && workspaceIdOk(workspaceId);
+        allow write: if false;
+      }
+
+      match /user_creation_requests/{requestId} {
+        allow create: if isSuperAdmin()
+          && workspaceIdOk(workspaceId)
+          && request.resource.data.type == 'create'
+          && request.resource.data.status == 'pending'
+          && request.resource.data.requestedByUid == request.auth.uid
+          && request.resource.data.username is string
+          && request.resource.data.password is string
+          && request.resource.data.password.size() >= 8
+          && request.resource.data.role is string;
+
+        allow read: if isSuperAdmin()
+          && workspaceIdOk(workspaceId)
+          && resource.data.requestedByUid == request.auth.uid;
+
+        allow update, delete: if false;
+      }
+
       match /records/{recordId} {
-        allow read: if request.auth != null;
+        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
         allow write: if false;
       }
     }

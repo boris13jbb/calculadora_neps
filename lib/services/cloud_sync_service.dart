@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
@@ -8,6 +9,7 @@ import '../firebase_options.dart';
 import '../models/nep_record.dart';
 import '../utils/firestore_json_helper.dart';
 import '../models/saved_report.dart';
+import '../models/user_role.dart';
 import 'cloud_sync_port.dart';
 
 class CloudSyncService implements CloudSyncPort {
@@ -25,6 +27,9 @@ class CloudSyncService implements CloudSyncPort {
 
   DocumentReference<Map<String, dynamic>> get _fabricsDoc =>
       _workspace.collection('meta').doc('fabrics');
+
+  DocumentReference<Map<String, dynamic>> get _configDoc =>
+      _workspace.collection('meta').doc('config');
 
   @override
   Future<void> bootstrap() async {
@@ -44,25 +49,16 @@ class CloudSyncService implements CloudSyncPort {
       );
     }
 
-    if (FirebaseAuth.instance.currentUser == null) {
-      await FirebaseAuth.instance.signInAnonymously();
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw StateError('Usuario no autenticado. Inicie sesión primero.');
     }
 
-    _userId = FirebaseAuth.instance.currentUser?.uid;
-    if (_userId == null) {
-      throw StateError('No se pudo autenticar el usuario para sincronizar.');
-    }
+    _userId = currentUser.uid;
 
     await _workspace.set(
       {
         'name': 'VICUNHA',
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-
-    await _workspace.collection('users').doc(_userId).set(
-      {
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
@@ -124,11 +120,21 @@ class CloudSyncService implements CloudSyncPort {
     if (prefs.getBool(migrationKey) == true) return;
 
     if (localRecords.isNotEmpty) {
-      await upsertRecords(localRecords);
+      try {
+        await upsertRecords(localRecords);
+      } catch (error, stackTrace) {
+        debugPrint('Migración de registros omitida: $error');
+        debugPrint('$stackTrace');
+      }
     }
 
     if (localFabrics.isNotEmpty) {
-      await syncFabricsWithLocal(localFabrics);
+      try {
+        await syncFabricsWithLocal(localFabrics);
+      } catch (error, stackTrace) {
+        debugPrint('Migración de telas omitida: $error');
+        debugPrint('$stackTrace');
+      }
     }
 
     await prefs.setBool(migrationKey, true);
@@ -138,13 +144,15 @@ class CloudSyncService implements CloudSyncPort {
   Future<void> syncFabricsWithLocal(List<String> localFabrics) async {
     await bootstrap();
 
+    if (localFabrics.isEmpty) return;
+
     final snapshot = await _fabricsDoc.get();
     final cloudFabrics = _readStringList(snapshot.data()?['items']);
     final merged = _normalizeFabrics([...cloudFabrics, ...localFabrics]);
 
-    if (merged.isNotEmpty) {
-      await saveFabrics(merged);
-    }
+    if (_listsEqual(merged, cloudFabrics)) return;
+
+    await saveFabrics(merged);
   }
 
   @override
@@ -252,6 +260,44 @@ class CloudSyncService implements CloudSyncPort {
     await _reports.doc(reportId).delete();
   }
 
+  @override
+  Future<UserRole> fetchUserRole() async {
+    final userId = await _requireUserId();
+    final snap = await _workspace.collection('users').doc(userId).get();
+    return UserRole.fromCode(snap.data()?['role']?.toString());
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchAlertConfig() async {
+    await bootstrap();
+    final snap = await _configDoc.get();
+    return snap.data();
+  }
+
+  @override
+  Future<void> saveAlertConfig(Map<String, dynamic> config) async {
+    await bootstrap();
+    await _configDoc.set(
+      {
+        ...config,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
+  @override
+  Future<void> registerFcmToken(String token) async {
+    final userId = await _requireUserId();
+    await _workspace.collection('users').doc(userId).set(
+      {
+        'fcmToken': token,
+        'fcmUpdatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   Map<String, dynamic> _recordData(NepRecord record) {
     return {
       ...record.toJson(),
@@ -297,5 +343,13 @@ class CloudSyncService implements CloudSyncPort {
 
     result.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return result;
+  }
+
+  bool _listsEqual(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 }

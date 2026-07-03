@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "1000803867579-kptih1bg832ms31q7hissnettol17ucm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.calculadora_neps",
+            "certificate_hash": "faba453fe3718a26104b3ba77f967e104d6cb251"
+          }
+        },
+        {
           "client_id": "1000803867579-f3d6gopvpf6btn4t9vd55slhe13sv5go.apps.googleusercontent.com",
           "client_type": 3
         }

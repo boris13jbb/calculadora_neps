@@ -1,6 +1,7 @@
 import '../core/constants.dart';
 import '../models/nep_record.dart';
 import '../models/record_filters.dart';
+import '../services/alert_service.dart';
 
 class RecordFilterHelper {
   static List<NepRecord> apply(List<NepRecord> records, RecordFilters filters) {
@@ -19,6 +20,18 @@ class RecordFilterHelper {
     return _uniqueValues(records.map((r) => r.telar));
   }
 
+  static List<String> uniqueTurnos(List<NepRecord> records) {
+    return _uniqueValues(records.map((r) => r.turno));
+  }
+
+  static List<String> uniqueOperarios(List<NepRecord> records) {
+    return _uniqueValues(records.map((r) => r.operario));
+  }
+
+  static List<String> uniqueLineas(List<NepRecord> records) {
+    return _uniqueValues(records.map((r) => r.lineaProduccion));
+  }
+
   static List<String> _uniqueValues(Iterable<String> values) {
     final result = values
         .map((value) => value.trim())
@@ -27,6 +40,37 @@ class RecordFilterHelper {
         .toList();
     result.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return result;
+  }
+
+  static (DateTime?, DateTime?) resolveQuickRange(DateQuickRange range) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    return switch (range) {
+      DateQuickRange.hoy => (
+          today,
+          DateTime(today.year, today.month, today.day, 23, 59, 59),
+        ),
+      DateQuickRange.ayer => () {
+          final day = today.subtract(const Duration(days: 1));
+          return (
+            day,
+            DateTime(day.year, day.month, day.day, 23, 59, 59),
+          );
+        }(),
+      DateQuickRange.estaSemana => () {
+          final weekday = today.weekday;
+          final start = today.subtract(Duration(days: weekday - 1));
+          return (
+            start,
+            DateTime(today.year, today.month, today.day, 23, 59, 59),
+          );
+        }(),
+      DateQuickRange.esteMes => (
+          DateTime(today.year, today.month, 1),
+          DateTime(today.year, today.month, today.day, 23, 59, 59),
+        ),
+    };
   }
 
   static bool _matches(NepRecord record, RecordFilters filters) {
@@ -42,6 +86,35 @@ class RecordFilterHelper {
 
     if (filters.telar != null &&
         record.telar.toLowerCase() != filters.telar!.toLowerCase()) {
+      return false;
+    }
+
+    if (filters.turno != null &&
+        record.turno.toLowerCase() != filters.turno!.toLowerCase()) {
+      return false;
+    }
+
+    if (filters.operario != null &&
+        record.operario.toLowerCase() != filters.operario!.toLowerCase()) {
+      return false;
+    }
+
+    if (filters.lineaProduccion != null &&
+        record.lineaProduccion.toLowerCase() !=
+            filters.lineaProduccion!.toLowerCase()) {
+      return false;
+    }
+
+    if (filters.alertLevel != null &&
+        alertService.getAlertLevel(record.neps) != filters.alertLevel) {
+      return false;
+    }
+
+    if (filters.soloNoRevisados && record.revisadoPorSupervisor) {
+      return false;
+    }
+
+    if (filters.soloConAccionCorrectiva && record.accionCorrectiva.trim().isEmpty) {
       return false;
     }
 
@@ -62,30 +135,27 @@ class RecordFilterHelper {
       return false;
     }
 
-    if (filters.dateFrom != null) {
-      final from = DateTime(
-        filters.dateFrom!.year,
-        filters.dateFrom!.month,
-        filters.dateFrom!.day,
-      );
+    DateTime? from = filters.dateFrom;
+    DateTime? to = filters.dateTo;
+    if (filters.quickRange != null) {
+      final (qFrom, qTo) = resolveQuickRange(filters.quickRange!);
+      from = qFrom;
+      to = qTo;
+    }
+
+    if (from != null) {
+      final fromDay = DateTime(from.year, from.month, from.day);
       final created = DateTime(
         record.createdAt.year,
         record.createdAt.month,
         record.createdAt.day,
       );
-      if (created.isBefore(from)) return false;
+      if (created.isBefore(fromDay)) return false;
     }
 
-    if (filters.dateTo != null) {
-      final to = DateTime(
-        filters.dateTo!.year,
-        filters.dateTo!.month,
-        filters.dateTo!.day,
-        23,
-        59,
-        59,
-      );
-      if (record.createdAt.isAfter(to)) return false;
+    if (to != null) {
+      final toEnd = DateTime(to.year, to.month, to.day, 23, 59, 59);
+      if (record.createdAt.isAfter(toEnd)) return false;
     }
 
     final search = filters.searchText.trim().toLowerCase();
@@ -94,6 +164,11 @@ class RecordFilterHelper {
         record.tela,
         record.loteTrama,
         record.telar,
+        record.turno,
+        record.operario,
+        record.lineaProduccion,
+        record.observacion,
+        record.accionCorrectiva,
         record.neps.toString(),
         mts.round().toString(),
       ].join(' ').toLowerCase();

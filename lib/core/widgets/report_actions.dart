@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/export_column.dart';
+import '../../models/pdf_report_style.dart';
 import '../../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import 'export_column_selector.dart';
@@ -51,10 +52,12 @@ class _ShareReportResult {
   const _ShareReportResult({
     required this.format,
     required this.columns,
+    required this.style,
   });
 
   final String format;
   final Set<ExportColumn> columns;
+  final PdfReportStyle style;
 }
 
 Future<void> showShareReportMenu(
@@ -73,20 +76,22 @@ Future<void> showShareReportMenu(
     builder: (context) => _ShareReportDialog(
       recordCount: appState.visibleRecords.length,
       initialColumns: appState.exportColumns,
+      initialStyle: appState.pdfReportStyle,
     ),
   );
 
   if (!context.mounted || result == null) return;
 
   appState.setExportColumns(result.columns);
+  appState.setPdfReportStyle(result.style);
 
   switch (result.format) {
     case 'csv':
-      await appState.exportCsv(columns: result.columns);
+      await appState.exportCsv(columns: result.columns, style: result.style);
     case 'excel':
-      await appState.exportExcel(columns: result.columns);
+      await appState.exportExcel(columns: result.columns, style: result.style);
     case 'pdf':
-      await appState.exportPdf(columns: result.columns);
+      await appState.exportPdf(columns: result.columns, style: result.style);
   }
 }
 
@@ -97,10 +102,12 @@ class _ShareReportDialog extends StatefulWidget {
   const _ShareReportDialog({
     required this.recordCount,
     required this.initialColumns,
+    required this.initialStyle,
   });
 
   final int recordCount;
   final Set<ExportColumn> initialColumns;
+  final PdfReportStyle initialStyle;
 
   @override
   State<_ShareReportDialog> createState() => _ShareReportDialogState();
@@ -108,11 +115,13 @@ class _ShareReportDialog extends StatefulWidget {
 
 class _ShareReportDialogState extends State<_ShareReportDialog> {
   late Set<ExportColumn> _selected;
+  late PdfReportStyle _style;
 
   @override
   void initState() {
     super.initState();
     _selected = Set<ExportColumn>.from(widget.initialColumns);
+    _style = widget.initialStyle;
   }
 
   void _share(String format) {
@@ -128,7 +137,7 @@ class _ShareReportDialogState extends State<_ShareReportDialog> {
 
     Navigator.pop(
       context,
-      _ShareReportResult(format: format, columns: _selected),
+      _ShareReportResult(format: format, columns: _selected, style: _style),
     );
   }
 
@@ -153,6 +162,34 @@ class _ShareReportDialogState extends State<_ShareReportDialog> {
                 compact: true,
                 selected: _selected,
                 onChanged: (columns) => setState(() => _selected = columns),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Modo de reporte (PDF, CSV, Excel)',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<PdfReportStyle>(
+                  segments: PdfReportStyle.values
+                      .map(
+                        (style) => ButtonSegment<PdfReportStyle>(
+                          value: style,
+                          label: Text(style.label),
+                        ),
+                      )
+                      .toList(),
+                  selected: {_style},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (selection) =>
+                      setState(() => _style = selection.first),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _style.description,
+                style: const TextStyle(fontSize: 11, color: AppColors.muted),
               ),
             ],
           ),

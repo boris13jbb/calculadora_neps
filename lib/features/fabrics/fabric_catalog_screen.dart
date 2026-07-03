@@ -6,7 +6,12 @@ import 'package:provider/provider.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_input_decoration.dart';
+import '../../core/widgets/app_material_list_tile.dart';
 import '../../core/widgets/app_page.dart';
+import '../../core/widgets/empty_state.dart';
+import '../../core/widgets/status_banner.dart';
+import '../../core/permissions/permission.dart';
+import '../../core/widgets/permission_gate.dart';
 import '../../providers/app_state.dart';
 import '../../utils/file_share_helper.dart';
 
@@ -137,13 +142,15 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
     final phone = isPhoneLayout(context);
     final spacing = screenSpacing(context);
 
-    return AppPage(
-      title: 'Catalogo de telas',
-      subtitle: phone ? null : 'Importar, exportar y administrar tejidos',
-      fillViewport: true,
-      compactPadding: true,
-      denseOnPhone: true,
-      child: Column(
+    return PermissionGate(
+      permission: Permission.manageFabrics,
+      child: AppPage(
+        title: 'Catalogo de telas',
+        subtitle: phone ? null : 'Importar, exportar y administrar tejidos',
+        fillViewport: true,
+        compactPadding: true,
+        denseOnPhone: true,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Wrap(
@@ -163,7 +170,8 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
                 onPressed: isBusy
                     ? null
                     : () => _exportFabrics(appState, asExcel: true),
-                icon: Icons.download,
+                icon: isExporting ? null : Icons.download,
+                loading: isExporting,
                 label: phone ? 'Excel' : 'Exportar Excel',
               ),
               _ActionChip(
@@ -172,7 +180,8 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
                 onPressed: isBusy
                     ? null
                     : () => _exportFabrics(appState, asExcel: false),
-                icon: Icons.table_chart,
+                icon: isExporting ? null : Icons.table_chart,
+                loading: isExporting,
                 label: phone ? 'CSV' : 'Exportar CSV',
               ),
             ],
@@ -259,13 +268,11 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
           ),
           if (appState.cloudSyncError != null) ...[
             const SizedBox(height: 6),
-            Text(
-              'Firebase no disponible: ${appState.cloudSyncError}',
-              style: TextStyle(
-                fontSize: phone ? 11 : 12,
-                fontWeight: FontWeight.w700,
-                color: AppColors.danger,
-              ),
+            StatusBanner(
+              type: StatusBannerType.warning,
+              message: appState.cloudSyncEnabled
+                  ? 'Sincronización parcial con Firebase. El catálogo local sigue disponible.'
+                  : 'Catálogo en modo local. Para publicar en la nube se requiere rol Supervisor.',
             ),
           ],
           const SizedBox(height: 6),
@@ -277,15 +284,21 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
                 border: Border.all(color: AppColors.border),
               ),
               child: appState.fabrics.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text(
-                          'No hay telas. Importe o agregue manualmente.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12),
+                  ? EmptyState(
+                      compact: phone,
+                      icon: Icons.texture_outlined,
+                      title: 'Catálogo vacío',
+                      message:
+                          'No hay telas registradas. Importe un Excel o agregue manualmente.',
+                      actions: [
+                        EmptyStateAction(
+                          label: 'Importar Excel',
+                          icon: Icons.upload_file,
+                          onPressed: () {
+                            if (!isBusy) _importExcel(appState);
+                          },
                         ),
-                      ),
+                      ],
                     )
                   : ListView.separated(
                       padding: EdgeInsets.zero,
@@ -293,7 +306,7 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (context, index) {
                         final fabric = appState.fabrics[index];
-                        return ListTile(
+                        return AppMaterialListTile(
                           dense: true,
                           visualDensity: VisualDensity.compact,
                           leading: CircleAvatar(
@@ -331,6 +344,7 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

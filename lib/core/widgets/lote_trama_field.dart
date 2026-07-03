@@ -1,136 +1,41 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../utils/lote_trama_helper.dart';
 import '../theme/app_theme.dart';
 import 'app_input_decoration.dart';
+import 'app_material_list_tile.dart';
 
+/// Selector de lote de trama: lista desplegable, lote completo y gestión de catálogo.
 class LoteTramaField extends StatefulWidget {
   const LoteTramaField({
     super.key,
-    required this.prefixController,
-    required this.suffixController,
+    required this.catalog,
     required this.fullController,
-    required this.fullEntryMode,
-    required this.onFullEntryModeChanged,
+    required this.onAddToCatalog,
+    required this.onRemoveFromCatalog,
     this.ultraCompact = false,
     this.compact = false,
-    this.onPrefixPersist,
   });
 
-  final TextEditingController prefixController;
-  final TextEditingController suffixController;
+  final List<String> catalog;
   final TextEditingController fullController;
-  final bool fullEntryMode;
-  final ValueChanged<bool> onFullEntryModeChanged;
+  final Future<void> Function(String lote) onAddToCatalog;
+  final Future<void> Function(String lote) onRemoveFromCatalog;
   final bool ultraCompact;
   final bool compact;
-  final VoidCallback? onPrefixPersist;
 
   @override
   State<LoteTramaField> createState() => _LoteTramaFieldState();
 }
 
 class _LoteTramaFieldState extends State<LoteTramaField> {
-  String _preview = '';
-
-  @override
-  void initState() {
-    super.initState();
-    widget.prefixController.addListener(_syncFromControllers);
-    widget.suffixController.addListener(_syncFromControllers);
-    widget.fullController.addListener(_syncFromFull);
-    _refreshPreview();
-  }
-
-  @override
-  void didUpdateWidget(covariant LoteTramaField oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.fullEntryMode != widget.fullEntryMode) {
-      _refreshPreview();
-    }
-  }
+  final TextEditingController _manualController = TextEditingController();
+  bool _managerExpanded = false;
 
   @override
   void dispose() {
-    widget.prefixController.removeListener(_syncFromControllers);
-    widget.suffixController.removeListener(_syncFromControllers);
-    widget.fullController.removeListener(_syncFromFull);
+    _manualController.dispose();
     super.dispose();
-  }
-
-  void _refreshPreview() {
-    final next = widget.fullEntryMode
-        ? LoteTramaHelper.normalizeFull(widget.fullController.text)
-        : LoteTramaHelper.buildFull(
-            prefix: widget.prefixController.text,
-            suffix: widget.suffixController.text,
-          );
-    if (_preview != next) {
-      setState(() => _preview = next);
-    }
-  }
-
-  void _syncFromControllers() {
-    if (widget.fullEntryMode) return;
-    _refreshPreview();
-  }
-
-  void _syncFromFull() {
-    if (!widget.fullEntryMode) return;
-
-    final parts = LoteTramaHelper.split(
-      widget.fullController.text,
-      fallbackPrefix: widget.prefixController.text,
-    );
-
-    if (widget.prefixController.text != parts.prefix) {
-      widget.prefixController.text = parts.prefix;
-      widget.onPrefixPersist?.call();
-    }
-    if (widget.suffixController.text != parts.suffix) {
-      widget.suffixController.text = parts.suffix;
-    }
-    _refreshPreview();
-  }
-
-  void _onPrefixEdited(String value) {
-    widget.onPrefixPersist?.call();
-
-    if (widget.fullEntryMode) {
-      final parts = LoteTramaHelper.split(
-        widget.fullController.text,
-        fallbackPrefix: widget.prefixController.text,
-      );
-      widget.fullController.text = LoteTramaHelper.buildFull(
-        prefix: value,
-        suffix: parts.suffix,
-      );
-      return;
-    }
-
-    _refreshPreview();
-  }
-
-  void _setEntryMode(bool fullMode) {
-    if (widget.fullEntryMode == fullMode) return;
-
-    if (fullMode) {
-      widget.fullController.text = LoteTramaHelper.buildFull(
-        prefix: widget.prefixController.text,
-        suffix: widget.suffixController.text,
-      );
-    } else {
-      final parts = LoteTramaHelper.split(
-        widget.fullController.text,
-        fallbackPrefix: widget.prefixController.text,
-      );
-      widget.prefixController.text = parts.prefix;
-      widget.suffixController.text = parts.suffix;
-    }
-
-    widget.onFullEntryModeChanged(fullMode);
-    _refreshPreview();
   }
 
   InputDecoration _decoration(String hint) {
@@ -141,254 +46,265 @@ class _LoteTramaFieldState extends State<LoteTramaField> {
     );
   }
 
+  String? get _selectedFromCatalog {
+    final current = LoteTramaHelper.normalizeFull(widget.fullController.text);
+    if (current.isEmpty) return null;
+    for (final lote in widget.catalog) {
+      if (lote.toUpperCase() == current.toUpperCase()) return lote;
+    }
+    return null;
+  }
+
+  Future<void> _openLoteSheet() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        final maxHeight = MediaQuery.sizeOf(sheetContext).height * 0.55;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const Text(
+                  'Seleccionar lote',
+                  style: TextStyle(
+                    color: AppColors.textDark,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: widget.catalog.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text(
+                            'No hay lotes guardados. Agregue uno en Gestionar lotes.',
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: widget.catalog.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final lote = widget.catalog[index];
+                            final isSelected = lote == _selectedFromCatalog;
+                            return AppMaterialListTile(
+                              dense: true,
+                              selected: isSelected,
+                              title: Text(
+                                lote,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                              trailing: isSelected
+                                  ? const Icon(
+                                      Icons.check_circle,
+                                      color: AppColors.primaryGreen,
+                                      size: 20,
+                                    )
+                                  : null,
+                              onTap: () => Navigator.pop(sheetContext, lote),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      widget.fullController.text = selected;
+      setState(() {});
+    }
+  }
+
+  Future<void> _addManualLote() async {
+    final value = LoteTramaHelper.normalizeFull(_manualController.text);
+    if (value.isEmpty) return;
+
+    await widget.onAddToCatalog(value);
+    widget.fullController.text = value;
+    _manualController.clear();
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    final labelSize = widget.ultraCompact ? 11.0 : 12.0;
-    final previewSize = widget.ultraCompact ? 16.0 : 20.0;
+    final labelStyle = TextStyle(
+      fontSize: widget.ultraCompact ? 10 : 11,
+      fontWeight: FontWeight.w800,
+      color: AppColors.textGreen,
+    );
+    final selectedLabel = _selectedFromCatalog ?? 'Seleccionar lote...';
+    final hasSelection = _selectedFromCatalog != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Lote de trama',
-                style: TextStyle(
-                  fontSize: labelSize,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                ),
-              ),
-            ),
-            _EntryModeToggle(
-              fullEntryMode: widget.fullEntryMode,
-              ultraCompact: widget.ultraCompact,
-              onChanged: _setEntryMode,
-            ),
-          ],
+        Padding(
+          padding: EdgeInsets.only(bottom: widget.ultraCompact ? 2 : 4),
+          child: Text('Lote de trama', style: labelStyle),
         ),
-        SizedBox(height: widget.ultraCompact ? 4 : 6),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: widget.ultraCompact ? 78 : 92,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Base',
-                    style: TextStyle(
-                      fontSize: widget.ultraCompact ? 10 : 11,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.muted,
+        InkWell(
+          borderRadius: BorderRadius.circular(widget.ultraCompact ? 8 : 10),
+          onTap: _openLoteSheet,
+          child: InputDecorator(
+            decoration: _decoration(''),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    selectedLabel,
+                    overflow: TextOverflow.ellipsis,
+                    style: appDropdownTextStyle(
+                      ultraCompact: widget.ultraCompact,
+                    ).copyWith(
+                      color: hasSelection
+                          ? AppColors.textDark
+                          : AppColors.muted,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  TextField(
-                    controller: widget.prefixController,
-                    textCapitalization: TextCapitalization.characters,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: widget.ultraCompact ? 13 : 15,
-                      fontWeight: FontWeight.w900,
-                      fontFamily: 'monospace',
-                      letterSpacing: 0.5,
-                    ),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-                      LengthLimitingTextInputFormatter(
-                        LoteTramaHelper.defaultPrefixLength,
-                      ),
-                    ],
-                    decoration: _decoration('63E264').copyWith(
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: widget.ultraCompact ? 6 : 8,
-                        vertical: widget.ultraCompact ? 8 : 10,
-                      ),
-                    ),
-                    onChanged: _onPrefixEdited,
-                  ),
-                ],
-              ),
+                ),
+                const Icon(Icons.arrow_drop_down, color: AppColors.textDark),
+              ],
             ),
-            SizedBox(width: widget.ultraCompact ? 6 : 8),
-            Expanded(
-              child: widget.fullEntryMode
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Lote completo',
-                          style: TextStyle(
-                            fontSize: widget.ultraCompact ? 10 : 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.muted,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        TextField(
-                          controller: widget.fullController,
-                          textCapitalization: TextCapitalization.characters,
-                          style: TextStyle(
-                            fontSize: widget.ultraCompact ? 14 : 17,
-                            fontWeight: FontWeight.w900,
-                            fontFamily: 'monospace',
-                            letterSpacing: 0.6,
-                          ),
-                          decoration: _decoration('63E264H10A'),
-                          onChanged: (_) => _syncFromFull(),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Sufijo',
-                          style: TextStyle(
-                            fontSize: widget.ultraCompact ? 10 : 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.muted,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        TextField(
-                          controller: widget.suffixController,
-                          textCapitalization: TextCapitalization.characters,
-                          style: TextStyle(
-                            fontSize: widget.ultraCompact ? 14 : 16,
-                            fontWeight: FontWeight.w800,
-                            fontFamily: 'monospace',
-                            letterSpacing: 0.4,
-                          ),
-                          decoration: _decoration('H10A'),
-                          onChanged: (_) => _syncFromControllers(),
-                        ),
-                      ],
-                    ),
-            ),
-          ],
+          ),
         ),
         SizedBox(height: widget.ultraCompact ? 6 : 8),
-        Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
-            horizontal: widget.ultraCompact ? 10 : 14,
-            vertical: widget.ultraCompact ? 8 : 12,
+        Padding(
+          padding: EdgeInsets.only(bottom: widget.ultraCompact ? 2 : 4),
+          child: Text('Lote completo', style: labelStyle),
+        ),
+        TextField(
+          controller: widget.fullController,
+          textCapitalization: TextCapitalization.characters,
+          style: TextStyle(
+            fontSize: widget.ultraCompact ? 13 : 15,
+            fontWeight: FontWeight.w800,
+            fontFamily: 'monospace',
+            letterSpacing: 0.4,
           ),
-          decoration: BoxDecoration(
-            color: AppColors.formulaBg,
-            borderRadius: BorderRadius.circular(widget.ultraCompact ? 8 : 10),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Lote completo',
-                style: TextStyle(
-                  fontSize: widget.ultraCompact ? 10 : 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.muted,
-                ),
+          decoration: _decoration('63E264H10A'),
+          onChanged: (_) => setState(() {}),
+        ),
+        SizedBox(height: widget.ultraCompact ? 6 : 8),
+        Material(
+          color: AppColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(widget.ultraCompact ? 8 : 10),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(widget.ultraCompact ? 8 : 10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: ExpansionTile(
+              tilePadding: EdgeInsets.symmetric(
+                horizontal: widget.ultraCompact ? 8 : 12,
               ),
-              const SizedBox(height: 4),
-              SelectableText(
-                _preview.isEmpty ? '—' : _preview,
+              childrenPadding: EdgeInsets.fromLTRB(
+                widget.ultraCompact ? 8 : 12,
+                0,
+                widget.ultraCompact ? 8 : 12,
+                widget.ultraCompact ? 8 : 12,
+              ),
+              initiallyExpanded: _managerExpanded,
+              onExpansionChanged: (value) =>
+                  setState(() => _managerExpanded = value),
+              title: Text(
+                'Gestionar lotes (${widget.catalog.length})',
                 style: TextStyle(
-                  fontSize: previewSize,
-                  fontWeight: FontWeight.w900,
-                  fontFamily: 'monospace',
-                  letterSpacing: 1,
+                  fontWeight: FontWeight.w800,
+                  fontSize: widget.ultraCompact ? 12 : 13,
                   color: AppColors.textDark,
                 ),
               ),
-            ],
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _manualController,
+                        textCapitalization: TextCapitalization.characters,
+                        style: TextStyle(fontSize: widget.ultraCompact ? 12 : 14),
+                        decoration: _decoration('Agregar lote manual, ej. 63E264H10A'),
+                        onSubmitted: (_) => _addManualLote(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primaryGreen,
+                        foregroundColor: Colors.white,
+                        minimumSize: Size(widget.ultraCompact ? 40 : 44, widget.ultraCompact ? 40 : 44),
+                        padding: EdgeInsets.zero,
+                      ),
+                      onPressed: _addManualLote,
+                      child: const Icon(Icons.add),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (widget.catalog.isEmpty)
+                  const Text(
+                    'Sin lotes registrados.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  )
+                else
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final lote in widget.catalog)
+                        InputChip(
+                          label: Text(
+                            lote,
+                            style: TextStyle(
+                              fontSize: widget.ultraCompact ? 11 : 12,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                          deleteIcon: const Icon(Icons.close, size: 16),
+                          onDeleted: () async {
+                            await widget.onRemoveFromCatalog(lote);
+                            if (mounted) setState(() {});
+                          },
+                          onPressed: () {
+                            widget.fullController.text = lote;
+                            setState(() {});
+                          },
+                        ),
+                    ],
+                  ),
+              ],
+            ),
           ),
         ),
       ],
-    );
-  }
-}
-
-class _EntryModeToggle extends StatelessWidget {
-  const _EntryModeToggle({
-    required this.fullEntryMode,
-    required this.ultraCompact,
-    required this.onChanged,
-  });
-
-  final bool fullEntryMode;
-  final bool ultraCompact;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: ultraCompact ? 10 : 11,
-      fontWeight: FontWeight.w800,
-    );
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ModeChip(
-            label: 'Sufijo',
-            selected: !fullEntryMode,
-            style: style,
-            onTap: () => onChanged(false),
-          ),
-          _ModeChip(
-            label: 'Completo',
-            selected: fullEntryMode,
-            style: style,
-            onTap: () => onChanged(true),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ModeChip extends StatelessWidget {
-  const _ModeChip({
-    required this.label,
-    required this.selected,
-    required this.style,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final TextStyle style;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? AppColors.accent : Colors.transparent,
-      borderRadius: BorderRadius.circular(7),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(7),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Text(
-            label,
-            style: style.copyWith(
-              color: selected ? AppColors.header : AppColors.textDark,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

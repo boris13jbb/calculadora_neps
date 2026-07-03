@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../models/nep_record.dart';
+import '../models/pdf_report_style.dart';
 import '../models/record_filters.dart';
 import '../models/saved_report.dart';
 import 'cloud_sync_port.dart';
@@ -27,19 +28,71 @@ class ReportStorageService {
   }
 
   Future<List<SavedReport>> loadReports() async {
+    final local = await _loadReportsLocally();
     final cloudSync = _cloudSync;
-    if (cloudSync != null) {
+    if (cloudSync == null) return local;
+
+    try {
+      await cloudSync.bootstrap();
+      await migrateLocalReportsIfNeeded();
+      final remote = await cloudSync.fetchReports();
+      final merged = _mergeReports(local, remote);
+      await _persistReportsLocally(merged);
+      return merged;
+    } catch (error, stackTrace) {
+      debugPrint('Error al cargar informes desde Firebase: $error');
+      debugPrint('$stackTrace');
+      if (local.isEmpty) rethrow;
+    }
+
+    return local;
+  }
+
+  /// Sube informes locales a Firestore la primera vez que hay nube disponible.
+  Future<void> migrateLocalReportsIfNeeded() async {
+    final cloudSync = _cloudSync;
+    if (cloudSync == null) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(cloudReportsMigrationKey) == true) return;
+
+    final local = await _loadReportsLocally();
+    if (local.isEmpty) {
+      await prefs.setBool(cloudReportsMigrationKey, true);
+      return;
+    }
+
+    for (final report in local) {
       try {
-        final remote = await cloudSync.fetchReports();
-        await _persistReportsLocally(remote);
-        return remote;
+        await cloudSync.saveReport(report);
       } catch (error, stackTrace) {
-        debugPrint('Error al cargar informes desde Firebase: $error');
+        debugPrint('Error al migrar informe ${report.id}: $error');
         debugPrint('$stackTrace');
+        return;
       }
     }
 
-    return _loadReportsLocally();
+    await prefs.setBool(cloudReportsMigrationKey, true);
+  }
+
+  List<SavedReport> _mergeReports(
+    List<SavedReport> local,
+    List<SavedReport> remote,
+  ) {
+    final byId = <String, SavedReport>{};
+    for (final report in local) {
+      byId[report.id] = report;
+    }
+    for (final report in remote) {
+      final existing = byId[report.id];
+      if (existing == null || !report.createdAt.isBefore(existing.createdAt)) {
+        byId[report.id] = report;
+      }
+    }
+
+    final merged = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return merged;
   }
 
   Future<List<SavedReport>> _loadReportsLocally() async {
@@ -83,6 +136,7 @@ class ReportStorageService {
     required List<NepRecord> records,
     RecordFilters? appliedFilters,
     bool saveFiles = true,
+    PdfReportStyle exportStyle = PdfReportStyle.completo,
   }) async {
     final report = SavedReport(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -118,7 +172,7 @@ class ReportStorageService {
     await _upsertReportLocally(report);
 
     if (saveFiles && !kIsWeb) {
-      await _saveReportFiles(report);
+      await _saveReportFiles(report, exportStyle: exportStyle);
     }
 
     return report;
@@ -149,12 +203,18 @@ class ReportStorageService {
     return reportsDir;
   }
 
-  Future<void> _saveReportFiles(SavedReport report) async {
+  Future<void> _saveReportFiles(
+    SavedReport report, {
+    PdfReportStyle exportStyle = PdfReportStyle.completo,
+  }) async {
     final dir = await getReportsDirectory();
     final safeName = _safeFileName(report.name);
     final stamp = _fileStamp(report.createdAt);
 
-    final excelBytes = exportService.buildExcelBytes(report.records);
+    final excelBytes = exportService.buildExcelBytes(
+      report.records,
+      style: exportStyle,
+    );
     if (excelBytes != null) {
       final excelFile = File('${dir.path}/${safeName}_$stamp.xlsx');
       await excelFile.writeAsBytes(excelBytes, flush: true);
@@ -162,13 +222,14 @@ class ReportStorageService {
 
     final csvFile = File('${dir.path}/${safeName}_$stamp.csv');
     await csvFile.writeAsString(
-      '\uFEFF${exportService.buildCsvText(report.records)}',
+      '\uFEFF${exportService.buildCsvText(report.records, style: exportStyle)}',
       encoding: utf8,
     );
 
     final pdfBytes = await exportService.buildPdfBytes(
       records: report.records,
       title: report.name,
+      style: exportStyle,
     );
     final pdfFile = File('${dir.path}/${safeName}_$stamp.pdf');
     await pdfFile.writeAsBytes(pdfBytes, flush: true);

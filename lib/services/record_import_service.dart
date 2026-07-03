@@ -4,34 +4,46 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart' as xls;
 
 import '../core/constants.dart';
+import '../models/import_row_result.dart';
 import '../models/nep_record.dart';
 import '../models/record_import_result.dart';
 import '../utils/lote_trama_helper.dart';
 
 class RecordImportService {
+  static const requiredColumnLabels = [
+    'Telar',
+    'Tela',
+    'Lote de trama',
+    'Neps o Mts calculados',
+  ];
+
   RecordImportResult importFromBytes(
     Uint8List bytes, {
     required String fileName,
+    List<NepRecord> existingRecords = const [],
   }) {
     final lowerName = fileName.toLowerCase();
     if (lowerName.endsWith('.csv')) {
       final content = utf8.decode(bytes, allowMalformed: true);
-      return importFromCsv(content);
+      return importFromCsv(content, existingRecords: existingRecords);
     }
 
     if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
-      return importFromExcel(bytes);
+      return importFromExcel(bytes, existingRecords: existingRecords);
     }
 
     if (_looksLikeCsv(bytes)) {
       final content = utf8.decode(bytes, allowMalformed: true);
-      return importFromCsv(content);
+      return importFromCsv(content, existingRecords: existingRecords);
     }
 
-    return importFromExcel(bytes);
+    return importFromExcel(bytes, existingRecords: existingRecords);
   }
 
-  RecordImportResult importFromCsv(String content) {
+  RecordImportResult importFromCsv(
+    String content, {
+    List<NepRecord> existingRecords = const [],
+  }) {
     final normalized = content.replaceFirst('\uFEFF', '');
     final rows = <List<String>>[];
 
@@ -41,10 +53,13 @@ class RecordImportService {
       rows.add(_parseCsvLine(trimmed));
     }
 
-    return _buildResult(rows);
+    return _buildResult(rows, existingRecords: existingRecords);
   }
 
-  RecordImportResult importFromExcel(Uint8List bytes) {
+  RecordImportResult importFromExcel(
+    Uint8List bytes, {
+    List<NepRecord> existingRecords = const [],
+  }) {
     final excel = xls.Excel.decodeBytes(bytes);
     final rows = <List<String>>[];
 
@@ -59,10 +74,13 @@ class RecordImportService {
       }
     }
 
-    return _buildResult(rows);
+    return _buildResult(rows, existingRecords: existingRecords);
   }
 
-  RecordImportResult _buildResult(List<List<String>> rows) {
+  RecordImportResult _buildResult(
+    List<List<String>> rows, {
+    List<NepRecord> existingRecords = const [],
+  }) {
     if (rows.isEmpty) {
       return const RecordImportResult(
         records: [],
@@ -71,36 +89,142 @@ class RecordImportService {
     }
 
     final columnMap = _detectColumns(rows.first);
-    final dataStartRow = columnMap == null ? 0 : 1;
-    final records = <NepRecord>[];
-    var skipped = 0;
+    final hasHeader = columnMap != null;
+    final dataStartRow = hasHeader ? 1 : 0;
+    final missingColumns = _missingRequiredColumns(columnMap);
+    final existingKeys = existingRecords.map(_fingerprint).toSet();
+    final seenInFile = <String>{};
+
+    final rowResults = <ImportRowResult>[];
+    var duplicateRows = 0;
+    var errorRows = 0;
+    var skippedRows = 0;
 
     for (var index = dataStartRow; index < rows.length; index++) {
       final row = rows[index];
+      final rowNumber = index + 1;
+
       if (_isSummaryRow(row)) {
-        skipped++;
+        skippedRows++;
+        rowResults.add(
+          ImportRowResult(
+            rowNumber: rowNumber,
+            status: ImportRowStatus.skipped,
+            message: 'Fila de resumen omitida',
+            rawCells: row,
+          ),
+        );
         continue;
       }
 
-      final record = _parseRecordRow(row, columnMap);
-      if (record == null) {
-        skipped++;
+      final parseResult = _parseRecordRowDetailed(row, columnMap);
+      if (parseResult.record == null) {
+        errorRows++;
+        rowResults.add(
+          ImportRowResult(
+            rowNumber: rowNumber,
+            status: ImportRowStatus.error,
+            message: parseResult.error ?? 'Datos incompletos o inválidos',
+            rawCells: row,
+          ),
+        );
         continue;
       }
 
-      records.add(record);
-    }
+      final record = parseResult.record!;
+      final key = _fingerprint(record);
 
-    if (records.isEmpty) {
-      return RecordImportResult(
-        records: const [],
-        skippedRows: skipped,
-        message:
-            'No se encontraron registros validos. Revise telar, neps, tela y lote.',
+      if (seenInFile.contains(key)) {
+        duplicateRows++;
+        rowResults.add(
+          ImportRowResult(
+            rowNumber: rowNumber,
+            status: ImportRowStatus.duplicate,
+            record: record,
+            message: 'Duplicada dentro del archivo',
+            rawCells: row,
+          ),
+        );
+        continue;
+      }
+
+      if (existingKeys.contains(key)) {
+        duplicateRows++;
+        rowResults.add(
+          ImportRowResult(
+            rowNumber: rowNumber,
+            status: ImportRowStatus.duplicate,
+            record: record,
+            message: 'Ya existe en la tabla actual',
+            rawCells: row,
+          ),
+        );
+        continue;
+      }
+
+      seenInFile.add(key);
+      rowResults.add(
+        ImportRowResult(
+          rowNumber: rowNumber,
+          status: ImportRowStatus.valid,
+          record: record,
+          rawCells: row,
+        ),
       );
     }
 
-    return RecordImportResult(records: records, skippedRows: skipped);
+    final importable = rowResults
+        .where((r) => r.status == ImportRowStatus.valid && r.record != null)
+        .map((r) => r.record!)
+        .toList();
+
+    if (importable.isEmpty) {
+      return RecordImportResult(
+        records: const [],
+        skippedRows: skippedRows,
+        rowResults: rowResults,
+        missingColumns: missingColumns,
+        hasRecognizedHeader: hasHeader,
+        duplicateRows: duplicateRows,
+        errorRows: errorRows,
+        message: missingColumns.isNotEmpty
+            ? 'Faltan columnas obligatorias: ${missingColumns.join(', ')}.'
+            : 'No se encontraron registros válidos. Revise telar, neps, tela y lote.',
+      );
+    }
+
+    return RecordImportResult(
+      records: importable,
+      skippedRows: skippedRows,
+      rowResults: rowResults,
+      missingColumns: missingColumns,
+      hasRecognizedHeader: hasHeader,
+      duplicateRows: duplicateRows,
+      errorRows: errorRows,
+    );
+  }
+
+  List<String> _missingRequiredColumns(Map<_ImportField, int>? columnMap) {
+    if (columnMap == null) return List<String>.from(requiredColumnLabels);
+
+    final missing = <String>[];
+    if (!columnMap.containsKey(_ImportField.telar)) missing.add('Telar');
+    if (!columnMap.containsKey(_ImportField.tela)) missing.add('Tela');
+    if (!columnMap.containsKey(_ImportField.loteTrama)) {
+      missing.add('Lote de trama');
+    }
+    if (!columnMap.containsKey(_ImportField.neps) &&
+        !columnMap.containsKey(_ImportField.mts)) {
+      missing.add('Neps o Mts calculados');
+    }
+    return missing;
+  }
+
+  String _fingerprint(NepRecord record) {
+    final date = record.createdAt;
+    final dateKey =
+        '${date.year}${date.month}${date.day}${date.hour}${date.minute}';
+    return '${record.telar}|${record.tela}|${record.loteTrama}|${record.neps}|$dateKey';
   }
 
   Map<_ImportField, int>? _detectColumns(List<String> headerRow) {
@@ -121,7 +245,7 @@ class RecordImportService {
     return map;
   }
 
-  NepRecord? _parseRecordRow(
+  ({NepRecord? record, String? error}) _parseRecordRowDetailed(
     List<String> row,
     Map<_ImportField, int>? columnMap,
   ) {
@@ -137,23 +261,42 @@ class RecordImportService {
     final nepsText = read(_ImportField.neps, 5);
     final mtsText = read(_ImportField.mts, 6);
     final fechaText = read(_ImportField.fecha, 1);
+    final turno = read(_ImportField.turno, 7);
+    final operario = read(_ImportField.operario, 8);
+    final linea = read(_ImportField.lineaProduccion, 9);
+    final observacion = read(_ImportField.observacion, 10);
 
-    if (telar.isEmpty) return null;
+    if (telar.isEmpty) {
+      return (record: null, error: 'Telar vacío');
+    }
 
     final neps = _resolveNeps(nepsText, mtsText);
-    if (neps == null || neps <= 0) return null;
+    if (neps == null || neps <= 0) {
+      return (record: null, error: 'Neps o mts inválidos');
+    }
 
-    if (tela.isEmpty) return null;
+    if (tela.isEmpty) {
+      return (record: null, error: 'Tela vacía');
+    }
 
     final loteSuffix = LoteTramaHelper.normalizeSuffix(loteRaw);
-    if (loteSuffix.isEmpty) return null;
+    if (loteSuffix.isEmpty) {
+      return (record: null, error: 'Lote de trama inválido');
+    }
 
-    return NepRecord(
-      telar: telar,
-      neps: neps,
-      tela: tela,
-      loteTrama: LoteTramaHelper.buildFullLote(loteSuffix),
-      createdAt: _parseDate(fechaText) ?? DateTime.now(),
+    return (
+      record: NepRecord(
+        telar: telar,
+        neps: neps,
+        tela: tela,
+        loteTrama: LoteTramaHelper.buildFullLote(loteSuffix),
+        createdAt: _parseDate(fechaText) ?? DateTime.now(),
+        turno: turno,
+        operario: operario,
+        lineaProduccion: linea,
+        observacion: observacion,
+      ),
+      error: null,
     );
   }
 
@@ -216,6 +359,14 @@ class RecordImportService {
     }
     if (normalized.contains('NEPS')) return _ImportField.neps;
     if (normalized.contains('MTS')) return _ImportField.mts;
+    if (normalized.contains('TURNO')) return _ImportField.turno;
+    if (normalized.contains('OPERARIO')) return _ImportField.operario;
+    if (normalized.contains('LINEA') || normalized.contains('LINEAPRODUCCION')) {
+      return _ImportField.lineaProduccion;
+    }
+    if (normalized.contains('OBSERVACION') || normalized.contains('NOTA')) {
+      return _ImportField.observacion;
+    }
 
     return null;
   }
@@ -280,4 +431,8 @@ enum _ImportField {
   telar,
   neps,
   mts,
+  turno,
+  operario,
+  lineaProduccion,
+  observacion,
 }

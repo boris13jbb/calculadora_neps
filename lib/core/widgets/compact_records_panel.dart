@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
 import '../theme/app_theme.dart';
+import 'app_material_list_tile.dart';
 import 'confirm_dialogs.dart';
+import 'empty_state.dart';
 
 class CompactRecordsPanel extends StatelessWidget {
   const CompactRecordsPanel({
@@ -50,12 +52,13 @@ class CompactRecordsPanel extends StatelessWidget {
           const Divider(height: 1),
           Expanded(
             child: sorted.isEmpty
-                ? const Center(
-                    child: Text(
-                      'Sin registros. Agregue el primero con el formulario.',
-                      style: TextStyle(color: AppColors.muted, fontSize: 12),
-                      textAlign: TextAlign.center,
-                    ),
+                ? EmptyState(
+                    compact: true,
+                    icon: Icons.edit_note_outlined,
+                    title: 'Sin registros en sesión',
+                    message:
+                        'Agregue el primer registro con el formulario de captura.',
+                    iconColor: AppColors.primaryGreen,
                   )
                 : LayoutBuilder(
                     builder: (context, constraints) {
@@ -349,7 +352,7 @@ class _CompactRecordTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    return AppMaterialListTile(
       dense: true,
       visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
       minVerticalPadding: 0,

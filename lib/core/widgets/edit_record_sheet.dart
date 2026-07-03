@@ -96,23 +96,20 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
   }
 
   String? _resolveLoteTrama() {
-    if (loteFullEntryMode) {
-      final full = LoteTramaHelper.normalizeFull(loteFullController.text);
-      if (!LoteTramaHelper.isValidFull(full)) return null;
-      return full;
-    }
+    final full = LoteTramaHelper.normalizeFull(loteFullController.text);
+    if (LoteTramaHelper.isValidFull(full)) return full;
 
-    if (!LoteTramaHelper.isValidParts(
+    if (LoteTramaHelper.isValidParts(
       prefix: lotePrefixController.text,
       suffix: loteSuffixController.text,
     )) {
-      return null;
+      return LoteTramaHelper.buildFull(
+        prefix: lotePrefixController.text,
+        suffix: loteSuffixController.text,
+      );
     }
 
-    return LoteTramaHelper.buildFull(
-      prefix: lotePrefixController.text,
-      suffix: loteSuffixController.text,
-    );
+    return null;
   }
 
   Future<void> _save() async {
@@ -278,13 +275,10 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
               ],
               const SizedBox(height: 10),
               LoteTramaField(
-                prefixController: lotePrefixController,
-                suffixController: loteSuffixController,
+                catalog: widget.appState.loteCatalog,
                 fullController: loteFullController,
-                fullEntryMode: loteFullEntryMode,
-                onFullEntryModeChanged: (value) {
-                  setState(() => loteFullEntryMode = value);
-                },
+                onAddToCatalog: widget.appState.addLoteTramaToCatalog,
+                onRemoveFromCatalog: widget.appState.removeLoteTramaFromCatalog,
                 compact: true,
               ),
             ],

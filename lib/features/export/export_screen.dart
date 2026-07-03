@@ -8,12 +8,17 @@ import '../../core/theme/app_theme.dart';
 
 import '../../core/widgets/app_page.dart';
 
+import '../../core/widgets/empty_state.dart';
+
 import '../../core/widgets/export_column_selector.dart';
 
 import '../../core/widgets/formula_box.dart';
 
 import '../../core/widgets/report_actions.dart';
 
+import '../../core/permissions/permission.dart';
+import '../../core/widgets/permission_gate.dart';
+import '../../models/pdf_report_style.dart';
 import '../../providers/app_state.dart';
 
 class ExportScreen extends StatelessWidget {
@@ -31,27 +36,30 @@ class ExportScreen extends StatelessWidget {
 
     final radius = sectionRadius(context);
 
-    return AppPage(
-      title: 'Exportar y compartir',
-      subtitle: phone
-          ? null
-          : 'Generar archivos e informes de los registros visibles',
-      fillViewport: phone,
-      compactPadding: true,
-      denseOnPhone: true,
-      child: phone
-          ? _MobileExportBody(
-              appState: appState,
-              spacing: spacing,
-              pad: pad,
-              radius: radius,
-            )
-          : _DesktopExportBody(
-              appState: appState,
-              spacing: spacing,
-              pad: pad,
-              radius: radius,
-            ),
+    return PermissionGate(
+      permission: Permission.exportReports,
+      child: AppPage(
+        title: 'Exportar y compartir',
+        subtitle: phone
+            ? null
+            : 'Generar archivos e informes de los registros visibles',
+        fillViewport: phone,
+        compactPadding: true,
+        denseOnPhone: true,
+        child: phone
+            ? _MobileExportBody(
+                appState: appState,
+                spacing: spacing,
+                pad: pad,
+                radius: radius,
+              )
+            : _DesktopExportBody(
+                appState: appState,
+                spacing: spacing,
+                pad: pad,
+                radius: radius,
+              ),
+      ),
     );
   }
 }
@@ -80,8 +88,23 @@ class _DesktopExportBody extends StatelessWidget {
         children: [
           _ExportStatus(appState: appState),
           _DataInfoCard(appState: appState, pad: pad, radius: radius),
+          if (appState.visibleRecords.isEmpty) ...[
+            SizedBox(height: spacing),
+            _NoDataCard(
+              appState: appState,
+              pad: pad,
+              radius: radius,
+            ),
+          ],
           SizedBox(height: spacing),
           _ColumnSelectorCard(
+            appState: appState,
+            pad: pad,
+            radius: radius,
+            compact: false,
+          ),
+          SizedBox(height: spacing),
+          _ReportStyleCard(
             appState: appState,
             pad: pad,
             radius: radius,
@@ -127,6 +150,15 @@ class _MobileExportBody extends StatelessWidget {
       children: [
         _ExportStatus(appState: appState),
         _DataInfoCard(appState: appState, pad: pad, radius: radius),
+        if (appState.visibleRecords.isEmpty) ...[
+          SizedBox(height: spacing),
+          _NoDataCard(
+            appState: appState,
+            pad: pad,
+            radius: radius,
+            compact: true,
+          ),
+        ],
         SizedBox(height: spacing),
         Expanded(
           child: SingleChildScrollView(
@@ -134,6 +166,13 @@ class _MobileExportBody extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _ColumnSelectorCard(
+                  appState: appState,
+                  pad: pad,
+                  radius: radius,
+                  compact: true,
+                ),
+                SizedBox(height: spacing),
+                _ReportStyleCard(
                   appState: appState,
                   pad: pad,
                   radius: radius,
@@ -233,7 +272,15 @@ class _DataInfoCard extends StatelessWidget {
           SizedBox(height: phone ? 4 : 8),
           Text(
             'Visibles: ${appState.visibleRecords.length} / ${appState.records.length}',
-            style: TextStyle(fontSize: phone ? 12 : 14),
+            style: TextStyle(
+              fontSize: phone ? 12 : 14,
+              color: appState.visibleRecords.isEmpty
+                  ? AppColors.statusWarning
+                  : AppColors.textDark,
+              fontWeight: appState.visibleRecords.isEmpty
+                  ? FontWeight.w800
+                  : FontWeight.normal,
+            ),
           ),
           if (appState.filters.hasActiveFilters)
             Text(
@@ -283,6 +330,75 @@ class _ColumnSelectorCard extends StatelessWidget {
   }
 }
 
+class _ReportStyleCard extends StatelessWidget {
+  const _ReportStyleCard({
+    required this.appState,
+    required this.pad,
+    required this.radius,
+    required this.compact,
+  });
+
+  final AppState appState;
+  final EdgeInsets pad;
+  final double radius;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: pad,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Modo de reporte (PDF, CSV, Excel)',
+            style: TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: compact ? 13 : 15,
+            ),
+          ),
+          SizedBox(height: compact ? 6 : 10),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<PdfReportStyle>(
+              segments: PdfReportStyle.values
+                  .map(
+                    (style) => ButtonSegment<PdfReportStyle>(
+                      value: style,
+                      label: Text(style.label),
+                      icon: Icon(
+                        style == PdfReportStyle.completo
+                            ? Icons.analytics_outlined
+                            : Icons.description_outlined,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              selected: {appState.pdfReportStyle},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) =>
+                  appState.setPdfReportStyle(selection.first),
+            ),
+          ),
+          SizedBox(height: compact ? 4 : 6),
+          Text(
+            appState.pdfReportStyle.description,
+            style: TextStyle(
+              color: AppColors.muted,
+              fontSize: compact ? 11 : 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ExportButtons extends StatelessWidget {
   const _ExportButtons({required this.appState, required this.phone});
 
@@ -292,7 +408,8 @@ class _ExportButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final enabled = !appState.isExporting;
+    final hasData = appState.visibleRecords.isNotEmpty;
+    final enabled = !appState.isExporting && hasData;
 
     if (phone) {
       return GridView.count(
@@ -420,7 +537,7 @@ class _SaveReportSection extends StatelessWidget {
             backgroundColor: AppColors.primaryBlue,
             padding: EdgeInsets.symmetric(vertical: phone ? 12 : 16),
           ),
-          onPressed: appState.isExporting
+          onPressed: appState.isExporting || appState.visibleRecords.isEmpty
               ? null
               : () => promptSaveReport(context, appState),
           icon: const Icon(Icons.save),
@@ -509,6 +626,53 @@ class _ExportTile extends StatelessWidget {
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
             textAlign: TextAlign.center,
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoDataCard extends StatelessWidget {
+  const _NoDataCard({
+    required this.appState,
+    required this.pad,
+    required this.radius,
+    this.compact = false,
+  });
+
+  final AppState appState;
+  final EdgeInsets pad;
+  final double radius;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: EmptyState(
+        compact: compact,
+        icon: Icons.file_download_off_outlined,
+        title: 'Nada que exportar',
+        message: appState.records.isEmpty
+            ? 'No hay registros en la tabla. Capture o importe datos primero.'
+            : 'Los filtros activos no dejaron registros visibles.',
+        actions: [
+          if (appState.records.isEmpty)
+            EmptyStateAction(
+              label: 'Ir a Captura',
+              icon: Icons.add_circle_outline,
+              onPressed: () => appState.setNavigationIndex(1),
+            )
+          else
+            EmptyStateAction(
+              label: 'Ver Registros',
+              icon: Icons.table_chart,
+              onPressed: () => appState.setNavigationIndex(2),
+            ),
         ],
       ),
     );

@@ -5,14 +5,18 @@ import '../../core/constants.dart';
 import '../../core/layout/breakpoints.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/widgets/app_material_list_tile.dart';
 import '../../core/widgets/app_input_decoration.dart';
 import '../../core/widgets/app_page.dart';
+import '../../core/widgets/capture_optional_fields.dart';
 import '../../core/widgets/capture_session_actions.dart';
 import '../../core/widgets/compact_records_panel.dart';
 import '../../core/widgets/edit_record_sheet.dart';
 import '../../core/widgets/lote_trama_field.dart';
 import '../../core/widgets/report_actions.dart';
 import '../../models/nep_record.dart';
+import '../../core/permissions/permission.dart';
+import '../../core/widgets/permission_gate.dart';
 import '../../providers/app_state.dart';
 import '../../utils/numeric_input_formatters.dart';
 
@@ -26,6 +30,32 @@ Future<void> _editCaptureRecord(
     appState: appState,
     record: record,
   );
+}
+
+Future<void> submitCaptureWithChecks(
+  BuildContext context,
+  AppState appState,
+) async {
+  final record = appState.buildCaptureRecord();
+  if (record == null) return;
+
+  if (record.neps > 100) {
+    if (!context.mounted) return;
+    if (!await confirmHighNepsValue(
+      context,
+      neps: record.neps,
+      telar: record.telar,
+    )) {
+      return;
+    }
+  }
+
+  if (appState.isRecentDuplicate(record)) {
+    if (!context.mounted) return;
+    if (!await confirmDuplicateRecord(context)) return;
+  }
+
+  await appState.submitCaptureRecord(record);
 }
 
 class CaptureScreen extends StatefulWidget {
@@ -64,26 +94,29 @@ class _CaptureScreenState extends State<CaptureScreen>
     final isDesktop = MediaQuery.sizeOf(context).width >= AppBreakpoints.tablet;
     final showHeaderActions = isDesktop;
 
-    return AppPage(
-      title: 'Captura de registros',
-      subtitle: isDesktop
-          ? 'Su tabla personal. Guarde informes para compartir con el equipo.'
-          : 'Su tabla personal',
-      fillViewport: true,
-      maxContentWidth: 1400,
-      compactPadding: true,
-      denseOnPhone: true,
-      actions:
-          showHeaderActions ? _buildHeaderActions(context, appState) : null,
-      child: isDesktop
-          ? _DesktopCaptureLayout(appState: appState)
-          : _tabController == null
-              ? const Center(child: CircularProgressIndicator())
-              : _MobileCaptureLayout(
-                  appState: appState,
-                  tabController: _tabController!,
-                  onRecordAdded: () => _tabController?.animateTo(1),
-                ),
+    return PermissionGate(
+      permission: Permission.captureRecords,
+      child: AppPage(
+        title: 'Captura de registros',
+        subtitle: isDesktop
+            ? 'Su tabla personal. Guarde informes para compartir con el equipo.'
+            : 'Su tabla personal',
+        fillViewport: true,
+        maxContentWidth: 1400,
+        compactPadding: true,
+        denseOnPhone: true,
+        actions:
+            showHeaderActions ? _buildHeaderActions(context, appState) : null,
+        child: isDesktop
+            ? _DesktopCaptureLayout(appState: appState)
+            : _tabController == null
+                ? const Center(child: CircularProgressIndicator())
+                : _MobileCaptureLayout(
+                    appState: appState,
+                    tabController: _tabController!,
+                    onRecordAdded: () => _tabController?.animateTo(1),
+                  ),
+      ),
     );
   }
 
@@ -159,7 +192,7 @@ class _CaptureScreenState extends State<CaptureScreen>
       ),
       if (compact)
         actionButton(
-          onPressed: () => appState.setNavigationIndex(3),
+          onPressed: () => appState.setNavigationIndex(4),
           icon: Icons.texture,
           label: 'Telas',
           background: AppColors.surfaceAlt,
@@ -167,7 +200,7 @@ class _CaptureScreenState extends State<CaptureScreen>
         )
       else
         TextButton.icon(
-          onPressed: () => appState.setNavigationIndex(3),
+          onPressed: () => appState.setNavigationIndex(4),
           icon: const Icon(Icons.texture, size: 18),
           label: const Text('Telas'),
         ),
@@ -313,7 +346,7 @@ class _MobileCaptureTab extends StatelessWidget {
 
   Future<void> _addRecord(BuildContext context) async {
     final before = appState.records.length;
-    await appState.addRecord();
+    await submitCaptureWithChecks(context, appState);
     if (context.mounted && appState.records.length > before) {
       onRecordAdded();
     }
@@ -329,10 +362,9 @@ class _MobileCaptureTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _CompactSessionBar(
-                  appState: appState,
-                  ultraCompact: true,
-                ),
+                _FabricField(appState: appState, ultraCompact: true),
+                const SizedBox(height: 6),
+                _LoteField(appState: appState, ultraCompact: true),
                 const SizedBox(height: 6),
                 _CaptureFormPanel(
                   appState: appState,
@@ -437,7 +469,7 @@ class _MobileCaptureActionBar extends StatelessWidget {
                   child: const Text('Limpiar', style: TextStyle(fontSize: 12)),
                 ),
                 TextButton.icon(
-                  onPressed: () => appState.setNavigationIndex(3),
+                  onPressed: () => appState.setNavigationIndex(4),
                   icon: const Icon(Icons.texture, size: 16),
                   label: const Text('Telas', style: TextStyle(fontSize: 12)),
                 ),
@@ -584,7 +616,7 @@ class _FabricField extends StatelessWidget {
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       if (index == appState.fabrics.length) {
-                        return ListTile(
+                        return AppMaterialListTile(
                           dense: true,
                           title: appDropdownItemText('Manual', compact: true),
                           trailing: const Icon(
@@ -599,10 +631,9 @@ class _FabricField extends StatelessWidget {
 
                       final fabric = appState.fabrics[index];
                       final isSelected = fabric == appState.selectedFabric;
-                      return ListTile(
+                      return AppMaterialListTile(
                         dense: true,
                         selected: isSelected,
-                        selectedTileColor: AppColors.formulaBg,
                         title: appDropdownItemText(fabric, compact: true),
                         trailing: isSelected
                             ? const Icon(
@@ -640,11 +671,10 @@ class _FabricField extends StatelessWidget {
           _CompactLabel('Tela / Tejido', ultraCompact: ultraCompact),
           TextField(
             controller: appState.manualTelaController,
-            keyboardType: TextInputType.number,
-            inputFormatters: digitsOnlyInputFormatters,
+            textCapitalization: TextCapitalization.characters,
             style: appDropdownTextStyle(ultraCompact: ultraCompact),
             decoration: decoration.copyWith(
-              hintText: 'Codigo de tela',
+              hintText: 'Nombre de tela',
               suffixIcon: canPickFromCatalog
                   ? IconButton(
                       tooltip: 'Seleccionar del catalogo',
@@ -671,7 +701,7 @@ class _FabricField extends StatelessWidget {
     }
 
     if (useSheet) {
-      final selectedLabel = appState.selectedFabric ?? 'Seleccione';
+      final selectedLabel = appState.selectedFabric ?? 'Seleccione tela...';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -749,12 +779,10 @@ class _LoteField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return LoteTramaField(
-      prefixController: appState.lotePrefixController,
-      suffixController: appState.loteSuffixController,
+      catalog: appState.loteCatalog,
       fullController: appState.loteFullController,
-      fullEntryMode: appState.loteFullEntryMode,
-      onFullEntryModeChanged: appState.setLoteFullEntryMode,
-      onPrefixPersist: appState.persistLotePrefix,
+      onAddToCatalog: appState.addLoteTramaToCatalog,
+      onRemoveFromCatalog: appState.removeLoteTramaFromCatalog,
       ultraCompact: ultraCompact,
       compact: !ultraCompact,
     );
@@ -819,7 +847,8 @@ class _CaptureFormPanel extends StatelessWidget {
                       textInputAction: TextInputAction.done,
                       style: const TextStyle(fontSize: 13),
                       decoration: _inputDecoration('53'),
-                      onSubmitted: (_) => appState.addRecord(),
+                      onSubmitted: (_) =>
+                          submitCaptureWithChecks(context, appState),
                     ),
                   ],
                 ),
@@ -858,6 +887,8 @@ class _CaptureFormPanel extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          CaptureOptionalFields(appState: appState, ultraCompact: true),
         ],
       );
     }
@@ -897,8 +928,10 @@ class _CaptureFormPanel extends StatelessWidget {
             inputFormatters: decimalNumberInputFormatters,
             textInputAction: TextInputAction.done,
             decoration: _inputDecoration('Ej: 53'),
-            onSubmitted: (_) => appState.addRecord(),
+            onSubmitted: (_) => submitCaptureWithChecks(context, appState),
           ),
+          const SizedBox(height: 8),
+          CaptureOptionalFields(appState: appState),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -931,7 +964,7 @@ class _CaptureFormPanel extends StatelessWidget {
               foregroundColor: AppColors.textDark,
               padding: const EdgeInsets.symmetric(vertical: 12),
             ),
-            onPressed: appState.addRecord,
+            onPressed: () => submitCaptureWithChecks(context, appState),
             icon: const Icon(Icons.add, size: 18),
             label: const Text(
               'Agregar',

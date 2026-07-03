@@ -5,7 +5,8 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static bool get isSupported {
     if (kIsWeb) return true;
-    return defaultTargetPlatform == TargetPlatform.android;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.windows;
   }
 
   static FirebaseOptions get currentPlatform {
@@ -14,9 +15,10 @@ class DefaultFirebaseOptions {
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
+      case TargetPlatform.windows:
+        return web;
       case TargetPlatform.iOS:
       case TargetPlatform.macOS:
-      case TargetPlatform.windows:
       case TargetPlatform.linux:
         throw UnsupportedError(
           'FirebaseOptions no esta configurado para $defaultTargetPlatform.',

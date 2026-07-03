@@ -1,0 +1,20 @@
+/// Permisos granulares del sistema.
+enum Permission {
+  viewDashboard,
+  captureRecords,
+  viewRecords,
+  editRecords,
+  deleteRecords,
+  clearAllRecords,
+  viewAlerts,
+  applyCorrectiveAction,
+  manageFabrics,
+  manageReports,
+  exportReports,
+  editAlertConfig,
+  manageUsers,
+  deleteUsers,
+  changeRoles,
+  viewSettings,
+  manageSettings,
+}
