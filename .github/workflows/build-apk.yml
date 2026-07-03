@@ -24,7 +24,7 @@ jobs:
       - name: Configurar Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: '3.44.4'
           channel: 'stable'
 
       - name: Verificar Flutter
@@ -44,3 +44,4 @@ jobs:
         with:
           name: calculadora-neps-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
