@@ -16,10 +16,6 @@ class RecordFilterHelper {
     return _uniqueValues(records.map((r) => r.loteTrama));
   }
 
-  static List<String> uniqueTelares(List<NepRecord> records) {
-    return _uniqueValues(records.map((r) => r.telar));
-  }
-
   static List<String> uniqueTurnos(List<NepRecord> records) {
     return _uniqueValues(records.map((r) => r.turno));
   }
@@ -32,6 +28,12 @@ class RecordFilterHelper {
     return _uniqueValues(records.map((r) => r.lineaProduccion));
   }
 
+  static List<String> uniqueTelares(List<NepRecord> records) {
+    final result = _uniqueValues(records.map((r) => r.telar));
+    result.sort(compareTelar);
+    return result;
+  }
+
   static List<String> _uniqueValues(Iterable<String> values) {
     final result = values
         .map((value) => value.trim())
@@ -40,6 +42,29 @@ class RecordFilterHelper {
         .toList();
     result.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return result;
+  }
+
+  /// Ordena telares numéricamente cuando es posible (004 antes que 012).
+  static int compareTelar(String a, String b) {
+    final aTrim = a.trim();
+    final bTrim = b.trim();
+    final aNum = int.tryParse(aTrim);
+    final bNum = int.tryParse(bTrim);
+    if (aNum != null && bNum != null) {
+      return aNum.compareTo(bNum);
+    }
+    return aTrim.toLowerCase().compareTo(bTrim.toLowerCase());
+  }
+
+  /// Orden estable para reportes: telar ascendente y luego fecha.
+  static List<NepRecord> sortForReport(List<NepRecord> records) {
+    final sorted = List<NepRecord>.from(records);
+    sorted.sort((a, b) {
+      final telarCmp = compareTelar(a.telar, b.telar);
+      if (telarCmp != 0) return telarCmp;
+      return a.createdAt.compareTo(b.createdAt);
+    });
+    return sorted;
   }
 
   static (DateTime?, DateTime?) resolveQuickRange(DateQuickRange range) {

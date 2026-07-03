@@ -7,6 +7,7 @@ enum ExportColumn {
   neps,
   mts,
   estadoAlerta,
+  observacion,
   recomendacion;
 
   String get label => switch (this) {
@@ -18,6 +19,7 @@ enum ExportColumn {
         ExportColumn.neps => 'Neps',
         ExportColumn.mts => 'Mts calculados',
         ExportColumn.estadoAlerta => 'Estado alerta',
+        ExportColumn.observacion => 'Observación',
         ExportColumn.recomendacion => 'Recomendación',
       };
 
@@ -30,6 +32,7 @@ enum ExportColumn {
     ExportColumn.neps,
     ExportColumn.mts,
     ExportColumn.estadoAlerta,
+    ExportColumn.observacion,
     ExportColumn.recomendacion,
   ];
 

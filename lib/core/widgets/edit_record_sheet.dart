@@ -44,6 +44,7 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
   late final TextEditingController loteSuffixController;
   late final TextEditingController loteFullController;
   late final TextEditingController manualTelaController;
+  late final TextEditingController observacionController;
 
   late bool useManualFabric;
   late bool loteFullEntryMode;
@@ -74,6 +75,8 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
     manualTelaController = TextEditingController(
       text: useManualFabric ? record.tela : '',
     );
+    observacionController =
+        TextEditingController(text: record.observacion);
   }
 
   @override
@@ -84,6 +87,7 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
     loteSuffixController.dispose();
     loteFullController.dispose();
     manualTelaController.dispose();
+    observacionController.dispose();
     super.dispose();
   }
 
@@ -147,6 +151,13 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
         neps: widget.appState.parseNumber(nepsText),
         tela: tela,
         loteTrama: loteTrama,
+        turno: widget.record.turno,
+        operario: widget.record.operario,
+        lineaProduccion: widget.record.lineaProduccion,
+        observacion: observacionController.text.trim(),
+        accionCorrectiva: widget.record.accionCorrectiva,
+        revisadoPorSupervisor: widget.record.revisadoPorSupervisor,
+        fechaRevision: widget.record.fechaRevision,
       );
       if (mounted) Navigator.of(context).pop(true);
     } finally {
@@ -273,6 +284,12 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
                     ),
                   ),
               ],
+              const SizedBox(height: 10),
+              TextField(
+                controller: observacionController,
+                maxLines: 2,
+                decoration: decoration.copyWith(labelText: 'Observación'),
+              ),
               const SizedBox(height: 10),
               LoteTramaField(
                 catalog: widget.appState.loteCatalog,

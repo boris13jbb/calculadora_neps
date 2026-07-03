@@ -11,6 +11,7 @@ import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
 import '../services/alert_service.dart';
 import '../services/analytics_service.dart';
+import '../utils/record_filter_helper.dart';
 
 /// Generación profesional de reportes CSV, Excel y PDF.
 class ReportExportService {
@@ -64,6 +65,9 @@ class ReportExportService {
     return recs.isEmpty ? '' : recs.join(' ');
   }
 
+  List<NepRecord> _prepareRecords(List<NepRecord> records) =>
+      RecordFilterHelper.sortForReport(records);
+
   String _cellValue(ExportColumn column, NepRecord item, int index) {
     return switch (column) {
       ExportColumn.nro => (index + 1).toString(),
@@ -74,6 +78,7 @@ class ReportExportService {
       ExportColumn.neps => formatDecimal(item.neps),
       ExportColumn.mts => formatNumber(calculateMts(item.neps)),
       ExportColumn.estadoAlerta => item.estadoAlerta,
+      ExportColumn.observacion => item.observacion,
       ExportColumn.recomendacion => '',
     };
   }
@@ -106,6 +111,7 @@ class ReportExportService {
         ExportColumn.neps => item.neps,
         ExportColumn.mts => calculateMts(item.neps),
         ExportColumn.estadoAlerta => item.estadoAlerta,
+        ExportColumn.observacion => item.observacion,
         ExportColumn.recomendacion => _recommendationFor(item, all),
       };
 
@@ -176,18 +182,19 @@ class ReportExportService {
     Set<ExportColumn>? columns,
     PdfReportStyle style = PdfReportStyle.completo,
   }) {
+    final sorted = _prepareRecords(records);
     if (style == PdfReportStyle.clasico) {
-      return _buildClassicCsvText(records, columns: columns);
+      return _buildClassicCsvText(sorted, columns: columns);
     }
 
     final selected = _columns(columns);
-    final summary = summarize(records);
+    final summary = summarize(sorted);
     final buffer = StringBuffer();
     buffer.writeln(selected.map((c) => c.label).join(','));
 
-    for (int i = 0; i < records.length; i++) {
+    for (int i = 0; i < sorted.length; i++) {
       buffer.writeln(
-        _dataRow(records[i], i, selected, records)
+        _dataRow(sorted[i], i, selected, sorted)
             .map(escapeCsv)
             .join(','),
       );
@@ -195,7 +202,7 @@ class ReportExportService {
 
     if (selected.contains(ExportColumn.neps)) {
       buffer.writeln(
-        escapeCsv('TOTAL REGISTROS,${records.length}'),
+        escapeCsv('TOTAL REGISTROS,${sorted.length}'),
       );
       buffer.writeln(
         escapeCsv('TOTAL NEPS,${formatDecimal(summary['totalNeps']!)}'),
@@ -212,8 +219,9 @@ class ReportExportService {
     List<NepRecord> records, {
     Set<ExportColumn>? columns,
   }) {
+    final sorted = _prepareRecords(records);
     final selected = _columns(columns);
-    final summary = summarize(records);
+    final summary = summarize(sorted);
     final buffer = StringBuffer();
     buffer.writeln(
       escapeCsv('Formula utilizada: Mts calculados = Neps / $testLengthM'),
@@ -221,7 +229,7 @@ class ReportExportService {
     buffer.writeln();
     buffer.writeln(selected.map((c) => c.label).map(escapeCsv).join(','));
 
-    for (final row in _classicTableRows(records, summary, selected)) {
+    for (final row in _classicTableRows(sorted, summary, selected)) {
       buffer.writeln(row.map(escapeCsv).join(','));
     }
 
@@ -235,6 +243,7 @@ class ReportExportService {
   }) {
     if (records.isEmpty) return null;
 
+    final sorted = _prepareRecords(records);
     final selected = _columns(columns);
     final excel = xls.Excel.createExcel();
     if (excel.sheets.containsKey('Sheet1')) {
@@ -242,38 +251,38 @@ class ReportExportService {
     }
 
     if (style == PdfReportStyle.clasico) {
-      _buildClassicExcelSheet(excel, records, selected);
+      _buildClassicExcelSheet(excel, sorted, selected);
       excel.setDefaultSheet('Informe');
     } else {
-      _buildRegistrosSheet(excel, records, selected);
+      _buildRegistrosSheet(excel, sorted, selected);
       _buildGroupSheet(
         excel,
         'Resumen por telar',
-        _analytics.resumenPorTelar(records),
+        _analytics.resumenPorTelar(sorted),
       );
       _buildGroupSheet(
         excel,
         'Resumen por tela',
-        _analytics.resumenPorTela(records),
+        _analytics.resumenPorTela(sorted),
       );
       _buildGroupSheet(
         excel,
         'Resumen por lote',
-        _analytics.resumenPorLoteTrama(records),
+        _analytics.resumenPorLoteTrama(sorted),
       );
       _buildAlertSheet(
         excel,
         'Alertas críticas',
-        _alerts.detectCriticalRecords(records),
-        records,
+        _alerts.detectCriticalRecords(sorted),
+        sorted,
       );
       _buildAlertSheet(
         excel,
         'Advertencias',
-        _alerts.detectWarningRecords(records),
-        records,
+        _alerts.detectWarningRecords(sorted),
+        sorted,
       );
-      _buildTrendSheet(excel, records);
+      _buildTrendSheet(excel, sorted);
       excel.setDefaultSheet('Registros');
     }
 
@@ -465,12 +474,14 @@ class ReportExportService {
       'Lote/trama',
       'Neps',
       'Estado',
+      'Observación',
       'Recomendación',
     ];
     _writeHeaderRow(sheet, headers);
 
-    for (var i = 0; i < alerts.length; i++) {
-      final item = alerts[i];
+    final sortedAlerts = RecordFilterHelper.sortForReport(alerts);
+    for (var i = 0; i < sortedAlerts.length; i++) {
+      final item = sortedAlerts[i];
       final level = _alerts.getAlertLevel(item.neps);
       final row = i + 1;
       final values = [
@@ -480,6 +491,7 @@ class ReportExportService {
         item.loteTrama,
         item.neps,
         level.label,
+        item.observacion,
         _recommendationFor(item, all),
       ];
       for (var col = 0; col < values.length; col++) {
@@ -495,7 +507,7 @@ class ReportExportService {
         cell.cellStyle = _excelAlertStyle(level);
       }
     }
-    _autoColumnWidths(sheet, headers.length, alerts.length + 1);
+    _autoColumnWidths(sheet, headers.length, sortedAlerts.length + 1);
   }
 
   void _buildTrendSheet(xls.Excel excel, List<NepRecord> records) {
@@ -568,15 +580,16 @@ class ReportExportService {
     Set<ExportColumn>? columns,
     PdfReportStyle style = PdfReportStyle.completo,
   }) async {
+    final sorted = _prepareRecords(records);
     return switch (style) {
       PdfReportStyle.completo => _buildCompletePdf(
-          records: records,
+          records: sorted,
           title: title,
           filtersDescription: filtersDescription,
           columns: columns,
         ),
       PdfReportStyle.clasico => _buildClassicPdf(
-          records: records,
+          records: sorted,
           title: title,
           filtersDescription: filtersDescription,
           columns: columns,
@@ -811,26 +824,14 @@ class ReportExportService {
     Map<String, double> summary,
     List<ExportColumn> columns,
   ) {
-    return pw.TableHelper.fromTextArray(
-      headers: columns.map((column) => column.label).toList(),
-      data: _classicTableRows(records, summary, columns),
-      border: pw.TableBorder.all(
-        color: PdfColor.fromHex('#9AA0A6'),
-        width: 0.5,
-      ),
-      headerDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#3C4043')),
-      headerStyle: pw.TextStyle(
-        color: PdfColors.white,
-        fontWeight: pw.FontWeight.bold,
-        fontSize: 9,
-      ),
-      headerAlignment: pw.Alignment.center,
-      cellStyle: const pw.TextStyle(fontSize: 9),
-      cellAlignment: pw.Alignment.center,
-      cellAlignments: const {
-        2: pw.Alignment.centerLeft,
-        3: pw.Alignment.centerLeft,
-      },
+    final headers = columns.map((column) => column.label).toList();
+    final rows = _classicTableRows(records, summary, columns);
+    return _buildPdfTable(
+      headers: headers,
+      rows: rows,
+      columnFlex: columns.map(_columnFlex).toList(),
+      headerColor: PdfColor.fromHex('#3C4043'),
+      fontSize: 8,
     );
   }
 
@@ -948,22 +949,12 @@ class ReportExportService {
       return _dataRow(entry.value, entry.key, columns, records);
     }).toList();
 
-    return pw.TableHelper.fromTextArray(
+    return _buildPdfTable(
       headers: headers,
-      data: data,
-      headerDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#1F2A2E')),
-      headerStyle: pw.TextStyle(
-        color: PdfColor.fromHex('#F7EAC5'),
-        fontWeight: pw.FontWeight.bold,
-        fontSize: 7,
-      ),
-      cellStyle: const pw.TextStyle(fontSize: 7),
-      cellAlignment: pw.Alignment.centerLeft,
-      rowDecoration: pw.BoxDecoration(
-        border: pw.Border(
-          bottom: pw.BorderSide(color: PdfColor.fromHex('#D6C394'), width: 0.3),
-        ),
-      ),
+      rows: data,
+      columnFlex: columns.map(_columnFlex).toList(),
+      headerColor: PdfColor.fromHex('#1F2A2E'),
+      fontSize: 7,
     );
   }
 
@@ -971,50 +962,125 @@ class ReportExportService {
     List<NepRecord> critical,
     List<NepRecord> all,
   ) {
-    return pw.TableHelper.fromTextArray(
-      headers: const [
-        'Fecha',
-        'Telar',
-        'Tela',
-        'Lote',
-        'Neps',
-        'Estado',
-        'Recomendación',
-      ],
-      data: critical
-          .map(
-            (r) => [
-              _formatDate(r.createdAt),
-              r.telar,
-              r.tela,
-              r.loteTrama,
-              formatDecimal(r.neps),
-              r.estadoAlerta,
-              _recommendationFor(r, all),
-            ],
-          )
-          .toList(),
-      headerDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#B94D4D')),
-      headerStyle: pw.TextStyle(
-        color: PdfColors.white,
-        fontWeight: pw.FontWeight.bold,
-        fontSize: 7,
-      ),
-      cellStyle: const pw.TextStyle(fontSize: 7),
+    const headers = [
+      'Fecha',
+      'Telar',
+      'Tela',
+      'Lote',
+      'Neps',
+      'Estado',
+      'Observación',
+      'Recomendación',
+    ];
+    const flex = [1.1, 0.7, 1.2, 1.1, 0.6, 0.9, 1.4, 1.8];
+    final sorted = RecordFilterHelper.sortForReport(critical);
+    final rows = sorted
+        .map(
+          (r) => [
+            _formatDate(r.createdAt),
+            r.telar,
+            r.tela,
+            r.loteTrama,
+            formatDecimal(r.neps),
+            r.estadoAlerta,
+            r.observacion,
+            _recommendationFor(r, all),
+          ],
+        )
+        .toList();
+
+    return _buildPdfTable(
+      headers: headers,
+      rows: rows,
+      columnFlex: flex,
+      headerColor: PdfColor.fromHex('#B94D4D'),
+      fontSize: 7,
     );
   }
 
   pw.Widget _pdfGroupTable(List<String> headers, List<List<String>> rows) {
-    return pw.TableHelper.fromTextArray(
+    final flex = List<double>.filled(headers.length, 1.0);
+    return _buildPdfTable(
       headers: headers,
-      data: rows,
-      headerDecoration: pw.BoxDecoration(color: PdfColor.fromHex('#1F4E79')),
-      headerStyle: pw.TextStyle(
-        color: PdfColors.white,
-        fontWeight: pw.FontWeight.bold,
-        fontSize: 8,
-      ),
-      cellStyle: const pw.TextStyle(fontSize: 8),
+      rows: rows,
+      columnFlex: flex,
+      headerColor: PdfColor.fromHex('#1F4E79'),
+      fontSize: 8,
+    );
+  }
+
+  double _columnFlex(ExportColumn column) => switch (column) {
+        ExportColumn.nro => 0.5,
+        ExportColumn.fecha => 1.2,
+        ExportColumn.loteTrama => 1.3,
+        ExportColumn.tela => 1.4,
+        ExportColumn.telar => 0.7,
+        ExportColumn.neps => 0.6,
+        ExportColumn.mts => 0.7,
+        ExportColumn.estadoAlerta => 0.9,
+        ExportColumn.observacion => 1.6,
+        ExportColumn.recomendacion => 1.6,
+      };
+
+  pw.Widget _buildPdfTable({
+    required List<String> headers,
+    required List<List<String>> rows,
+    required List<double> columnFlex,
+    required PdfColor headerColor,
+    double fontSize = 7,
+  }) {
+    final columnWidths = <int, pw.TableColumnWidth>{
+      for (var i = 0; i < columnFlex.length; i++)
+        i: pw.FlexColumnWidth(columnFlex[i]),
+    };
+    final borderColor = PdfColor.fromHex('#D6C394');
+    final cellPadding =
+        const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5);
+
+    pw.Widget cell(
+      String text, {
+      bool isHeader = false,
+      PdfColor? headerTextColor,
+    }) {
+      return pw.Padding(
+        padding: cellPadding,
+        child: pw.Text(
+          text,
+          style: pw.TextStyle(
+            fontSize: fontSize,
+            fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
+            color: isHeader ? (headerTextColor ?? PdfColors.white) : null,
+          ),
+          maxLines: isHeader ? 2 : 6,
+        ),
+      );
+    }
+
+    return pw.Table(
+      border: pw.TableBorder.all(color: borderColor, width: 0.3),
+      columnWidths: columnWidths,
+      defaultVerticalAlignment: pw.TableCellVerticalAlignment.middle,
+      children: [
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: headerColor),
+          children: headers
+              .map(
+                (header) => cell(
+                  header,
+                  isHeader: true,
+                  headerTextColor: headerColor == PdfColor.fromHex('#1F2A2E')
+                      ? PdfColor.fromHex('#F7EAC5')
+                      : PdfColors.white,
+                ),
+              )
+              .toList(),
+        ),
+        ...rows.map(
+          (row) => pw.TableRow(
+            children: row.map((value) => cell(value)).toList(),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1049,12 +1115,13 @@ class ReportExportService {
     List<NepRecord> records, {
     Set<ExportColumn>? columns,
   }) {
+    final sorted = _prepareRecords(records);
     final selected = _columns(columns);
     final buffer = StringBuffer();
     buffer.writeln(selected.map((c) => c.label).join('\t'));
 
-    for (int i = 0; i < records.length; i++) {
-      buffer.writeln(_dataRow(records[i], i, selected, records).join('\t'));
+    for (int i = 0; i < sorted.length; i++) {
+      buffer.writeln(_dataRow(sorted[i], i, selected, sorted).join('\t'));
     }
 
     return buffer.toString();
