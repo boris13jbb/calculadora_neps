@@ -10,12 +10,12 @@ import '../utils/record_filter_helper.dart';
 import 'alert_filter_fields.dart';
 
 class _FilterPalette {
-  static const activeBg = Color(0xFFE8F5E9);
-  static const activeFg = Color(0xFF1B5E20);
-  static const activeIcon = Color(0xFF43A047);
-  static const inactiveFg = Color(0xFF37474F);
-  static const panelBg = Color(0xFFFFFDF4);
-  static const border = Color(0xFFD6C394);
+  static const activeBg = AppColors.statusNormalBg;
+  static const activeFg = AppColors.statusNormalText;
+  static const activeIcon = AppColors.statusNormal;
+  static const inactiveFg = AppColors.textDark;
+  static const panelBg = AppColors.surface;
+  static const border = AppColors.border;
 }
 
 class RecordFiltersPanel extends StatefulWidget {
@@ -231,7 +231,7 @@ class _RecordFiltersPanelState extends State<RecordFiltersPanel>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Divider(height: 1, color: Color(0xFFE8DFC8)),
+                  const Divider(height: 1, color: AppColors.border),
                   Padding(
                     padding: EdgeInsets.fromLTRB(
                       widget.compact ? 12 : 16,

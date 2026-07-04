@@ -52,7 +52,7 @@ class CompactRecordsPanel extends StatelessWidget {
           const Divider(height: 1),
           Expanded(
             child: sorted.isEmpty
-                ? EmptyState(
+                ? const EmptyState(
                     compact: true,
                     icon: Icons.edit_note_outlined,
                     title: 'Sin registros en sesión',
@@ -64,26 +64,12 @@ class CompactRecordsPanel extends StatelessWidget {
                     builder: (context, constraints) {
                       final wide = constraints.maxWidth >= 520;
                       if (wide) {
-                        return Scrollbar(
-                          thumbVisibility: true,
-                          child: ListView(
-                            children: [
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    minWidth: constraints.maxWidth,
-                                  ),
-                                  child: _CompactDataTable(
-                                    appState: appState,
-                                    records: sorted,
-                                    onDelete: onDelete,
-                                    onEdit: onEdit,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                        return _WideRecordsTable(
+                          appState: appState,
+                          records: sorted,
+                          onDelete: onDelete,
+                          onEdit: onEdit,
+                          minWidth: constraints.maxWidth,
                         );
                       }
 
@@ -224,6 +210,66 @@ class _MiniStat extends StatelessWidget {
   }
 }
 
+/// Tabla ancha (escritorio) con scroll vertical + horizontal.
+///
+/// Mantiene su propio [ScrollController] y lo comparte entre el [Scrollbar] y el
+/// [ListView]; esto evita el error "Scrollbar's ScrollController has no
+/// ScrollPosition attached" que ocurre al usar `thumbVisibility: true` sin un
+/// controlador explícito en web/escritorio.
+class _WideRecordsTable extends StatefulWidget {
+  const _WideRecordsTable({
+    required this.appState,
+    required this.records,
+    required this.onDelete,
+    required this.minWidth,
+    this.onEdit,
+  });
+
+  final AppState appState;
+  final List<NepRecord> records;
+  final Future<void> Function(String id) onDelete;
+  final Future<void> Function(NepRecord record)? onEdit;
+  final double minWidth;
+
+  @override
+  State<_WideRecordsTable> createState() => _WideRecordsTableState();
+}
+
+class _WideRecordsTableState extends State<_WideRecordsTable> {
+  final ScrollController _verticalController = ScrollController();
+
+  @override
+  void dispose() {
+    _verticalController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scrollbar(
+      controller: _verticalController,
+      thumbVisibility: true,
+      child: ListView(
+        controller: _verticalController,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: widget.minWidth),
+              child: _CompactDataTable(
+                appState: widget.appState,
+                records: widget.records,
+                onDelete: widget.onDelete,
+                onEdit: widget.onEdit,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CompactDataTable extends StatelessWidget {
   const _CompactDataTable({
     required this.appState,
@@ -247,7 +293,7 @@ class _CompactDataTable extends StatelessWidget {
       horizontalMargin: 12,
       headingRowColor: WidgetStateProperty.all(AppColors.header),
       headingTextStyle: const TextStyle(
-        color: Color(0xFFF7EAC5),
+        color: AppColors.headerText,
         fontWeight: FontWeight.w800,
         fontSize: 11,
       ),

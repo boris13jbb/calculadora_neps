@@ -6,6 +6,7 @@ import '../../core/widgets/alert_status_badge.dart';
 import '../../core/widgets/app_material_list_tile.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/empty_state.dart';
+import '../../core/widgets/kpi_card.dart';
 import '../../models/alert_level.dart';
 import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
@@ -135,6 +136,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     final phone = isPhoneLayout(context);
+    final compactHeight = hasCompactHeight(context);
+    final compact = phone || compactHeight;
+    final scrollableChrome = phone || compactHeight;
     final spacing = screenSpacing(context);
     final filtered = _applyFilters(appState.records);
 
@@ -145,68 +149,76 @@ class _AlertsScreenState extends State<AlertsScreen> {
     final worstTela = alertService.mostProblematicTela(filtered);
     final worstLote = alertService.mostProblematicLote(filtered);
 
+    final filtersBar = _FiltersBar(
+      compact: compact,
+      filters: _filters,
+      records: appState.records,
+      onTelarChanged: (v) => setState(() => _filters.telar = v),
+      onTelaChanged: (v) => setState(() => _filters.tela = v),
+      onLoteChanged: (v) => setState(() => _filters.loteTrama = v),
+      onEstadoChanged: (v) => setState(() => _filters.estado = v),
+      onDateFrom: () => _pickDate(isFrom: true, current: _filters.dateFrom),
+      onDateTo: () => _pickDate(isFrom: false, current: _filters.dateTo),
+      onClear: () => setState(_filters.clear),
+    );
+
+    final summaryCards = _SummaryCardsRow(
+      compact: compact,
+      minCardWidth: compactHeight ? 150 : 200,
+      criticalCount: critical.length,
+      warningCount: warnings.length,
+      worstTelar: worstTelar?.telar,
+      worstTela: worstTela?.key,
+      worstLote: worstLote?.key,
+    );
+
     return AppPage(
       title: 'Alertas',
       subtitle: phone
           ? 'Control de calidad'
           : 'Detección de telares y lotes con neps elevados',
       fillViewport: true,
-      maxContentWidth: 1400,
       compactPadding: true,
       denseOnPhone: true,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _FiltersBar(
-            compact: phone,
-            filters: _filters,
-            records: appState.records,
-            onTelarChanged: (v) => setState(() => _filters.telar = v),
-            onTelaChanged: (v) => setState(() => _filters.tela = v),
-            onLoteChanged: (v) => setState(() => _filters.loteTrama = v),
-            onEstadoChanged: (v) => setState(() => _filters.estado = v),
-            onDateFrom: () => _pickDate(isFrom: true, current: _filters.dateFrom),
-            onDateTo: () => _pickDate(isFrom: false, current: _filters.dateTo),
-            onClear: () => setState(_filters.clear),
-          ),
-          SizedBox(height: spacing),
-          _SummaryCardsRow(
-            compact: phone,
-            criticalCount: critical.length,
-            warningCount: warnings.length,
-            worstTelar: worstTelar?.telar,
-            worstTela: worstTela?.key,
-            worstLote: worstLote?.key,
-          ),
-          SizedBox(height: spacing),
-          Expanded(
-            child: phone
-                ? ListView(
-                    children: [
-                      _AlertSection(
-                        title: 'Alertas críticas',
-                        emptyMessage: 'No hay alertas críticas.',
-                        records: critical,
-                        appState: appState,
-                        compact: true,
-                      ),
-                      SizedBox(height: spacing),
-                      _AlertSection(
-                        title: 'Advertencias',
-                        emptyMessage: 'No hay advertencias activas.',
-                        records: warnings,
-                        appState: appState,
-                        compact: true,
-                      ),
-                      SizedBox(height: spacing),
-                      _TopTelarsSection(
-                        summaries: topTelars,
-                        appState: appState,
-                        compact: true,
-                      ),
-                    ],
-                  )
-                : Row(
+      child: scrollableChrome
+          ? ListView(
+              children: [
+                filtersBar,
+                SizedBox(height: spacing),
+                summaryCards,
+                SizedBox(height: spacing),
+                _AlertSection(
+                  title: 'Alertas críticas',
+                  emptyMessage: 'No hay alertas críticas.',
+                  records: critical,
+                  appState: appState,
+                  compact: true,
+                ),
+                SizedBox(height: spacing),
+                _AlertSection(
+                  title: 'Advertencias',
+                  emptyMessage: 'No hay advertencias activas.',
+                  records: warnings,
+                  appState: appState,
+                  compact: true,
+                ),
+                SizedBox(height: spacing),
+                _TopTelarsSection(
+                  summaries: topTelars,
+                  appState: appState,
+                  compact: true,
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                filtersBar,
+                SizedBox(height: spacing),
+                summaryCards,
+                SizedBox(height: spacing),
+                Expanded(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
@@ -241,9 +253,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
                       ),
                     ],
                   ),
-          ),
-        ],
-      ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -306,7 +318,7 @@ class _FiltersBar extends StatelessWidget {
     final estadoDropdown = _FilterDropdown<AlertLevel?>(
       label: 'Estado',
       value: filters.estado,
-      items: [null, ...AlertLevel.values],
+      items: const [null, ...AlertLevel.values],
       itemLabel: (v) => v?.label ?? 'Todos',
       onChanged: onEstadoChanged,
       width: compact ? null : 140,
@@ -494,7 +506,7 @@ class _FilterDropdown<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final field = DropdownButtonFormField<T>(
-      value: value,
+      initialValue: value,
       isExpanded: true,
       decoration: InputDecoration(
         labelText: label,
@@ -529,6 +541,7 @@ class _SummaryCardsRow extends StatelessWidget {
     required this.compact,
     required this.criticalCount,
     required this.warningCount,
+    this.minCardWidth = 200,
     this.worstTelar,
     this.worstTela,
     this.worstLote,
@@ -537,114 +550,53 @@ class _SummaryCardsRow extends StatelessWidget {
   final bool compact;
   final int criticalCount;
   final int warningCount;
+  final double minCardWidth;
   final String? worstTelar;
   final String? worstTela;
   final String? worstLote;
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: compact ? 2 : 5,
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: compact ? 2.4 : 2.2,
-      children: [
-        _SummaryTile(
-          title: 'Críticas',
+    return KpiStrip(
+      compact: compact,
+      minCardWidth: minCardWidth,
+      cards: [
+        KpiCard(
+          compact: compact,
+          label: 'Críticas',
           value: '$criticalCount',
           color: AppColors.statusCritical,
           icon: Icons.error_outline,
         ),
-        _SummaryTile(
-          title: 'Advertencias',
+        KpiCard(
+          compact: compact,
+          label: 'Advertencias',
           value: '$warningCount',
           color: AppColors.statusWarning,
           icon: Icons.warning_amber_outlined,
         ),
-        _SummaryTile(
-          title: 'Telar crítico',
+        KpiCard(
+          compact: compact,
+          label: 'Telar crítico',
           value: worstTelar ?? '—',
           color: AppColors.statusCritical,
           icon: Icons.precision_manufacturing_outlined,
-          smallValue: worstTelar != null && worstTelar!.length > 8,
         ),
-        _SummaryTile(
-          title: 'Tela problemática',
+        KpiCard(
+          compact: compact,
+          label: 'Tela problemática',
           value: worstTela ?? '—',
           color: AppColors.statusWarning,
           icon: Icons.texture_outlined,
-          smallValue: true,
         ),
-        _SummaryTile(
-          title: 'Lote/trama crítico',
+        KpiCard(
+          compact: compact,
+          label: 'Lote/trama crítico',
           value: worstLote ?? '—',
           color: AppColors.statusWarning,
           icon: Icons.inventory_2_outlined,
-          smallValue: true,
         ),
       ],
-    );
-  }
-}
-
-class _SummaryTile extends StatelessWidget {
-  const _SummaryTile({
-    required this.title,
-    required this.value,
-    required this.color,
-    required this.icon,
-    this.smallValue = false,
-  });
-
-  final String title;
-  final String value;
-  final Color color;
-  final IconData icon;
-  final bool smallValue;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  title.toUpperCase(),
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    color: color.withValues(alpha: 0.9),
-                  ),
-                ),
-                Text(
-                  value,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: smallValue ? 12 : 16,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.textDark,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

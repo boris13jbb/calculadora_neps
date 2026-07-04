@@ -236,7 +236,7 @@ class _MobileRecordsList extends StatelessWidget {
   }
 }
 
-class _DesktopRecordsTable extends StatelessWidget {
+class _DesktopRecordsTable extends StatefulWidget {
   const _DesktopRecordsTable({
     required this.appState,
     required this.records,
@@ -255,55 +255,85 @@ class _DesktopRecordsTable extends StatelessWidget {
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
 
+  @override
+  State<_DesktopRecordsTable> createState() => _DesktopRecordsTableState();
+}
+
+class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
+  static const List<int> _rowsPerPageOptions = [25, 50, 100];
+  int _rowsPerPage = 50;
+  int _page = 0;
+
   bool get _isFilteredEmpty {
-    final total = totalSourceCount;
-    return records.isEmpty && total != null && total > 0;
+    final total = widget.totalSourceCount;
+    return widget.records.isEmpty && total != null && total > 0;
   }
+
+  int _pageCount(int total) =>
+      total == 0 ? 1 : ((total + _rowsPerPage - 1) ~/ _rowsPerPage);
 
   @override
   Widget build(BuildContext context) {
+    final appState = widget.appState;
+    final records = widget.records;
+
     if (records.isEmpty) {
       return _RecordsEmptyState(
         isFiltered: _isFilteredEmpty,
-        onClearFilters: onClearFilters,
-        onGoToCapture: onGoToCapture,
+        onClearFilters: widget.onClearFilters,
+        onGoToCapture: widget.onGoToCapture,
         onGoToImport: () => appState.setNavigationIndex(2),
       );
     }
 
-    return SingleChildScrollView(
-      primary: false,
-      child: SingleChildScrollView(
-        primary: false,
-        scrollDirection: Axis.horizontal,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 1240),
-          child: DataTable(
-            headingRowColor: WidgetStateProperty.all(AppColors.header),
-            headingTextStyle: const TextStyle(
-              color: Color(0xFFF7EAC5),
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
-            ),
-            columns: const [
-              DataColumn(label: Text('#')),
-              DataColumn(label: Text('FECHA')),
-              DataColumn(label: Text('LOTE DE\nTRAMA')),
-              DataColumn(label: Text('TELA')),
-              DataColumn(label: Text('TELAR')),
-              DataColumn(label: Text('NEPS')),
-              DataColumn(label: Text('MTS CALCULADOS\nNEPS / 0.09')),
-              DataColumn(label: Text('ESTADO')),
-              DataColumn(label: Text('ACCION')),
-            ],
-            rows: List.generate(records.length, (index) {
-                    final item = records[index];
+    final total = records.length;
+    final pageCount = _pageCount(total);
+    // El índice de página puede quedar fuera de rango si los filtros reducen
+    // los resultados; se ajusta localmente sin mutar el estado en build.
+    final page = _page.clamp(0, pageCount - 1);
+    final start = page * _rowsPerPage;
+    final end = (start + _rowsPerPage) > total ? total : (start + _rowsPerPage);
+    final pageRecords = records.sublist(start, end);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            primary: false,
+            child: SingleChildScrollView(
+              primary: false,
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 1240),
+                child: DataTable(
+                  headingRowColor: WidgetStateProperty.all(AppColors.header),
+                  headingTextStyle: const TextStyle(
+                    color: AppColors.headerText,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                  columns: const [
+                    DataColumn(label: Text('#')),
+                    DataColumn(label: Text('FECHA')),
+                    DataColumn(label: Text('LOTE DE\nTRAMA')),
+                    DataColumn(label: Text('TELA')),
+                    DataColumn(label: Text('TELAR')),
+                    DataColumn(label: Text('NEPS')),
+                    DataColumn(label: Text('MTS CALCULADOS\nNEPS / 0.09')),
+                    DataColumn(label: Text('ESTADO')),
+                    DataColumn(label: Text('ACCION')),
+                  ],
+                  rows: List.generate(pageRecords.length, (index) {
+                    final item = pageRecords[index];
+                    final globalIndex = start + index;
                     final level = alertService.getAlertLevel(item.neps);
-                    final rowColor = alertService.getAlertBackgroundColor(level);
+                    final rowColor =
+                        alertService.getAlertBackgroundColor(level);
                     return DataRow(
                       color: WidgetStateProperty.all(rowColor),
                       cells: [
-                        DataCell(Text('${index + 1}')),
+                        DataCell(Text('${globalIndex + 1}')),
                         DataCell(
                           Text(appState.formatDateTime(item.createdAt)),
                         ),
@@ -339,12 +369,15 @@ class _DesktopRecordsTable extends StatelessWidget {
                             ),
                           ),
                         ),
-                        DataCell(AlertStatusBadge(level: level, compact: true)),
+                        DataCell(
+                          AlertStatusBadge(level: level, compact: true),
+                        ),
                         DataCell(
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (item.requiereSeguimiento && appState.canApplyCorrectiveAction)
+                              if (item.requiereSeguimiento &&
+                                  appState.canApplyCorrectiveAction)
                                 IconButton(
                                   tooltip: 'Seguimiento / acción correctiva',
                                   onPressed: () => showCorrectiveActionDialog(
@@ -357,10 +390,10 @@ class _DesktopRecordsTable extends StatelessWidget {
                                     color: AppColors.statusCritical,
                                   ),
                                 ),
-                              if (onEdit != null)
+                              if (widget.onEdit != null)
                                 IconButton(
                                   tooltip: 'Editar',
-                                  onPressed: () => onEdit!(item),
+                                  onPressed: () => widget.onEdit!(item),
                                   icon: const Icon(
                                     Icons.edit_outlined,
                                     color: AppColors.primaryBlue,
@@ -373,7 +406,7 @@ class _DesktopRecordsTable extends StatelessWidget {
                                         if (await confirmDeleteRecord(
                                           context,
                                         )) {
-                                          await onDelete(item.id);
+                                          await widget.onDelete(item.id);
                                         }
                                       }
                                     : null,
@@ -388,8 +421,150 @@ class _DesktopRecordsTable extends StatelessWidget {
                       ],
                     );
                   }),
+                ),
+              ),
+            ),
           ),
         ),
+        _RecordsPaginationBar(
+          rangeStart: start + 1,
+          rangeEnd: end,
+          total: total,
+          page: page,
+          pageCount: pageCount,
+          rowsPerPage: _rowsPerPage,
+          rowsPerPageOptions: _rowsPerPageOptions,
+          onRowsPerPageChanged: (value) {
+            setState(() {
+              _rowsPerPage = value;
+              _page = 0;
+            });
+          },
+          onFirst: page > 0 ? () => setState(() => _page = 0) : null,
+          onPrevious: page > 0 ? () => setState(() => _page = page - 1) : null,
+          onNext: page < pageCount - 1
+              ? () => setState(() => _page = page + 1)
+              : null,
+          onLast: page < pageCount - 1
+              ? () => setState(() => _page = pageCount - 1)
+              : null,
+        ),
+      ],
+    );
+  }
+}
+
+/// Barra de paginación de la tabla de registros de escritorio.
+///
+/// Evita renderizar todas las filas a la vez (rendimiento en tablas grandes)
+/// mostrando solo la página actual con controles de navegación claros.
+class _RecordsPaginationBar extends StatelessWidget {
+  const _RecordsPaginationBar({
+    required this.rangeStart,
+    required this.rangeEnd,
+    required this.total,
+    required this.page,
+    required this.pageCount,
+    required this.rowsPerPage,
+    required this.rowsPerPageOptions,
+    required this.onRowsPerPageChanged,
+    required this.onFirst,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onLast,
+  });
+
+  final int rangeStart;
+  final int rangeEnd;
+  final int total;
+  final int page;
+  final int pageCount;
+  final int rowsPerPage;
+  final List<int> rowsPerPageOptions;
+  final ValueChanged<int> onRowsPerPageChanged;
+  final VoidCallback? onFirst;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final VoidCallback? onLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$rangeStart–$rangeEnd de $total',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                color: AppColors.textDark,
+              ),
+            ),
+          ),
+          const Text(
+            'Filas por página:',
+            style: TextStyle(fontSize: 12, color: AppColors.muted),
+          ),
+          const SizedBox(width: 8),
+          DropdownButton<int>(
+            value: rowsPerPage,
+            isDense: true,
+            underline: const SizedBox.shrink(),
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+            items: [
+              for (final option in rowsPerPageOptions)
+                DropdownMenuItem(value: option, child: Text('$option')),
+            ],
+            onChanged: (value) {
+              if (value != null) onRowsPerPageChanged(value);
+            },
+          ),
+          const SizedBox(width: 12),
+          IconButton(
+            tooltip: 'Primera página',
+            visualDensity: VisualDensity.compact,
+            onPressed: onFirst,
+            icon: const Icon(Icons.first_page, size: 20),
+          ),
+          IconButton(
+            tooltip: 'Anterior',
+            visualDensity: VisualDensity.compact,
+            onPressed: onPrevious,
+            icon: const Icon(Icons.chevron_left, size: 20),
+          ),
+          Text(
+            '${page + 1} / $pageCount',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+              color: AppColors.textDark,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Siguiente',
+            visualDensity: VisualDensity.compact,
+            onPressed: onNext,
+            icon: const Icon(Icons.chevron_right, size: 20),
+          ),
+          IconButton(
+            tooltip: 'Última página',
+            visualDensity: VisualDensity.compact,
+            onPressed: onLast,
+            icon: const Icon(Icons.last_page, size: 20),
+          ),
+        ],
       ),
     );
   }

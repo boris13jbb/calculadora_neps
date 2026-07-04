@@ -6,6 +6,7 @@ import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_material_list_tile.dart';
 import '../../core/widgets/app_page.dart';
+import '../../core/widgets/section_header.dart';
 import '../../core/widgets/status_banner.dart';
 import '../../providers/app_state.dart';
 import '../../services/alert_config_service.dart';
@@ -104,7 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isSaving = true);
     try {
       await appState.saveAlertConfig(defaultAlertConfig);
-      final config = defaultAlertConfig;
+      const config = defaultAlertConfig;
       _normalMaxController.text = '${config.limiteNormalMax}';
       _warningMaxController.text = '${config.limiteAdvertenciaMax}';
       _reincidenciaDiasController.text = '${config.diasParaReincidencia}';
@@ -127,7 +128,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return AppPage(
       title: 'Configuración',
       subtitle: phone ? null : 'Límites de alertas y parámetros de calidad',
-      maxContentWidth: 720,
+      maxContentWidth: 1080,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -149,159 +150,208 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     'Modo solo lectura (Gerencia). No puede capturar ni modificar registros.',
               ),
             ),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceAlt,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'Límites de alertas por neps',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 15,
-                    color: AppColors.textGreen,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _NumberField(
-                  label: 'Máximo neps normal (verde)',
-                  controller: _normalMaxController,
-                  helper: 'De 0 a este valor → Normal',
-                  enabled: appState.canEditAlertConfig && !_isSaving,
-                ),
-                const SizedBox(height: 10),
-                _NumberField(
-                  label: 'Máximo neps advertencia (amarillo)',
-                  controller: _warningMaxController,
-                  helper: 'Hasta este valor → Advertencia. Por encima → Crítico',
-                  enabled: appState.canEditAlertConfig && !_isSaving,
-                ),
-                const SizedBox(height: 10),
-                _NumberField(
-                  label: 'Días para evaluar reincidencia',
-                  controller: _reincidenciaDiasController,
-                  enabled: appState.canEditAlertConfig && !_isSaving,
-                ),
-                const SizedBox(height: 10),
-                _NumberField(
-                  label: 'Cantidad de críticos para reincidencia',
-                  controller: _reincidenciaCantController,
-                  enabled: appState.canEditAlertConfig && !_isSaving,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Material(
-            color: AppColors.surfaceAlt,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.border),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Column(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final twoColumns = constraints.maxWidth >= 820;
+              final left = _limitsSection(appState);
+              final right = _alertsAndDefaultsSection(appState);
+
+              if (!twoColumns) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    left,
+                    const SizedBox(height: 16),
+                    right,
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  AppMaterialSwitchListTile(
-                    title: const Text(
-                      'Activar sistema de alertas',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: const Text(
-                      'Si se desactiva, todos los registros se consideran normales.',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    value: _alertasActivas,
-                    activeThumbColor: AppColors.primaryGreen,
-                    onChanged: !appState.canEditAlertConfig || _isSaving
-                        ? null
-                        : (value) => setState(() => _alertasActivas = value),
-                  ),
+                  Expanded(child: left),
+                  const SizedBox(width: 20),
+                  Expanded(child: right),
                 ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Material(
-            color: AppColors.surfaceAlt,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.border),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: AppMaterialSwitchListTile(
-                title: const Text(
-                  'Notificaciones de alertas críticas',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(
-                  notificationService.isSupported
-                      ? 'Aviso en el dispositivo al registrar neps críticos.'
-                      : 'No disponible en esta plataforma (use Android o Windows).',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                value: _criticalNotifications && notificationService.isSupported,
-                activeThumbColor: AppColors.primaryGreen,
-                onChanged: !notificationService.isSupported || _isSaving
-                    ? null
-                    : (value) async {
-                        setState(() => _criticalNotifications = value);
-                        await appState.setCriticalNotificationsEnabled(value);
-                      },
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: !appState.canEditAlertConfig || _isSaving
-                      ? null
-                      : () => _save(appState),
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.save),
-                  label: Text(_isSaving ? 'Guardando...' : 'Guardar'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              OutlinedButton(
-                onPressed: !appState.canEditAlertConfig || _isSaving
-                    ? null
-                    : () => _reset(appState),
-                child: const Text('Restaurar'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.formulaBg,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              'Valores por defecto: Normal 0–30, Advertencia 31–60, Crítico 61+. '
-              'Los cambios aplican de inmediato a registros, alertas, dashboard y reportes.',
-              style: TextStyle(fontSize: 12, color: AppColors.textDark),
-            ),
+              );
+            },
           ),
         ],
       ),
+    );
+  }
+
+  /// Sección de límites de alertas por neps con las acciones de guardado.
+  Widget _limitsSection(AppState appState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppSectionHeader(
+          title: 'Límites de alertas por neps',
+          subtitle: 'Definen los rangos Normal / Advertencia / Crítico',
+          icon: Icons.speed_outlined,
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _NumberField(
+                label: 'Máximo neps normal (verde)',
+                controller: _normalMaxController,
+                helper: 'De 0 a este valor → Normal',
+                enabled: appState.canEditAlertConfig && !_isSaving,
+              ),
+              const SizedBox(height: 10),
+              _NumberField(
+                label: 'Máximo neps advertencia (amarillo)',
+                controller: _warningMaxController,
+                helper: 'Hasta este valor → Advertencia. Por encima → Crítico',
+                enabled: appState.canEditAlertConfig && !_isSaving,
+              ),
+              const SizedBox(height: 10),
+              _NumberField(
+                label: 'Días para evaluar reincidencia',
+                controller: _reincidenciaDiasController,
+                enabled: appState.canEditAlertConfig && !_isSaving,
+              ),
+              const SizedBox(height: 10),
+              _NumberField(
+                label: 'Cantidad de críticos para reincidencia',
+                controller: _reincidenciaCantController,
+                enabled: appState.canEditAlertConfig && !_isSaving,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: !appState.canEditAlertConfig || _isSaving
+                    ? null
+                    : () => _save(appState),
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.save),
+                label: Text(_isSaving ? 'Guardando...' : 'Guardar'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            OutlinedButton(
+              onPressed: !appState.canEditAlertConfig || _isSaving
+                  ? null
+                  : () => _reset(appState),
+              child: const Text('Restaurar'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// Sección de sistema de alertas, notificaciones y valores de referencia.
+  Widget _alertsAndDefaultsSection(AppState appState) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppSectionHeader(
+          title: 'Sistema de alertas y notificaciones',
+          subtitle: 'Controla la evaluación de riesgo y los avisos',
+          icon: Icons.notifications_active_outlined,
+        ),
+        const SizedBox(height: 12),
+        Material(
+          color: AppColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: AppMaterialSwitchListTile(
+              title: const Text(
+                'Activar sistema de alertas',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: const Text(
+                'Si se desactiva, todos los registros se consideran normales.',
+                style: TextStyle(fontSize: 12),
+              ),
+              value: _alertasActivas,
+              activeThumbColor: AppColors.primaryGreen,
+              onChanged: !appState.canEditAlertConfig || _isSaving
+                  ? null
+                  : (value) => setState(() => _alertasActivas = value),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Material(
+          color: AppColors.surfaceAlt,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.border),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: AppMaterialSwitchListTile(
+              title: const Text(
+                'Notificaciones de alertas críticas',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(
+                notificationService.isSupported
+                    ? 'Aviso en el dispositivo al registrar neps críticos.'
+                    : 'No disponible en esta plataforma (use Android o Windows).',
+                style: const TextStyle(fontSize: 12),
+              ),
+              value: _criticalNotifications && notificationService.isSupported,
+              activeThumbColor: AppColors.primaryGreen,
+              onChanged: !notificationService.isSupported || _isSaving
+                  ? null
+                  : (value) async {
+                      setState(() => _criticalNotifications = value);
+                      await appState.setCriticalNotificationsEnabled(value);
+                    },
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const AppSectionHeader(
+          title: 'Valores por defecto',
+          icon: Icons.info_outline,
+          dense: true,
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.formulaBg,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Text(
+            'Normal 0–30, Advertencia 31–60, Crítico 61+. '
+            'Los cambios aplican de inmediato a registros, alertas, dashboard y reportes.',
+            style: TextStyle(fontSize: 12, color: AppColors.textDark),
+          ),
+        ),
+      ],
     );
   }
 }

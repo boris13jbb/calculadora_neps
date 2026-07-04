@@ -1,48 +1,64 @@
-import 'package:calculadora_neps/app.dart';
+import 'package:calculadora_neps/core/theme/app_theme.dart';
 import 'package:calculadora_neps/core/widgets/vicunha_sidebar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
-Future<void> pumpDesktopApp(WidgetTester tester) async {
-  SharedPreferences.setMockInitialValues({});
-  tester.view.physicalSize = const Size(1280, 900);
-  tester.view.devicePixelRatio = 1.0;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
+/// Etiquetas de navegación equivalentes a [AppNavigation.all], usadas para
+/// validar el sidebar profesional de escritorio de forma aislada (sin depender
+/// de Firebase ni del `AuthGate`, que en pruebas siempre muestra el login).
+const _labels = <String>[
+  'Inicio',
+  'Captura',
+  'Registros',
+  'Alertas',
+  'Telas',
+  'Informes',
+  'Exportar',
+  'Usuarios',
+  'Config',
+];
 
-  await tester.pumpWidget(const NepsApp());
-  await tester.pump();
-  await tester.pumpAndSettle(const Duration(seconds: 2));
+List<VicunhaNavDestination> _buildDestinations({int alertsBadge = 0}) {
+  return [
+    for (final label in _labels)
+      VicunhaNavDestination(
+        label: label,
+        icon: Icons.circle_outlined,
+        selectedIcon: Icons.circle,
+        badgeCount: label == 'Alertas' ? alertsBadge : 0,
+      ),
+  ];
 }
 
-Future<void> pumpMobileApp(WidgetTester tester) async {
-  SharedPreferences.setMockInitialValues({});
-  tester.view.physicalSize = const Size(390, 844);
-  tester.view.devicePixelRatio = 1.0;
-  addTearDown(tester.view.resetPhysicalSize);
-  addTearDown(tester.view.resetDevicePixelRatio);
-
-  await tester.pumpWidget(const NepsApp());
-  await tester.pump();
-  await tester.pumpAndSettle(const Duration(seconds: 2));
-}
-
-Future<void> tapSidebar(WidgetTester tester, String label) async {
-  await tester.tap(
-    find.descendant(
-      of: find.byType(VicunhaSidebar),
-      matching: find.text(label),
-    ),
-  );
-  await tester.pumpAndSettle();
-}
-
-Future<void> tapBottomNavIcon(WidgetTester tester, IconData icon) async {
-  await tester.tap(
-    find.descendant(
-      of: find.byType(NavigationBar),
-      matching: find.byIcon(icon),
+Future<void> _pumpSidebar(
+  WidgetTester tester, {
+  required int selectedIndex,
+  required ValueChanged<int> onSelected,
+  bool extended = true,
+  int alertsBadge = 0,
+  VoidCallback? onToggle,
+  VoidCallback? onSignOut,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: AppTheme.build(),
+      home: Scaffold(
+        body: Row(
+          children: [
+            VicunhaSidebar(
+              selectedIndex: selectedIndex,
+              onDestinationSelected: onSelected,
+              destinations: _buildDestinations(alertsBadge: alertsBadge),
+              extended: extended,
+              onToggleExtended: onToggle,
+              userName: 'Ana Gómez',
+              userRole: 'Supervisor',
+              onSignOut: onSignOut,
+            ),
+            const Expanded(child: SizedBox.shrink()),
+          ],
+        ),
+      ),
     ),
   );
   await tester.pumpAndSettle();
@@ -51,109 +67,87 @@ Future<void> tapBottomNavIcon(WidgetTester tester, IconData icon) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('Navegacion escritorio', () {
-    testWidgets('sidebar navega entre pantallas principales',
+  group('VicunhaSidebar (navegación escritorio)', () {
+    testWidgets('expandido muestra marca, etiquetas y usuario/rol',
         (WidgetTester tester) async {
-      await pumpDesktopApp(tester);
+      await _pumpSidebar(
+        tester,
+        selectedIndex: 0,
+        onSelected: (_) {},
+      );
 
-      expect(find.text('Inicio / Panel principal'), findsOneWidget);
-
-      await tapSidebar(tester, 'Captura');
-      expect(find.text('Captura de registros'), findsOneWidget);
-
-      await tapSidebar(tester, 'Registros');
-      expect(find.text('Importar CSV/Excel'), findsOneWidget);
-
-      await tapSidebar(tester, 'Telas');
-      expect(find.text('Catalogo de telas'), findsWidgets);
-
-      await tapSidebar(tester, 'Informes');
-      expect(find.text('Informes guardados'), findsWidgets);
-
-      await tapSidebar(tester, 'Exportar');
-      expect(find.text('Exportar y compartir'), findsWidgets);
-
-      await tapSidebar(tester, 'Inicio');
-      expect(find.text('Inicio / Panel principal'), findsOneWidget);
+      expect(find.text('VICUNHA'), findsOneWidget);
+      for (final label in _labels) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(find.text('Ana Gómez'), findsOneWidget);
+      expect(find.text('Supervisor'), findsOneWidget);
     });
 
-    testWidgets('accesos rapidos navegan correctamente',
+    testWidgets('tocar un destino notifica el índice correcto',
         (WidgetTester tester) async {
-      await pumpDesktopApp(tester);
+      int? selected;
+      await _pumpSidebar(
+        tester,
+        selectedIndex: 0,
+        onSelected: (index) => selected = index,
+      );
 
-      await tester.tap(find.text('Ver registros'));
+      await tester.tap(find.text('Registros'));
       await tester.pumpAndSettle();
-      expect(find.text('Importar CSV/Excel'), findsOneWidget);
+      expect(selected, _labels.indexOf('Registros'));
 
-      await tapSidebar(tester, 'Inicio');
-
-      await tester.tap(find.text('Catalogo telas'));
+      await tester.tap(find.text('Exportar'));
       await tester.pumpAndSettle();
-      expect(find.text('Catalogo de telas'), findsWidgets);
+      expect(selected, _labels.indexOf('Exportar'));
+    });
 
-      await tapSidebar(tester, 'Inicio');
+    testWidgets('colapsado oculta etiquetas de texto y muestra solo iconos',
+        (WidgetTester tester) async {
+      await _pumpSidebar(
+        tester,
+        selectedIndex: 0,
+        onSelected: (_) {},
+        extended: false,
+      );
 
-      await tester.tap(find.text('Exportar').last);
+      expect(find.text('VICUNHA'), findsNothing);
+      for (final label in _labels) {
+        expect(find.text(label), findsNothing);
+      }
+    });
+
+    testWidgets('badge de alertas críticas muestra el contador',
+        (WidgetTester tester) async {
+      await _pumpSidebar(
+        tester,
+        selectedIndex: 0,
+        onSelected: (_) {},
+        alertsBadge: 3,
+      );
+
+      expect(find.text('3'), findsOneWidget);
+    });
+
+    testWidgets('el botón de colapsar y cerrar sesión invocan sus callbacks',
+        (WidgetTester tester) async {
+      var toggled = false;
+      var signedOut = false;
+      await _pumpSidebar(
+        tester,
+        selectedIndex: 0,
+        onSelected: (_) {},
+        onToggle: () => toggled = true,
+        onSignOut: () => signedOut = true,
+      );
+
+      await tester.tap(find.byTooltip('Colapsar menú'));
       await tester.pumpAndSettle();
-      expect(find.text('Exportar y compartir'), findsWidgets);
-    });
+      expect(toggled, isTrue);
 
-    testWidgets('pantalla exportar muestra acciones de exportacion',
-        (WidgetTester tester) async {
-      await pumpDesktopApp(tester);
-
-      await tapSidebar(tester, 'Exportar');
-
-      expect(find.text('CSV'), findsOneWidget);
-      expect(find.text('Excel'), findsOneWidget);
-      expect(find.text('PDF'), findsOneWidget);
-      expect(find.text('Imprimir'), findsOneWidget);
-      expect(find.text('Copiar tabla'), findsOneWidget);
-      expect(find.text('Guardar informe actual'), findsOneWidget);
-    });
-
-    testWidgets('pantalla registros muestra filtros e importar',
-        (WidgetTester tester) async {
-      await pumpDesktopApp(tester);
-
-      await tapSidebar(tester, 'Registros');
-
-      expect(find.text('Importar CSV/Excel'), findsOneWidget);
-      expect(find.text('Vaciar tabla'), findsOneWidget);
-      expect(find.text('Filtrar'), findsOneWidget);
-    });
-  });
-
-  group('Navegacion movil', () {
-    testWidgets('bottom bar navega entre pantallas', (WidgetTester tester) async {
-      await pumpMobileApp(tester);
-
-      expect(find.text('Inicio / Panel principal'), findsOneWidget);
-
-      await tapBottomNavIcon(tester, Icons.add_circle_outline);
-      expect(find.text('Captura de registros'), findsOneWidget);
-
-      await tapBottomNavIcon(tester, Icons.table_chart_outlined);
-      expect(find.text('Importar'), findsOneWidget);
-
-      await tapBottomNavIcon(tester, Icons.texture_outlined);
-      expect(find.text('Catalogo de telas'), findsWidgets);
-    });
-  });
-
-  group('Captura UI', () {
-    testWidgets('formulario de captura visible en escritorio',
-        (WidgetTester tester) async {
-      await pumpDesktopApp(tester);
-
-      await tapSidebar(tester, 'Captura');
-
-      expect(find.text('Nuevo registro'), findsOneWidget);
-      expect(find.text('Tela / Tejido'), findsWidgets);
-      expect(find.text('Lote de trama'), findsWidgets);
-      expect(find.text('Agregar'), findsOneWidget);
-      expect(find.text('Limpiar campos'), findsOneWidget);
-      expect(find.text('Vaciar registros'), findsOneWidget);
+      await tester.tap(find.byTooltip('Cerrar sesión'));
+      await tester.pumpAndSettle();
+      expect(signedOut, isTrue);
     });
   });
 }

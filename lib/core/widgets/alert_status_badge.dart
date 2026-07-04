@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import '../../models/alert_level.dart';
 import '../../services/alert_service.dart';
 import '../theme/app_theme.dart';
+import 'status_chip.dart';
 
 /// Badge visual del estado de alerta de un registro.
+///
+/// Delega en [StatusChip] para mantener un único estilo de estado (icono +
+/// texto + contenedor) en toda la app.
 class AlertStatusBadge extends StatelessWidget {
   const AlertStatusBadge({
     super.key,
@@ -17,26 +21,7 @@ class AlertStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = alertService.getAlertColor(level);
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 6 : 10,
-        vertical: compact ? 2 : 4,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(compact ? 8 : 12),
-        border: Border.all(color: color.withValues(alpha: 0.6)),
-      ),
-      child: Text(
-        level.label,
-        style: TextStyle(
-          color: color,
-          fontSize: compact ? 10 : 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
+    return StatusChip.fromLevel(level, compact: compact);
   }
 }
 

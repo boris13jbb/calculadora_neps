@@ -7,6 +7,8 @@ import '../../core/widgets/app_page.dart';
 import '../../core/widgets/capture_session_actions.dart';
 import '../../core/widgets/dashboard_charts.dart';
 import '../../core/widgets/formula_box.dart';
+import '../../core/widgets/kpi_card.dart';
+import '../../core/widgets/section_header.dart';
 import '../../providers/app_state.dart';
 import '../../services/alert_service.dart';
 import '../../services/analytics_service.dart';
@@ -38,16 +40,15 @@ class DashboardScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             FormulaBox(compact: phone),
-            SizedBox(height: spacing),
-            Text(
-              'Indicadores clave',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: phone ? 14 : 16,
-                color: AppColors.textDark,
-              ),
+            SizedBox(height: spacing + 4),
+            AppSectionHeader(
+              icon: Icons.insights_outlined,
+              title: 'Indicadores clave',
+              subtitle: phone
+                  ? null
+                  : 'Resumen ejecutivo del control de neps',
             ),
-            SizedBox(height: phone ? 8 : 12),
+            SizedBox(height: phone ? 10 : 14),
             _KpiGrid(
               compact: phone,
               totalRecords: analytics.totalRegistros(records),
@@ -63,16 +64,15 @@ class DashboardScreen extends StatelessWidget {
                   : null,
               pctCritical: '${pctCritical.toStringAsFixed(1)}%',
             ),
-            SizedBox(height: spacing + 4),
-            Text(
-              'Gráficas de análisis',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: phone ? 14 : 16,
-                color: AppColors.textDark,
-              ),
+            SizedBox(height: spacing + 8),
+            AppSectionHeader(
+              icon: Icons.bar_chart_outlined,
+              title: 'Gráficas de análisis',
+              subtitle: phone
+                  ? null
+                  : 'Distribución de neps por telar, tela, lote y tendencia',
             ),
-            SizedBox(height: phone ? 8 : 12),
+            SizedBox(height: phone ? 10 : 14),
             DashboardChartsSection(
               records: records,
               formatDecimal: appState.formatDecimal,
@@ -80,16 +80,12 @@ class DashboardScreen extends StatelessWidget {
               onGoToCapture: () => appState.setNavigationIndex(1),
               onGoToRecords: () => appState.setNavigationIndex(2),
             ),
-            SizedBox(height: spacing + 4),
-            Text(
-              'Accesos rápidos',
-              style: TextStyle(
-                fontWeight: FontWeight.w900,
-                fontSize: phone ? 14 : 16,
-                color: AppColors.textDark,
-              ),
+            SizedBox(height: spacing + 8),
+            const AppSectionHeader(
+              icon: Icons.bolt_outlined,
+              title: 'Accesos rápidos',
             ),
-            SizedBox(height: phone ? 8 : 12),
+            SizedBox(height: phone ? 10 : 14),
             LayoutBuilder(
               builder: (context, constraints) {
                 final itemWidth = phone ? (constraints.maxWidth - 8) / 2 : null;
@@ -193,64 +189,69 @@ class _KpiGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: compact ? 2 : 3,
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
-      childAspectRatio: compact ? 1.55 : 2.5,
-      children: [
-        DashboardKpiCard(
-          title: 'Total registros',
+    return KpiStrip(
+      compact: compact,
+      minCardWidth: 230,
+      cards: [
+        KpiCard(
+          compact: compact,
+          label: 'Total registros',
           value: '$totalRecords',
           icon: Icons.list_alt,
           color: AppColors.primaryGreen,
         ),
-        DashboardKpiCard(
-          title: 'Total neps',
+        KpiCard(
+          compact: compact,
+          label: 'Total neps',
           value: totalNeps,
           icon: Icons.analytics_outlined,
           color: AppColors.primaryBlue,
         ),
-        DashboardKpiCard(
-          title: 'Promedio neps',
+        KpiCard(
+          compact: compact,
+          label: 'Promedio neps',
           value: averageNeps,
           icon: Icons.trending_up,
           color: AppColors.accentDark,
         ),
-        DashboardKpiCard(
-          title: 'Telares registrados',
+        KpiCard(
+          compact: compact,
+          label: 'Telares registrados',
           value: '$totalTelares',
           icon: Icons.precision_manufacturing,
           color: AppColors.primaryGreen,
         ),
-        DashboardKpiCard(
-          title: 'Telares críticos',
+        KpiCard(
+          compact: compact,
+          label: 'Telares críticos',
           value: '$criticalTelars',
           icon: Icons.error_outline,
           color: AppColors.statusCritical,
         ),
-        DashboardKpiCard(
-          title: '% registros críticos',
+        KpiCard(
+          compact: compact,
+          label: '% registros críticos',
           value: pctCritical,
           icon: Icons.percent,
           color: AppColors.statusCritical,
         ),
-        DashboardKpiCard(
-          title: 'Tela más problemática',
+        KpiCard(
+          compact: compact,
+          label: 'Tela más problemática',
           value: worstTela ?? '—',
           icon: Icons.texture,
           color: AppColors.statusWarning,
         ),
-        DashboardKpiCard(
-          title: 'Lote/trama crítico',
+        KpiCard(
+          compact: compact,
+          label: 'Lote/trama crítico',
           value: worstLote ?? '—',
           icon: Icons.inventory_2_outlined,
           color: AppColors.statusWarning,
         ),
-        DashboardKpiCard(
-          title: 'Última alerta crítica',
+        KpiCard(
+          compact: compact,
+          label: 'Última alerta crítica',
           value: lastCritical ?? '—',
           icon: Icons.notification_important_outlined,
           color: AppColors.statusCritical,
@@ -282,7 +283,10 @@ class _QuickAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final button = FilledButton.icon(
+    // Se usa FilledButton con un Row propio (en vez de FilledButton.icon) para
+    // envolver la etiqueta en Flexible: así, en anchos fijos o con escalado de
+    // fuente, el texto se recorta con ellipsis en lugar de desbordar.
+    final button = FilledButton(
       style: FilledButton.styleFrom(
         backgroundColor: color,
         foregroundColor: foreground,
@@ -293,11 +297,21 @@ class _QuickAction extends StatelessWidget {
         minimumSize: Size(compact ? 0 : 64, compact ? 40 : 48),
       ),
       onPressed: onTap,
-      icon: Icon(icon, size: compact ? 18 : 24),
-      label: Text(
-        label,
-        style: TextStyle(fontSize: compact ? 12 : 14),
-        overflow: TextOverflow.ellipsis,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: compact ? 18 : 24),
+          SizedBox(width: compact ? 6 : 8),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: compact ? 12 : 14),
+            ),
+          ),
+        ],
       ),
     );
 

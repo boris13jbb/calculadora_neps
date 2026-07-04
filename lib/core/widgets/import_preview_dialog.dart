@@ -110,7 +110,7 @@ class _ImportPreviewDialog extends StatelessWidget {
                   dataRowMaxHeight: 48,
                   headingRowColor: WidgetStateProperty.all(AppColors.header),
                   headingTextStyle: const TextStyle(
-                    color: Color(0xFFF7EAC5),
+                    color: AppColors.headerText,
                     fontWeight: FontWeight.w800,
                     fontSize: 11,
                   ),

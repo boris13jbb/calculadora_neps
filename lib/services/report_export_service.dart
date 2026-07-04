@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart' as xls;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -25,6 +26,33 @@ class ReportExportService {
         _analytics = analytics ?? analyticsService;
 
   double calculateMts(double neps) => neps / testLengthM;
+
+  /// Tema del PDF con la fuente OpenSans empaquetada. Se cachea para no
+  /// recargar el TTF en cada exportación. Usar una fuente Unicode evita que
+  /// caracteres como el guion largo (—) o acentos salgan como recuadros (□),
+  /// algo que ocurre con la Helvetica interna del paquete pdf (solo Latin-1).
+  static pw.ThemeData? _pdfThemeCache;
+
+  Future<pw.ThemeData> _pdfTheme() async {
+    final cached = _pdfThemeCache;
+    if (cached != null) return cached;
+
+    final regular = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/OpenSans-Regular.ttf'),
+    );
+    final bold = pw.Font.ttf(
+      await rootBundle.load('assets/fonts/OpenSans-Bold.ttf'),
+    );
+
+    final theme = pw.ThemeData.withFont(
+      base: regular,
+      bold: bold,
+      italic: regular,
+      boldItalic: bold,
+    );
+    _pdfThemeCache = theme;
+    return theme;
+  }
 
   String formatNumber(double value) {
     if (decimals == 0) return value.round().toString();
@@ -617,7 +645,7 @@ class ReportExportService {
       recommendations.addAll(_alerts.generateRecommendations(record, records));
     }
 
-    final doc = pw.Document();
+    final doc = pw.Document(theme: await _pdfTheme());
     final generatedAt = DateTime.now();
 
     doc.addPage(
@@ -746,7 +774,7 @@ class ReportExportService {
   }) async {
     final selected = _columns(columns);
     final summary = summarize(records);
-    final doc = pw.Document();
+    final doc = pw.Document(theme: await _pdfTheme());
 
     doc.addPage(
       pw.MultiPage(
@@ -1034,8 +1062,7 @@ class ReportExportService {
         i: pw.FlexColumnWidth(columnFlex[i]),
     };
     final borderColor = PdfColor.fromHex('#D6C394');
-    final cellPadding =
-        const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5);
+    const cellPadding = pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5);
 
     pw.Widget cell(
       String text, {

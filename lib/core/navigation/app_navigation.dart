@@ -124,6 +124,16 @@ class AppNavigation {
     return all.where((item) => user.hasPermission(item.permission)).toList();
   }
 
+  /// Índice de una pantalla dentro de la lista visible para el usuario.
+  /// Devuelve `null` si el usuario no tiene acceso a esa pantalla.
+  static int? indexOf(AppUser? user, AppNavId id) {
+    final items = visibleFor(user);
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].id == id) return i;
+    }
+    return null;
+  }
+
   static int clampIndex(int index, int length) {
     if (length <= 0) return 0;
     if (index < 0) return 0;

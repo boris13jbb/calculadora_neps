@@ -14,6 +14,7 @@ const String internalAuthEmailDomain = 'vicunha.local';
 
 const String loteTramaPrefix = '63E264';
 const String loteTramaPrefixStorageKey = 'vicunha_lote_trama_prefix_v1';
+const String loteTramaFullStorageKey = 'vicunha_lote_trama_full_v1';
 const String loteTramaFullEntryStorageKey = 'vicunha_lote_trama_full_entry_v1';
 const String loteTramaCatalogStorageKey = 'vicunha_lote_trama_catalog_v1';
 const String alertConfigStorageKey = 'vicunha_alert_config_v1';

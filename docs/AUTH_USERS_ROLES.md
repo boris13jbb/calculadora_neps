@@ -56,8 +56,42 @@ Los usuarios normales **no** usan recuperación por correo.
 | `listAppUsers` | Listar con búsqueda/filtros |
 | `getCurrentUserProfile` | Perfil del usuario autenticado |
 | `bootstrapFirstSuperAdmin` | Bootstrap único (secreto en `.env`) |
+| `processUserCreationRequest` | Trigger: procesa la cola de creación |
+| `processUserAdminRequest` | Trigger: procesa la cola de edición/estado/borrado/contraseña |
 
 Alias legacy: `createUserBySuperAdmin`, `listUsersBySuperAdmin`, etc.
+
+## Patrón de cola en Firestore (evita CORS en web)
+
+Llamar callables `onCall` directo desde el navegador puede fallar con
+`Failed to fetch` (CORS). Por eso las **mutaciones** de usuarios no llaman al
+callable directamente: escriben una solicitud en Firestore y un trigger la
+procesa en segundo plano con el Admin SDK.
+
+| Operación | Colección de cola | `type` |
+|-----------|-------------------|--------|
+| Crear | `workspaces/vicunha/user_creation_requests` | `create` |
+| Editar / Activar / Desactivar / Eliminar / Reset contraseña | `workspaces/vicunha/user_admin_requests` | `update`, `enable`, `disable`, `delete`, `resetPassword` |
+
+Flujo (implementado en `lib/repositories/user_admin_repository.dart`):
+
+1. El cliente escribe `{type, ...datos, status: 'pending', requestedByUid}`.
+2. El trigger valida que el solicitante sea `super_admin` activo, ejecuta la
+   lógica compartida (`execute*` en `functions/admin_users.js`) y escribe
+   `status: 'completed'` (con `user` o `success`) o `status: 'failed'`
+   (con `errorMessage`).
+3. El cliente escucha el documento y resuelve/rechaza según el resultado.
+
+Notas:
+
+- El repositorio hace **fallback** al callable directo solo ante fallos de
+  infraestructura (trigger sin desplegar, timeout, red). Los errores de
+  negocio (`status: failed`) se muestran tal cual, sin reintentar.
+- La contraseña (`password` / `newPassword`) se guarda en el documento solo de
+  forma transitoria y el trigger la borra con `FieldValue.delete()` al terminar.
+- Los callables siguen disponibles para Android/iOS y como respaldo.
+- Reglas: solo `super_admin` puede crear en ambas colecciones; nadie puede
+  actualizar/borrar los documentos desde el cliente (solo el Admin SDK).
 
 Todas las mutaciones validan:
 

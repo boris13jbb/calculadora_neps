@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../core/layout/responsive_layout.dart';
 import '../../core/permissions/permission.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_input_decoration.dart';
 import '../../core/widgets/app_material_list_tile.dart';
 import '../../core/widgets/empty_state.dart';
+import '../../core/widgets/kpi_card.dart';
 import '../../core/widgets/permission_gate.dart';
 import '../../models/app_user.dart';
 import '../../models/app_user_role.dart';
@@ -239,59 +241,62 @@ class _UsersScreenState extends State<UsersScreen> {
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final stacked = constraints.maxWidth < 520;
-          final title = const Text(
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          const Text(
             'Administración de usuarios',
             style: TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w900,
               color: AppColors.textDark,
             ),
-          );
-          final createButton = FilledButton.icon(
+          ),
+          FilledButton.icon(
             onPressed: _showCreateDialog,
             icon: const Icon(Icons.person_add_outlined),
             label: const Text('Nuevo usuario'),
-          );
-
-          if (stacked) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                title,
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: createButton,
-                ),
-              ],
-            );
-          }
-
-          return Row(
-            children: [
-              Expanded(child: title),
-              createButton,
-            ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildStats() {
+    final compact = isPhoneLayout(context) || hasCompactHeight(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: [
-          _StatCard(label: 'Total', value: '${_users.length}'),
-          _StatCard(label: 'Activos', value: '$_activeCount'),
-          _StatCard(label: 'Inactivos', value: '$_inactiveCount'),
-          _StatCard(label: 'Operarios', value: '$_operarioCount'),
+      child: KpiStrip(
+        minCardWidth: compact ? 150 : 190,
+        compact: compact,
+        cards: [
+          KpiCard(
+            label: 'Total usuarios',
+            value: '${_users.length}',
+            icon: Icons.groups_outlined,
+            color: AppColors.primaryBlue,
+          ),
+          KpiCard(
+            label: 'Activos',
+            value: '$_activeCount',
+            icon: Icons.verified_user_outlined,
+            color: AppColors.statusNormal,
+          ),
+          KpiCard(
+            label: 'Inactivos',
+            value: '$_inactiveCount',
+            icon: Icons.person_off_outlined,
+            color: AppColors.statusWarning,
+          ),
+          KpiCard(
+            label: 'Operarios',
+            value: '$_operarioCount',
+            icon: Icons.engineering_outlined,
+            color: AppColors.accentDark,
+          ),
         ],
       ),
     );
@@ -384,73 +389,86 @@ class _UsersScreenState extends State<UsersScreen> {
       );
     }
 
-    final isWide = MediaQuery.sizeOf(context).width >= 900;
-    if (isWide) return _buildTable();
+    final useTable = isDesktopLayout(context);
+    if (useTable) return _buildTable();
     return _buildCards();
   }
 
   Widget _buildTable() {
     final dateFormat = _formatDate;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: DataTable(
-        headingRowColor: WidgetStateProperty.all(AppColors.surfaceAlt),
-        columns: const [
-          DataColumn(label: Text('Usuario')),
-          DataColumn(label: Text('Nombre')),
-          DataColumn(label: Text('Rol')),
-          DataColumn(label: Text('Estado')),
-          DataColumn(label: Text('Último acceso')),
-          DataColumn(label: Text('Acciones')),
-        ],
-        rows: _users.map((user) {
-          final busy = _actionUid == user.uid;
-          return DataRow(cells: [
-            DataCell(Text(user.username)),
-            DataCell(Text(user.effectiveDisplayName)),
-            DataCell(_RoleBadge(role: user.role)),
-            DataCell(_StatusBadge(active: user.isActive)),
-            DataCell(Text(dateFormat(user.lastLoginAt))),
-            DataCell(
-              busy
-                  ? const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'Editar',
-                          icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => _showEditDialog(user),
-                        ),
-                        IconButton(
-                          tooltip: 'Resetear contraseña',
-                          icon: const Icon(Icons.lock_reset_outlined),
-                          onPressed: () => _showResetPasswordDialog(user),
-                        ),
-                        IconButton(
-                          tooltip: user.isActive ? 'Desactivar' : 'Activar',
-                          icon: Icon(
-                            user.isActive
-                                ? Icons.pause_circle_outline
-                                : Icons.play_circle_outline,
-                          ),
-                          onPressed: () => _toggleActive(user),
-                        ),
-                        IconButton(
-                          tooltip: 'Archivar',
-                          icon: const Icon(Icons.archive_outlined),
-                          onPressed: () => _deleteUser(user),
-                        ),
-                      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: constraints.maxWidth),
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(AppColors.surfaceAlt),
+                columns: const [
+                  DataColumn(label: Text('Usuario')),
+                  DataColumn(label: Text('Nombre')),
+                  DataColumn(label: Text('Rol')),
+                  DataColumn(label: Text('Estado')),
+                  DataColumn(label: Text('Último acceso')),
+                  DataColumn(label: Text('Acciones')),
+                ],
+                rows: _users.map((user) {
+                  final busy = _actionUid == user.uid;
+                  return DataRow(cells: [
+                    DataCell(Text(user.username)),
+                    DataCell(Text(user.effectiveDisplayName)),
+                    DataCell(_RoleBadge(role: user.role)),
+                    DataCell(_StatusBadge(active: user.isActive)),
+                    DataCell(Text(dateFormat(user.lastLoginAt))),
+                    DataCell(
+                      busy
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Wrap(
+                              spacing: 0,
+                              runSpacing: 0,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Editar',
+                                  icon: const Icon(Icons.edit_outlined),
+                                  onPressed: () => _showEditDialog(user),
+                                ),
+                                IconButton(
+                                  tooltip: 'Resetear contraseña',
+                                  icon: const Icon(Icons.lock_reset_outlined),
+                                  onPressed: () =>
+                                      _showResetPasswordDialog(user),
+                                ),
+                                IconButton(
+                                  tooltip:
+                                      user.isActive ? 'Desactivar' : 'Activar',
+                                  icon: Icon(
+                                    user.isActive
+                                        ? Icons.pause_circle_outline
+                                        : Icons.play_circle_outline,
+                                  ),
+                                  onPressed: () => _toggleActive(user),
+                                ),
+                                IconButton(
+                                  tooltip: 'Archivar',
+                                  icon: const Icon(Icons.archive_outlined),
+                                  onPressed: () => _deleteUser(user),
+                                ),
+                              ],
+                            ),
                     ),
+                  ]);
+                }).toList(),
+              ),
             ),
-          ]);
-        }).toList(),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -540,42 +558,6 @@ class _UsersScreenState extends State<UsersScreen> {
           ),
         );
       },
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 140,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
-              style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              color: AppColors.textDark,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

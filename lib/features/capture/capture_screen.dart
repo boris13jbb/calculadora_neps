@@ -12,6 +12,7 @@ import '../../core/widgets/capture_optional_fields.dart';
 import '../../core/widgets/capture_session_actions.dart';
 import '../../core/widgets/compact_records_panel.dart';
 import '../../core/widgets/edit_record_sheet.dart';
+import '../../core/widgets/kpi_card.dart';
 import '../../core/widgets/lote_trama_field.dart';
 import '../../core/widgets/report_actions.dart';
 import '../../models/nep_record.dart';
@@ -72,11 +73,11 @@ class _CaptureScreenState extends State<CaptureScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final isDesktop = MediaQuery.sizeOf(context).width >= AppBreakpoints.tablet;
+    final useWideCapture = !isPhoneLayout(context);
 
-    if (!isDesktop && _tabController == null) {
+    if (!useWideCapture && _tabController == null) {
       _tabController = TabController(length: 2, vsync: this);
-    } else if (isDesktop && _tabController != null) {
+    } else if (useWideCapture && _tabController != null) {
       _tabController!.dispose();
       _tabController = null;
     }
@@ -91,23 +92,22 @@ class _CaptureScreenState extends State<CaptureScreen>
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final isDesktop = MediaQuery.sizeOf(context).width >= AppBreakpoints.tablet;
-    final showHeaderActions = isDesktop;
+    final useWideCapture = !isPhoneLayout(context);
+    final showHeaderActions = isDesktopLayout(context);
 
     return PermissionGate(
       permission: Permission.captureRecords,
       child: AppPage(
         title: 'Captura de registros',
-        subtitle: isDesktop
+        subtitle: useWideCapture
             ? 'Su tabla personal. Guarde informes para compartir con el equipo.'
             : 'Su tabla personal',
         fillViewport: true,
-        maxContentWidth: 1400,
         compactPadding: true,
         denseOnPhone: true,
         actions:
             showHeaderActions ? _buildHeaderActions(context, appState) : null,
-        child: isDesktop
+        child: useWideCapture
             ? _DesktopCaptureLayout(appState: appState)
             : _tabController == null
                 ? const Center(child: CircularProgressIndicator())
@@ -243,6 +243,8 @@ class _DesktopCaptureLayout extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            _SessionKpis(appState: appState),
+            const SizedBox(height: 10),
             _CompactSessionBar(appState: appState),
             const SizedBox(height: 10),
             Expanded(
@@ -252,7 +254,10 @@ class _DesktopCaptureLayout extends StatelessWidget {
                   SizedBox(
                     width:
                         constraints.maxWidth >= AppBreakpoints.wide ? 360 : 300,
-                    child: formPanel,
+                    // El formulario tiene varios botones; en ventanas de poca
+                    // altura debe poder desplazarse para no desbordar (el panel
+                    // de registros de la derecha ya scrollea internamente).
+                    child: SingleChildScrollView(child: formPanel),
                   ),
                   const SizedBox(width: 12),
                   Expanded(child: recordsPanel),
@@ -395,13 +400,17 @@ class _MobileCaptureActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final viewInsets = MediaQuery.viewInsetsOf(context).bottom;
+
     return Material(
       color: AppColors.surfaceAlt,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+        padding: EdgeInsets.fromLTRB(6, 6, 6, 4 + bottomInset + viewInsets),
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 520;
             final ultraNarrow = constraints.maxWidth < 320;
 
             final iconActions = Row(
@@ -466,7 +475,8 @@ class _MobileCaptureActionBar extends StatelessWidget {
             final secondaryActions = Wrap(
               spacing: 4,
               runSpacing: 0,
-              alignment: WrapAlignment.spaceBetween,
+              alignment:
+                  narrow ? WrapAlignment.start : WrapAlignment.spaceBetween,
               children: [
                 TextButton(
                   onPressed: appState.clearCaptureFields,
@@ -485,7 +495,7 @@ class _MobileCaptureActionBar extends StatelessWidget {
               ],
             );
 
-            if (ultraNarrow) {
+            if (ultraNarrow || narrow) {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -518,61 +528,99 @@ class _MobileCaptureActionBar extends StatelessWidget {
   }
 }
 
-class _CompactSessionBar extends StatelessWidget {
-  const _CompactSessionBar({
-    required this.appState,
-    this.ultraCompact = false,
-  });
+/// KPIs de la sesión de captura extraídos de la tabla hacia la parte superior:
+/// registros, neps totales, metros calculados y telares distintos (alcance).
+class _SessionKpis extends StatelessWidget {
+  const _SessionKpis({required this.appState});
 
   final AppState appState;
-  final bool ultraCompact;
 
   @override
   Widget build(BuildContext context) {
-    final padding = ultraCompact
-        ? const EdgeInsets.symmetric(horizontal: 8, vertical: 6)
-        : const EdgeInsets.symmetric(horizontal: 12, vertical: 10);
+    final records = appState.records;
+    final totalNeps = records.fold<double>(0, (sum, item) => sum + item.neps);
+    final totalMts = records.fold<double>(
+      0,
+      (sum, item) => sum + appState.calculateMts(item.neps),
+    );
+    final looms = records.map((r) => r.telar).toSet().length;
 
+    return KpiStrip(
+      minCardWidth: 168,
+      spacing: 10,
+      compact: true,
+      cards: [
+        KpiCard(
+          compact: true,
+          label: 'Registros',
+          value: '${records.length}',
+          icon: Icons.table_rows_outlined,
+          color: AppColors.primaryBlue,
+        ),
+        KpiCard(
+          compact: true,
+          label: 'Neps totales',
+          value: appState.formatDecimal(totalNeps),
+          icon: Icons.blur_on,
+          color: AppColors.accentDark,
+        ),
+        KpiCard(
+          compact: true,
+          label: 'Mts calculados',
+          value: appState.formatNumber(totalMts),
+          icon: Icons.straighten_outlined,
+          color: AppColors.statusNormal,
+        ),
+        KpiCard(
+          compact: true,
+          label: 'Telares',
+          value: '$looms',
+          icon: Icons.precision_manufacturing_outlined,
+          color: AppColors.primaryGreen,
+        ),
+      ],
+    );
+  }
+}
+
+class _CompactSessionBar extends StatelessWidget {
+  const _CompactSessionBar({required this.appState});
+
+  final AppState appState;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: padding,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.surfaceAlt,
-        borderRadius: BorderRadius.circular(ultraCompact ? 8 : 12),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: ultraCompact
-          ? Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = constraints.maxWidth < AppBreakpoints.phone;
+          if (stacked) {
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _FabricField(appState: appState, ultraCompact: true),
-                const SizedBox(height: 6),
-                _LoteField(appState: appState, ultraCompact: true),
+                _FabricField(appState: appState),
+                const SizedBox(height: 8),
+                _LoteField(appState: appState),
               ],
-            )
-          : LayoutBuilder(
-              builder: (context, constraints) {
-                final stacked = constraints.maxWidth < AppBreakpoints.phone;
-                if (stacked) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _FabricField(appState: appState),
-                      const SizedBox(height: 8),
-                      _LoteField(appState: appState),
-                    ],
-                  );
-                }
+            );
+          }
 
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 3, child: _FabricField(appState: appState)),
-                    const SizedBox(width: 10),
-                    Expanded(flex: 2, child: _LoteField(appState: appState)),
-                  ],
-                );
-              },
-            ),
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: _FabricField(appState: appState)),
+              const SizedBox(width: 10),
+              Expanded(flex: 2, child: _LoteField(appState: appState)),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -903,7 +951,7 @@ class _CaptureFormPanel extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7DF),
+                  color: AppColors.accentSoft,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: AppColors.accent),
                 ),
@@ -973,7 +1021,7 @@ class _CaptureFormPanel extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFF7DF),
+                  color: AppColors.accentSoft,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: AppColors.accent),
                 ),

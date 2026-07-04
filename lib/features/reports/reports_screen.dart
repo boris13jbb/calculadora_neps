@@ -8,6 +8,8 @@ import '../../core/widgets/app_material_list_tile.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/export_column_selector.dart';
+import '../../core/widgets/kpi_card.dart';
+import '../../core/widgets/section_header.dart';
 import '../../core/widgets/status_banner.dart';
 import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
@@ -680,6 +682,46 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  /// Resumen superior de la biblioteca de informes.
+  Widget _reportsKpis(List<SavedReport> filtered) {
+    final totalRecords =
+        reports.fold<int>(0, (sum, report) => sum + report.records.length);
+    return KpiStrip(
+      minCardWidth: 180,
+      compact: true,
+      cards: [
+        KpiCard(
+          compact: true,
+          label: 'Informes',
+          value: '${reports.length}',
+          icon: Icons.folder_special_outlined,
+          color: AppColors.primaryBlue,
+        ),
+        KpiCard(
+          compact: true,
+          label: reportFilters.hasActiveFilters ? 'Filtrados' : 'Visibles',
+          value: '${filtered.length}',
+          icon: Icons.filter_alt_outlined,
+          color: AppColors.accentDark,
+        ),
+        KpiCard(
+          compact: true,
+          label: 'Seleccionados',
+          value: '${selectedReports.length}',
+          icon: Icons.check_box_outlined,
+          color: AppColors.primaryGreen,
+        ),
+        KpiCard(
+          compact: true,
+          label: 'Registros totales',
+          value: '$totalRecords',
+          icon: Icons.table_rows_outlined,
+          color: AppColors.statusNormal,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
@@ -762,14 +804,43 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   ),
                   SizedBox(height: spacing),
                 ],
-                _reportsToolsSection(
-                  appState: appState,
-                  spacing: spacing,
-                  phone: phone,
-                ),
-                SizedBox(height: spacing - 2),
+                _reportsKpis(filtered),
+                SizedBox(height: spacing),
                 Expanded(
-                  child: _reportsListPanel(filtered: filtered, phone: phone),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 380,
+                        child: SingleChildScrollView(
+                          child: _reportsToolsSection(
+                            appState: appState,
+                            spacing: spacing,
+                            phone: phone,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const AppSectionHeader(
+                              title: 'Informes guardados',
+                              icon: Icons.folder_special_outlined,
+                            ),
+                            const SizedBox(height: 8),
+                            Expanded(
+                              child: _reportsListPanel(
+                                filtered: filtered,
+                                phone: phone,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

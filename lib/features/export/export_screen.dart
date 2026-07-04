@@ -14,6 +14,7 @@ import '../../core/widgets/export_column_selector.dart';
 import '../../core/widgets/report_style_selector.dart';
 
 import '../../core/widgets/formula_box.dart';
+import '../../core/widgets/section_header.dart';
 
 import '../../core/widgets/report_actions.dart';
 
@@ -82,45 +83,82 @@ class _DesktopExportBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Columna izquierda: qué datos, modo de reporte y columnas exportar.
+    final leftColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppSectionHeader(
+          title: '1 · Datos a exportar',
+          icon: Icons.dataset_outlined,
+        ),
+        SizedBox(height: spacing - 4),
+        _DataInfoCard(appState: appState, pad: pad, radius: radius),
+        if (appState.visibleRecords.isEmpty) ...[
+          SizedBox(height: spacing),
+          _NoDataCard(appState: appState, pad: pad, radius: radius),
+        ],
+        SizedBox(height: spacing),
+        const AppSectionHeader(
+          title: '2 · Modo de reporte',
+          icon: Icons.tune,
+        ),
+        SizedBox(height: spacing - 4),
+        _ReportStyleCard(
+          appState: appState,
+          pad: pad,
+          radius: radius,
+          compact: false,
+        ),
+        SizedBox(height: spacing),
+        const AppSectionHeader(
+          title: '3 · Columnas del reporte',
+          icon: Icons.view_column_outlined,
+        ),
+        SizedBox(height: spacing - 4),
+        _ColumnSelectorCard(
+          appState: appState,
+          pad: pad,
+          radius: radius,
+          compact: false,
+        ),
+      ],
+    );
+
+    // Columna derecha: formatos, guardado y fórmula informativa.
+    final rightColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const AppSectionHeader(
+          title: '4 · Formatos disponibles',
+          icon: Icons.download_outlined,
+        ),
+        SizedBox(height: spacing - 4),
+        _ExportButtons(appState: appState, phone: false),
+        SizedBox(height: spacing),
+        const AppSectionHeader(
+          title: '5 · Guardar informe',
+          icon: Icons.save_outlined,
+        ),
+        SizedBox(height: spacing - 4),
+        _SaveReportSection(appState: appState, phone: false),
+        SizedBox(height: spacing),
+        const FormulaBox(compact: true),
+      ],
+    );
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ExportStatus(appState: appState),
-          _DataInfoCard(appState: appState, pad: pad, radius: radius),
-          if (appState.visibleRecords.isEmpty) ...[
-            SizedBox(height: spacing),
-            _NoDataCard(
-              appState: appState,
-              pad: pad,
-              radius: radius,
-            ),
-          ],
-          SizedBox(height: spacing),
-          _ColumnSelectorCard(
-            appState: appState,
-            pad: pad,
-            radius: radius,
-            compact: false,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: leftColumn),
+              SizedBox(width: spacing + 4),
+              Expanded(child: rightColumn),
+            ],
           ),
-          SizedBox(height: spacing),
-          _ReportStyleCard(
-            appState: appState,
-            pad: pad,
-            radius: radius,
-            compact: false,
-          ),
-          SizedBox(height: spacing),
-          const Text(
-            'Exportar tabla actual',
-            style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-          ),
-          SizedBox(height: spacing - 2),
-          _ExportButtons(appState: appState, phone: false),
-          SizedBox(height: spacing + 4),
-          _SaveReportSection(appState: appState, phone: false),
-          SizedBox(height: spacing),
-          const FormulaBox(),
         ],
       ),
     );
@@ -165,14 +203,14 @@ class _MobileExportBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _ColumnSelectorCard(
+                _ReportStyleCard(
                   appState: appState,
                   pad: pad,
                   radius: radius,
                   compact: true,
                 ),
                 SizedBox(height: spacing),
-                _ReportStyleCard(
+                _ColumnSelectorCard(
                   appState: appState,
                   pad: pad,
                   radius: radius,

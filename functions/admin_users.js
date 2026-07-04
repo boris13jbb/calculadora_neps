@@ -239,6 +239,65 @@ async function assertAuthenticated(request) {
 }
 
 /**
+ * Valida que el UID solicitante sea super admin activo (ruta de trigger,
+ * donde no hay `request.auth`). Lanza Error plano para el manejo de la cola.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} uid
+ * @return {Promise<{profile: Object, username: string}>}
+ */
+async function assertRequesterIsSuperAdmin(db, uid) {
+  if (!uid) {
+    throw new Error("Solicitud sin autor.");
+  }
+  const snap = await db.doc(`workspaces/${WORKSPACE_ID}/users/${uid}`).get();
+  if (!snap.exists) {
+    throw new Error("Perfil del solicitante no encontrado.");
+  }
+  const profile = snap.data() || {};
+  const isSuper = normalizeRole(profile.role) === "super_admin" ||
+    profile.isSuperAdmin === true;
+  if (!isSuper) {
+    throw new Error("Solo un super administrador puede realizar esta acción.");
+  }
+  if (profile.isActive === false || profile.deletedAt) {
+    throw new Error("Cuenta del solicitante desactivada.");
+  }
+  return {profile, username: profileUsername(profile)};
+}
+
+/**
+ * Traduce un Error plano de las funciones execute* a un HttpsError con el
+ * código adecuado, preservando el comportamiento previo de los callables.
+ * @param {Error} error
+ * @return {HttpsError}
+ */
+function mapUserAdminError(error) {
+  if (error instanceof HttpsError) return error;
+  const message = error.message || "No se pudo completar la operación.";
+  const lower = message.toLowerCase();
+  if (lower.includes("ya existe")) {
+    return new HttpsError("already-exists", message);
+  }
+  if (lower.includes("no encontrado")) {
+    return new HttpsError("not-found", message);
+  }
+  if (lower.includes("último super") ||
+      lower.includes("no puede") ||
+      lower.includes("propia cuenta")) {
+    return new HttpsError("failed-precondition", message);
+  }
+  if (lower.includes("requerido") ||
+      lower.includes("inválid") ||
+      lower.includes("contraseña") ||
+      lower.includes("rol no válido") ||
+      lower.includes("super_admin desde el panel") ||
+      lower.includes("super administrador")) {
+    return new HttpsError("invalid-argument", message);
+  }
+  return new HttpsError("internal", message);
+}
+
+/**
  * Crea un usuario en Auth + Firestore (lógica compartida callable / trigger).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {import("firebase-admin/auth").Auth} auth
@@ -389,6 +448,239 @@ async function executeCreateAppUser(db, auth, params) {
 }
 
 /**
+ * Carga el documento del usuario objetivo o lanza Error si no existe.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} targetUid
+ * @return {Promise<{userRef: Object, existing: Object}>}
+ */
+async function loadTargetUser(db, targetUid) {
+  if (!targetUid) {
+    throw new Error("UID requerido.");
+  }
+  const userRef = db.doc(`workspaces/${WORKSPACE_ID}/users/${targetUid}`);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    throw new Error("Usuario no encontrado.");
+  }
+  return {userRef, existing: userSnap.data() || {}};
+}
+
+/**
+ * Actualiza nombre, rol y/o estado (lógica compartida callable / trigger).
+ * Solo procesa los campos presentes (distintos de undefined).
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {import("firebase-admin/auth").Auth} auth
+ * @param {Object} params
+ * @return {Promise<Object>}
+ */
+async function executeUpdateAppUser(db, auth, params) {
+  const targetUid = String(params.targetUid || "");
+  const performedByUid = String(params.performedByUid || "");
+  const performedByUsername = String(params.performedByUsername || "");
+
+  const {userRef, existing} = await loadTargetUser(db, targetUid);
+  const updates = {updatedAt: FieldValue.serverTimestamp()};
+
+  if (params.displayName !== undefined && params.displayName !== null) {
+    updates.displayName = String(params.displayName).trim();
+    await auth.updateUser(targetUid, {displayName: updates.displayName});
+  }
+
+  let roleChanged = false;
+  if (params.role !== undefined && params.role !== null) {
+    const newRole = normalizeRole(params.role);
+    if (!VALID_ROLES.has(newRole)) {
+      throw new Error("Rol no válido.");
+    }
+
+    const oldRole = normalizeRole(existing.role);
+    if (oldRole === "super_admin" && newRole !== "super_admin") {
+      const count = await countActiveSuperAdmins(db);
+      if (count <= 1 && existing.isActive !== false) {
+        throw new Error(
+            "No se puede cambiar el rol del último super administrador activo.",
+        );
+      }
+    }
+
+    if (targetUid === performedByUid && newRole !== "super_admin") {
+      const count = await countActiveSuperAdmins(db);
+      if (count <= 1) {
+        throw new Error(
+            "No puede quitarse el rol de super administrador siendo el único.",
+        );
+      }
+    }
+
+    if (newRole === "super_admin" && oldRole !== "super_admin") {
+      throw new Error("No se puede promover a super_admin desde el panel.");
+    }
+
+    updates.role = newRole;
+    roleChanged = oldRole !== newRole;
+    await auth.setCustomUserClaims(
+        targetUid,
+        buildClaims(newRole, profileUsername(existing)),
+    );
+  }
+
+  if (params.isActive !== undefined && params.isActive !== null) {
+    const isActive = params.isActive === true;
+    updates.isActive = isActive;
+    await auth.updateUser(targetUid, {disabled: !isActive});
+  }
+
+  await userRef.set(updates, {merge: true});
+
+  await writeAudit(db, {
+    action: roleChanged ? "user_role_changed" : "user_updated",
+    performedByUid,
+    performedByUsername,
+    targetUid,
+    targetUsername: profileUsername(existing),
+    oldValue: {
+      role: normalizeRole(existing.role),
+      isActive: existing.isActive !== false,
+      displayName: existing.displayName,
+    },
+    newValue: updates,
+  });
+
+  const saved = await userRef.get();
+  return serializeUserDoc({uid: targetUid, ...saved.data()});
+}
+
+/**
+ * Activa o desactiva un usuario (lógica compartida callable / trigger).
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {import("firebase-admin/auth").Auth} auth
+ * @param {Object} params
+ * @param {boolean} enable
+ * @return {Promise<Object>}
+ */
+async function executeSetUserActive(db, auth, params, enable) {
+  const targetUid = String(params.targetUid || "");
+  const performedByUid = String(params.performedByUid || "");
+  const performedByUsername = String(params.performedByUsername || "");
+
+  const {userRef, existing} = await loadTargetUser(db, targetUid);
+
+  if (!enable && normalizeRole(existing.role) === "super_admin") {
+    const count = await countActiveSuperAdmins(db);
+    if (count <= 1 && existing.isActive !== false) {
+      throw new Error("No se puede desactivar al último super administrador.");
+    }
+  }
+
+  await auth.updateUser(targetUid, {disabled: !enable});
+  await userRef.set(
+      {isActive: enable, updatedAt: FieldValue.serverTimestamp()},
+      {merge: true},
+  );
+
+  await writeAudit(db, {
+    action: enable ? "user_enabled" : "user_disabled",
+    performedByUid,
+    performedByUsername,
+    targetUid,
+    targetUsername: profileUsername(existing),
+  });
+
+  const saved = await userRef.get();
+  return serializeUserDoc({uid: targetUid, ...saved.data()});
+}
+
+/**
+ * Elimina (soft delete) un usuario (lógica compartida callable / trigger).
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {import("firebase-admin/auth").Auth} auth
+ * @param {Object} params
+ * @return {Promise<Object>}
+ */
+async function executeDeleteAppUser(db, auth, params) {
+  const targetUid = String(params.targetUid || "");
+  const performedByUid = String(params.performedByUid || "");
+  const performedByUsername = String(params.performedByUsername || "");
+
+  if (!targetUid) {
+    throw new Error("UID requerido.");
+  }
+  if (targetUid === performedByUid) {
+    throw new Error("No puede eliminar su propia cuenta.");
+  }
+
+  const {userRef, existing} = await loadTargetUser(db, targetUid);
+
+  if (normalizeRole(existing.role) === "super_admin") {
+    const count = await countActiveSuperAdmins(db);
+    if (count <= 1) {
+      throw new Error("No se puede eliminar al último super administrador.");
+    }
+  }
+
+  await userRef.set(
+      {
+        isActive: false,
+        deletedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      {merge: true},
+  );
+
+  try {
+    await auth.updateUser(targetUid, {disabled: true});
+  } catch (error) {
+    logger.warn("Usuario Auth ya eliminado o inexistente", {targetUid, error});
+  }
+
+  await writeAudit(db, {
+    action: "user_deleted",
+    performedByUid,
+    performedByUsername,
+    targetUid,
+    targetUsername: profileUsername(existing),
+  });
+
+  const saved = await userRef.get();
+  return serializeUserDoc({uid: targetUid, ...saved.data()});
+}
+
+/**
+ * Resetea la contraseña de un usuario (lógica compartida callable / trigger).
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {import("firebase-admin/auth").Auth} auth
+ * @param {Object} params
+ * @return {Promise<void>}
+ */
+async function executeResetAppUserPassword(db, auth, params) {
+  const targetUid = String(params.targetUid || "");
+  const newPassword = String(params.newPassword || "");
+  const performedByUid = String(params.performedByUid || "");
+  const performedByUsername = String(params.performedByUsername || "");
+
+  if (!targetUid) {
+    throw new Error("UID requerido.");
+  }
+  if (newPassword.length < 8) {
+    throw new Error("La contraseña debe tener al menos 8 caracteres.");
+  }
+
+  const {existing} = await loadTargetUser(db, targetUid);
+  const targetRole = normalizeRole(existing.role);
+
+  await auth.updateUser(targetUid, {password: newPassword});
+
+  await writeAudit(db, {
+    action: "password_reset",
+    performedByUid,
+    performedByUsername,
+    targetUid,
+    targetUsername: profileUsername(existing),
+    metadata: {targetRole},
+  });
+}
+
+/**
  * @param {import("firebase-functions/v2/https").CallableRequest} request
  */
 const createAppUser = onCall(callOptions, async (request) => {
@@ -430,93 +722,19 @@ const updateAppUser = onCall(callOptions, async (request) => {
   const {db, uid: performedByUid, username: performedByUsername} =
     await assertSuperAdmin(request);
 
-  const targetUid = String(request.data?.uid || "");
-  if (!targetUid) {
-    throw new HttpsError("invalid-argument", "UID requerido.");
+  try {
+    const user = await executeUpdateAppUser(db, getAuth(), {
+      targetUid: request.data?.uid,
+      displayName: request.data?.displayName ?? undefined,
+      role: request.data?.role ?? undefined,
+      isActive: request.data?.isActive ?? undefined,
+      performedByUid,
+      performedByUsername,
+    });
+    return toCallablePayload({user});
+  } catch (error) {
+    throw mapUserAdminError(error);
   }
-
-  const userRef = db.doc(`workspaces/${WORKSPACE_ID}/users/${targetUid}`);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    throw new HttpsError("not-found", "Usuario no encontrado.");
-  }
-
-  const existing = userSnap.data() || {};
-  const updates = {updatedAt: FieldValue.serverTimestamp()};
-  const auth = getAuth();
-
-  if (request.data?.displayName != null) {
-    updates.displayName = String(request.data.displayName).trim();
-    await auth.updateUser(targetUid, {displayName: updates.displayName});
-  }
-
-  let roleChanged = false;
-  if (request.data?.role != null) {
-    const newRole = normalizeRole(request.data.role);
-    if (!VALID_ROLES.has(newRole)) {
-      throw new HttpsError("invalid-argument", "Rol no válido.");
-    }
-
-    const oldRole = normalizeRole(existing.role);
-    if (oldRole === "super_admin" && newRole !== "super_admin") {
-      const count = await countActiveSuperAdmins(db);
-      if (count <= 1 && existing.isActive !== false) {
-        throw new HttpsError(
-            "failed-precondition",
-            "No se puede cambiar el rol del último super administrador activo.",
-        );
-      }
-    }
-
-    if (targetUid === performedByUid && newRole !== "super_admin") {
-      const count = await countActiveSuperAdmins(db);
-      if (count <= 1) {
-        throw new HttpsError(
-            "failed-precondition",
-            "No puede quitarse el rol de super administrador siendo el único.",
-        );
-      }
-    }
-
-    if (newRole === "super_admin" && oldRole !== "super_admin") {
-      throw new HttpsError(
-          "invalid-argument",
-          "No se puede promover a super_admin desde el panel.",
-      );
-    }
-
-    updates.role = newRole;
-    roleChanged = oldRole !== newRole;
-    await auth.setCustomUserClaims(
-        targetUid,
-        buildClaims(newRole, profileUsername(existing)),
-    );
-  }
-
-  if (request.data?.isActive != null) {
-    const isActive = request.data.isActive === true;
-    updates.isActive = isActive;
-    await auth.updateUser(targetUid, {disabled: !isActive});
-  }
-
-  await userRef.set(updates, {merge: true});
-
-  await writeAudit(db, {
-    action: roleChanged ? "user_role_changed" : "user_updated",
-    performedByUid,
-    performedByUsername,
-    targetUid,
-    targetUsername: profileUsername(existing),
-    oldValue: {
-      role: normalizeRole(existing.role),
-      isActive: existing.isActive !== false,
-      displayName: existing.displayName,
-    },
-    newValue: updates,
-  });
-
-  const saved = await userRef.get();
-  return toCallablePayload({user: serializeUserDoc({uid: targetUid, ...saved.data()})});
 });
 
 /**
@@ -595,44 +813,16 @@ const disableAppUser = onCall(callOptions, async (request) => {
   const {db, uid: performedByUid, username: performedByUsername} =
     await assertSuperAdmin(request);
 
-  const targetUid = String(request.data?.uid || "");
-  if (!targetUid) {
-    throw new HttpsError("invalid-argument", "UID requerido.");
+  try {
+    const user = await executeSetUserActive(db, getAuth(), {
+      targetUid: request.data?.uid,
+      performedByUid,
+      performedByUsername,
+    }, false);
+    return toCallablePayload({user});
+  } catch (error) {
+    throw mapUserAdminError(error);
   }
-
-  const userRef = db.doc(`workspaces/${WORKSPACE_ID}/users/${targetUid}`);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    throw new HttpsError("not-found", "Usuario no encontrado.");
-  }
-
-  const existing = userSnap.data() || {};
-  if (normalizeRole(existing.role) === "super_admin") {
-    const count = await countActiveSuperAdmins(db);
-    if (count <= 1 && existing.isActive !== false) {
-      throw new HttpsError(
-          "failed-precondition",
-          "No se puede desactivar al último super administrador.",
-      );
-    }
-  }
-
-  await getAuth().updateUser(targetUid, {disabled: true});
-  await userRef.set(
-      {isActive: false, updatedAt: FieldValue.serverTimestamp()},
-      {merge: true},
-  );
-
-  await writeAudit(db, {
-    action: "user_disabled",
-    performedByUid,
-    performedByUsername,
-    targetUid,
-    targetUsername: profileUsername(existing),
-  });
-
-  const saved = await userRef.get();
-  return toCallablePayload({user: serializeUserDoc({uid: targetUid, ...saved.data()})});
 });
 
 /**
@@ -642,34 +832,16 @@ const enableAppUser = onCall(callOptions, async (request) => {
   const {db, uid: performedByUid, username: performedByUsername} =
     await assertSuperAdmin(request);
 
-  const targetUid = String(request.data?.uid || "");
-  if (!targetUid) {
-    throw new HttpsError("invalid-argument", "UID requerido.");
+  try {
+    const user = await executeSetUserActive(db, getAuth(), {
+      targetUid: request.data?.uid,
+      performedByUid,
+      performedByUsername,
+    }, true);
+    return toCallablePayload({user});
+  } catch (error) {
+    throw mapUserAdminError(error);
   }
-
-  const userRef = db.doc(`workspaces/${WORKSPACE_ID}/users/${targetUid}`);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    throw new HttpsError("not-found", "Usuario no encontrado.");
-  }
-
-  const existing = userSnap.data() || {};
-  await getAuth().updateUser(targetUid, {disabled: false});
-  await userRef.set(
-      {isActive: true, updatedAt: FieldValue.serverTimestamp()},
-      {merge: true},
-  );
-
-  await writeAudit(db, {
-    action: "user_enabled",
-    performedByUid,
-    performedByUsername,
-    targetUid,
-    targetUsername: profileUsername(existing),
-  });
-
-  const saved = await userRef.get();
-  return toCallablePayload({user: serializeUserDoc({uid: targetUid, ...saved.data()})});
 });
 
 /**
@@ -679,59 +851,16 @@ const deleteAppUser = onCall(callOptions, async (request) => {
   const {db, uid: performedByUid, username: performedByUsername} =
     await assertSuperAdmin(request);
 
-  const targetUid = String(request.data?.uid || "");
-  if (!targetUid) {
-    throw new HttpsError("invalid-argument", "UID requerido.");
-  }
-
-  if (targetUid === performedByUid) {
-    throw new HttpsError(
-        "failed-precondition",
-        "No puede eliminar su propia cuenta.",
-    );
-  }
-
-  const userRef = db.doc(`workspaces/${WORKSPACE_ID}/users/${targetUid}`);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    throw new HttpsError("not-found", "Usuario no encontrado.");
-  }
-
-  const existing = userSnap.data() || {};
-  if (normalizeRole(existing.role) === "super_admin") {
-    const count = await countActiveSuperAdmins(db);
-    if (count <= 1) {
-      throw new HttpsError(
-          "failed-precondition",
-          "No se puede eliminar al último super administrador.",
-      );
-    }
-  }
-
-  await userRef.set(
-      {
-        isActive: false,
-        deletedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      {merge: true},
-  );
-
   try {
-    await getAuth().updateUser(targetUid, {disabled: true});
+    await executeDeleteAppUser(db, getAuth(), {
+      targetUid: request.data?.uid,
+      performedByUid,
+      performedByUsername,
+    });
+    return toCallablePayload({success: true});
   } catch (error) {
-    logger.warn("Usuario Auth ya eliminado o inexistente", {targetUid, error});
+    throw mapUserAdminError(error);
   }
-
-  await writeAudit(db, {
-    action: "user_deleted",
-    performedByUid,
-    performedByUsername,
-    targetUid,
-    targetUsername: profileUsername(existing),
-  });
-
-  return toCallablePayload({success: true});
 });
 
 /**
@@ -741,44 +870,17 @@ const resetAppUserPassword = onCall(callOptions, async (request) => {
   const {db, uid: performedByUid, username: performedByUsername} =
     await assertSuperAdmin(request);
 
-  const targetUid = String(request.data?.uid || "");
-  const newPassword = String(request.data?.newPassword || "");
-
-  if (!targetUid) {
-    throw new HttpsError("invalid-argument", "UID requerido.");
+  try {
+    await executeResetAppUserPassword(db, getAuth(), {
+      targetUid: request.data?.uid,
+      newPassword: request.data?.newPassword,
+      performedByUid,
+      performedByUsername,
+    });
+    return toCallablePayload({success: true});
+  } catch (error) {
+    throw mapUserAdminError(error);
   }
-  if (newPassword.length < 8) {
-    throw new HttpsError(
-        "invalid-argument",
-        "La contraseña debe tener al menos 8 caracteres.",
-    );
-  }
-
-  const userRef = db.doc(`workspaces/${WORKSPACE_ID}/users/${targetUid}`);
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) {
-    throw new HttpsError("not-found", "Usuario no encontrado.");
-  }
-
-  const existing = userSnap.data() || {};
-  const targetRole = normalizeRole(existing.role);
-
-  if (targetRole === "super_admin" && targetUid !== performedByUid) {
-    // Otro super_admin puede resetear contraseña de super_admin.
-  }
-
-  await getAuth().updateUser(targetUid, {password: newPassword});
-
-  await writeAudit(db, {
-    action: "password_reset",
-    performedByUid,
-    performedByUsername,
-    targetUid,
-    targetUsername: profileUsername(existing),
-    metadata: {targetRole},
-  });
-
-  return toCallablePayload({success: true});
 });
 
 /**
@@ -983,6 +1085,96 @@ const processUserCreationRequest = onDocumentCreated({
   }
 });
 
+/**
+ * Ejecuta la operación de administración según el tipo de solicitud.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {import("firebase-admin/auth").Auth} auth
+ * @param {Object} data
+ * @param {string} performedByUsername
+ * @return {Promise<{user?: Object}>}
+ */
+async function dispatchUserAdminRequest(db, auth, data, performedByUsername) {
+  const base = {
+    targetUid: data.uid,
+    performedByUid: String(data.requestedByUid || ""),
+    performedByUsername,
+  };
+
+  switch (data.type) {
+    case "update":
+      return {
+        user: await executeUpdateAppUser(db, auth, {
+          ...base,
+          displayName: data.displayName ?? undefined,
+          role: data.role ?? undefined,
+          isActive: data.isActive ?? undefined,
+        }),
+      };
+    case "disable":
+      return {user: await executeSetUserActive(db, auth, base, false)};
+    case "enable":
+      return {user: await executeSetUserActive(db, auth, base, true)};
+    case "delete":
+      return {user: await executeDeleteAppUser(db, auth, base)};
+    case "resetPassword":
+      await executeResetAppUserPassword(db, auth, {
+        ...base,
+        newPassword: data.newPassword,
+      });
+      return {};
+    default:
+      throw new Error(`Tipo de solicitud no soportado: ${data.type}`);
+  }
+}
+
+/**
+ * Procesa solicitudes de administración de usuarios (editar, activar,
+ * desactivar, eliminar, resetear contraseña) escritas en Firestore por el
+ * cliente. Evita el fallo CORS de llamar callables desde el navegador.
+ */
+const processUserAdminRequest = onDocumentCreated({
+  document: `workspaces/${WORKSPACE_ID}/user_admin_requests/{requestId}`,
+  region: "us-central1",
+}, async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+
+  const data = snap.data() || {};
+  if (data.status !== "pending") return;
+
+  const ref = snap.ref;
+  const db = getFirestore();
+  const auth = getAuth();
+
+  await ref.set({status: "processing"}, {merge: true});
+
+  try {
+    const requesterUid = String(data.requestedByUid || "");
+    const {username} = await assertRequesterIsSuperAdmin(db, requesterUid);
+    const performedByUsername = String(data.requestedByUsername || username);
+
+    const result = await dispatchUserAdminRequest(
+        db, auth, data, performedByUsername,
+    );
+
+    await ref.set({
+      status: "completed",
+      ...(result.user ? {user: result.user} : {success: true}),
+      newPassword: FieldValue.delete(),
+      completedAt: FieldValue.serverTimestamp(),
+      errorMessage: FieldValue.delete(),
+    }, {merge: true});
+  } catch (error) {
+    logger.error("processUserAdminRequest error", error);
+    await ref.set({
+      status: "failed",
+      errorMessage: error.message || "No se pudo completar la operación.",
+      newPassword: FieldValue.delete(),
+      completedAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
+  }
+});
+
 // Exportaciones con nombres nuevos
 exports.createAppUser = createAppUser;
 exports.updateAppUser = updateAppUser;
@@ -995,6 +1187,7 @@ exports.listAppUsers = listAppUsers;
 exports.getCurrentUserProfile = getCurrentUserProfile;
 exports.bootstrapFirstSuperAdmin = bootstrapFirstSuperAdmin;
 exports.processUserCreationRequest = processUserCreationRequest;
+exports.processUserAdminRequest = processUserAdminRequest;
 
 // Alias legacy (compatibilidad con clientes anteriores)
 exports.createUserBySuperAdmin = createAppUser;

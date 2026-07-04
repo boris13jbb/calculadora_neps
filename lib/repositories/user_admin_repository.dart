@@ -11,10 +11,28 @@ import '../services/user_admin_service.dart';
 import '../utils/firestore_json_helper.dart';
 import '../utils/username_auth_helper.dart';
 
+/// Error de negocio devuelto por el trigger de la cola (status `failed`).
+///
+/// Representa un fallo real y esperado (p. ej. "el usuario ya existe" o
+/// "no se puede desactivar al último super administrador"). No debe activar
+/// el fallback al callable, porque el mensaje ya es definitivo para el usuario.
+class UserAdminRequestFailure implements Exception {
+  UserAdminRequestFailure(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// Repositorio de administración de usuarios.
 ///
-/// La creación usa una cola en Firestore (como un repositorio local fiable):
-/// el cliente escribe la solicitud y una Cloud Function crea el usuario en Auth.
+/// Todas las mutaciones usan una cola en Firestore (como un repositorio local
+/// fiable): el cliente escribe la solicitud y una Cloud Function la procesa en
+/// segundo plano. Así se evita el fallo `Failed to fetch` / CORS de llamar a
+/// `cloudfunctions.net` desde el navegador. Si la cola no está disponible
+/// (trigger sin desplegar, timeout, error de red), se hace fallback al callable
+/// directo, que sigue funcionando en Android/iOS.
 class UserAdminRepository {
   UserAdminRepository._({UserAdminService? service})
       : _service = service ?? UserAdminService();
@@ -22,7 +40,10 @@ class UserAdminRepository {
   static final UserAdminRepository instance = UserAdminRepository._();
 
   static const _workspacePath = 'workspaces/vicunha';
-  static const _requestsPath = '$_workspacePath/user_creation_requests';
+  static const _creationRequestsPath = '$_workspacePath/user_creation_requests';
+  static const _adminRequestsPath = '$_workspacePath/user_admin_requests';
+
+  static const _requestTimeout = Duration(seconds: 90);
 
   final UserAdminService _service;
 
@@ -47,8 +68,10 @@ class UserAdminRepository {
         role: role,
         isActive: isActive,
       );
+    } on UserAdminRequestFailure {
+      rethrow;
     } catch (error) {
-      debugPrint('Cola Firestore falló, probando callable: $error');
+      debugPrint('Cola creación falló, probando callable: $error');
       return _service.createUser(
         username: normalizedUsername,
         password: password,
@@ -64,25 +87,94 @@ class UserAdminRepository {
     String? displayName,
     AppUserRole? role,
     bool? isActive,
-  }) =>
-      _service.updateUser(
+  }) async {
+    try {
+      final data = await _enqueueAdminRequest(
+        {
+          'type': 'update',
+          'uid': uid,
+          if (displayName != null) 'displayName': displayName.trim(),
+          if (role != null) 'role': role.code,
+          if (isActive != null) 'isActive': isActive,
+        },
+        failureFallbackMessage: 'No se pudo actualizar el usuario.',
+      );
+      return _userFromResult(
+        data,
+        incompleteMessage: 'Respuesta incompleta al actualizar el usuario.',
+      );
+    } on UserAdminRequestFailure {
+      rethrow;
+    } catch (error) {
+      debugPrint('Cola update falló, probando callable: $error');
+      return _service.updateUser(
         uid: uid,
         displayName: displayName,
         role: role,
         isActive: isActive,
       );
+    }
+  }
 
   Future<void> resetUserPassword({
     required String uid,
     required String newPassword,
-  }) =>
-      _service.resetUserPassword(uid: uid, newPassword: newPassword);
+  }) async {
+    try {
+      await _enqueueAdminRequest(
+        {
+          'type': 'resetPassword',
+          'uid': uid,
+          'newPassword': newPassword,
+        },
+        failureFallbackMessage: 'No se pudo restablecer la contraseña.',
+      );
+    } on UserAdminRequestFailure {
+      rethrow;
+    } catch (error) {
+      debugPrint('Cola resetPassword falló, probando callable: $error');
+      await _service.resetUserPassword(uid: uid, newPassword: newPassword);
+    }
+  }
 
-  Future<void> disableUser(String uid) => _service.disableUser(uid);
+  Future<void> disableUser(String uid) => _setUserActive(uid, false);
 
-  Future<void> enableUser(String uid) => _service.enableUser(uid);
+  Future<void> enableUser(String uid) => _setUserActive(uid, true);
 
-  Future<void> deleteUser(String uid) => _service.deleteUser(uid);
+  Future<void> _setUserActive(String uid, bool enable) async {
+    final type = enable ? 'enable' : 'disable';
+    try {
+      await _enqueueAdminRequest(
+        {'type': type, 'uid': uid},
+        failureFallbackMessage: enable
+            ? 'No se pudo activar el usuario.'
+            : 'No se pudo desactivar el usuario.',
+      );
+    } on UserAdminRequestFailure {
+      rethrow;
+    } catch (error) {
+      debugPrint('Cola $type falló, probando callable: $error');
+      if (enable) {
+        await _service.enableUser(uid);
+      } else {
+        await _service.disableUser(uid);
+      }
+    }
+  }
+
+  Future<void> deleteUser(String uid) async {
+    try {
+      await _enqueueAdminRequest(
+        {'type': 'delete', 'uid': uid},
+        failureFallbackMessage: 'No se pudo eliminar el usuario.',
+      );
+    } on UserAdminRequestFailure {
+      rethrow;
+    } catch (error) {
+      debugPrint('Cola delete falló, probando callable: $error');
+      await _service.deleteUser(uid);
+    }
+  }
 
   Future<List<AppUser>> listUsers({
     String? search,
@@ -104,42 +196,83 @@ class UserAdminRepository {
     required AppUserRole role,
     required bool isActive,
   }) async {
+    final requestRef = await _writeRequest(
+      _creationRequestsPath,
+      {
+        'type': 'create',
+        'username': username,
+        'password': password,
+        if (displayName != null && displayName.trim().isNotEmpty)
+          'displayName': displayName.trim(),
+        'role': role.code,
+        'isActive': isActive,
+      },
+    );
+
+    final data = await _awaitRequestCompletion(
+      requestRef,
+      failureFallbackMessage: 'No se pudo crear el usuario.',
+    );
+    return _userFromResult(
+      data,
+      incompleteMessage: 'Respuesta incompleta al crear el usuario.',
+    );
+  }
+
+  /// Escribe una solicitud de administración genérica y espera su resultado.
+  Future<Map<String, dynamic>> _enqueueAdminRequest(
+    Map<String, dynamic> payload, {
+    required String failureFallbackMessage,
+  }) async {
+    final requestRef = await _writeRequest(_adminRequestsPath, payload);
+    return _awaitRequestCompletion(
+      requestRef,
+      failureFallbackMessage: failureFallbackMessage,
+    );
+  }
+
+  /// Crea el documento de solicitud con los metadatos del solicitante.
+  Future<DocumentReference<Map<String, dynamic>>> _writeRequest(
+    String collectionPath,
+    Map<String, dynamic> payload,
+  ) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
       throw Exception('Debe iniciar sesión nuevamente.');
     }
 
     await currentUser.getIdToken(true);
+    final performerUsername = await _resolvePerformerUsername(currentUser);
 
-    final profileSnap =
-        await _firestore.doc('$_workspacePath/users/${currentUser.uid}').get();
-    final profile = profileSnap.data();
-    final performerUsername = profile?['username'] as String? ??
-        UsernameAuthHelper.normalizeUsername(
-          profile?['displayName'] as String? ?? currentUser.uid,
-        );
-
-    final requestRef = await _firestore.collection(_requestsPath).add({
-      'type': 'create',
+    return _firestore.collection(collectionPath).add({
+      ...payload,
       'status': 'pending',
-      'username': username,
-      'password': password,
-      if (displayName != null && displayName.trim().isNotEmpty)
-        'displayName': displayName.trim(),
-      'role': role.code,
-      'isActive': isActive,
       'requestedByUid': currentUser.uid,
       'requestedByUsername': performerUsername,
       'createdAt': FieldValue.serverTimestamp(),
     });
-
-    return _waitForCreationResult(requestRef);
   }
 
-  Future<AppUser> _waitForCreationResult(
-    DocumentReference<Map<String, dynamic>> requestRef,
-  ) async {
-    final completer = Completer<AppUser>();
+  Future<String> _resolvePerformerUsername(User currentUser) async {
+    final profileSnap =
+        await _firestore.doc('$_workspacePath/users/${currentUser.uid}').get();
+    final profile = profileSnap.data();
+    return profile?['username'] as String? ??
+        UsernameAuthHelper.normalizeUsername(
+          profile?['displayName'] as String? ?? currentUser.uid,
+        );
+  }
+
+  /// Escucha el documento de solicitud hasta que el trigger lo complete.
+  ///
+  /// Devuelve los datos finales en `completed`, lanza [UserAdminRequestFailure]
+  /// en `failed` (error de negocio definitivo) y una excepción genérica ante
+  /// timeout o error de stream (recuperable vía fallback al callable).
+  Future<Map<String, dynamic>> _awaitRequestCompletion(
+    DocumentReference<Map<String, dynamic>> requestRef, {
+    required String failureFallbackMessage,
+  }) async {
+    final completer = Completer<Map<String, dynamic>>();
     late final StreamSubscription<DocumentSnapshot<Map<String, dynamic>>> sub;
     Timer? timeout;
 
@@ -150,36 +283,23 @@ class UserAdminRepository {
 
         final status = data['status'] as String?;
         if (status == 'completed') {
-          final userRaw = data['user'];
-          if (userRaw is Map) {
-            completer.complete(
-              AppUser.fromJson(
-                FirestoreJsonHelper.normalizeMap(
-                  Map<String, dynamic>.from(userRaw),
-                ),
+          if (!completer.isCompleted) completer.complete(data);
+        } else if (status == 'failed') {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              UserAdminRequestFailure(
+                data['errorMessage']?.toString() ?? failureFallbackMessage,
               ),
             );
-          } else {
-            completer.completeError(
-              Exception('Respuesta incompleta al crear el usuario.'),
-            );
           }
-          return;
-        }
-
-        if (status == 'failed') {
-          completer.completeError(
-            Exception(
-              data['errorMessage']?.toString() ??
-                  'No se pudo crear el usuario.',
-            ),
-          );
         }
       },
-      onError: completer.completeError,
+      onError: (Object error) {
+        if (!completer.isCompleted) completer.completeError(error);
+      },
     );
 
-    timeout = Timer(const Duration(seconds: 90), () {
+    timeout = Timer(_requestTimeout, () {
       if (!completer.isCompleted) {
         completer.completeError(
           Exception(
@@ -195,5 +315,20 @@ class UserAdminRepository {
       await sub.cancel();
       timeout.cancel();
     }
+  }
+
+  AppUser _userFromResult(
+    Map<String, dynamic> data, {
+    required String incompleteMessage,
+  }) {
+    final userRaw = data['user'];
+    if (userRaw is Map) {
+      return AppUser.fromJson(
+        FirestoreJsonHelper.normalizeMap(
+          Map<String, dynamic>.from(userRaw),
+        ),
+      );
+    }
+    throw Exception(incompleteMessage);
   }
 }

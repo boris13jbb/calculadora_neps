@@ -258,7 +258,7 @@ class AppState extends ChangeNotifier {
   Future<void> initialize({Uri? launchUri}) async {
     nepsController.addListener(notifyListeners);
     loteSuffixController.addListener(notifyListeners);
-    loteFullController.addListener(notifyListeners);
+    loteFullController.addListener(_handleLoteFullChanged);
     lotePrefixController.addListener(notifyListeners);
     await alertConfigService.load();
     alertService.updateConfig(alertConfigService.config);
@@ -325,7 +325,7 @@ class AppState extends ChangeNotifier {
     _fabricsSubscription?.cancel();
     nepsController.removeListener(notifyListeners);
     loteSuffixController.removeListener(notifyListeners);
-    loteFullController.removeListener(notifyListeners);
+    loteFullController.removeListener(_handleLoteFullChanged);
     lotePrefixController.removeListener(notifyListeners);
     telarController.dispose();
     nepsController.dispose();
@@ -430,9 +430,14 @@ class AppState extends ChangeNotifier {
     records = await _loadLocalRecords();
     fabrics = await fabricCatalogService.loadFabrics();
     loteCatalog = await loteTramaCatalogService.loadCatalog();
-    await _loadLotePreferences();
-    _syncFabricSelection();
-    _ensureDefaultLotePreview();
+    _suppressLotePersist = true;
+    try {
+      await _loadLotePreferences();
+      _syncFabricSelection();
+      _ensureDefaultLotePreview();
+    } finally {
+      _suppressLotePersist = false;
+    }
   }
 
   void _ensureDefaultLotePreview() {
@@ -454,6 +459,19 @@ class AppState extends ChangeNotifier {
       lotePrefixController.text = LoteTramaHelper.normalizePrefix(savedPrefix);
     }
     loteFullEntryMode = prefs.getBool(loteTramaFullEntryStorageKey) ?? false;
+
+    // Restaura el último lote de trama usado para acelerar la captura.
+    final savedFull = prefs.getString(loteTramaFullStorageKey);
+    if (savedFull != null && savedFull.trim().isNotEmpty) {
+      final full = savedFull.trim();
+      loteFullController.text = full;
+      final parts = LoteTramaHelper.split(
+        full,
+        fallbackPrefix: lotePrefixController.text,
+      );
+      lotePrefixController.text = parts.prefix;
+      loteSuffixController.text = parts.suffix;
+    }
   }
 
   Future<void> _saveLotePreferences() async {
@@ -463,6 +481,25 @@ class AppState extends ChangeNotifier {
       LoteTramaHelper.normalizePrefix(lotePrefixController.text),
     );
     await prefs.setBool(loteTramaFullEntryStorageKey, loteFullEntryMode);
+  }
+
+  /// Evita persistir el lote mientras se restauran/derivan valores en la carga.
+  bool _suppressLotePersist = false;
+
+  /// Notifica cambios y persiste el último lote de trama escrito, de modo que
+  /// la captura recuerde el valor entre sesiones.
+  void _handleLoteFullChanged() {
+    notifyListeners();
+    if (_suppressLotePersist) return;
+    unawaited(_saveLoteFull());
+  }
+
+  Future<void> _saveLoteFull() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      loteTramaFullStorageKey,
+      loteFullController.text.trim(),
+    );
   }
 
   void setLoteFullEntryMode(bool value) {

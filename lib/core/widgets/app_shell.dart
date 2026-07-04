@@ -9,9 +9,19 @@ import '../theme/app_theme.dart';
 import 'app_loading_view.dart';
 import 'empty_state.dart';
 import 'status_banner.dart';
+import 'vicunha_sidebar.dart';
 
-class AppShell extends StatelessWidget {
+class AppShell extends StatefulWidget {
   const AppShell({super.key});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  /// Preferencia del usuario para el sidebar (colapsado/expandido).
+  /// `null` = usar el comportamiento por defecto según el ancho.
+  bool? _sidebarExtendedPreference;
 
   @override
   Widget build(BuildContext context) {
@@ -71,77 +81,36 @@ class AppShell extends StatelessWidget {
         final useRail = constraints.maxWidth >= AppBreakpoints.desktop;
 
         if (useRail) {
+          final extended = _sidebarExtendedPreference ??
+              (constraints.maxWidth >= AppBreakpoints.wide);
+          final destinations = navItems
+              .map(
+                (item) => VicunhaNavDestination(
+                  label: item.label,
+                  icon: item.icon,
+                  selectedIcon: item.selectedIcon,
+                  badgeCount: item.id == AppNavId.alerts
+                      ? appState.criticalAlertsCount
+                      : 0,
+                ),
+              )
+              .toList();
+
           return Scaffold(
             body: SafeArea(
               child: Row(
                 children: [
-                  NavigationRail(
-                    extended: constraints.maxWidth >= AppBreakpoints.wide,
-                    minExtendedWidth: 180,
+                  VicunhaSidebar(
                     selectedIndex: safeIndex,
                     onDestinationSelected: appState.setNavigationIndex,
-                    labelType: constraints.maxWidth >= AppBreakpoints.wide
-                        ? NavigationRailLabelType.none
-                        : NavigationRailLabelType.all,
-                    backgroundColor: AppColors.header,
-                    indicatorColor: AppColors.accent,
-                    leading: Padding(
-                      padding: const EdgeInsets.only(top: 16, bottom: 8),
-                      child: Column(
-                        children: [
-                          const Icon(
-                            Icons.calculate_outlined,
-                            color: AppColors.accent,
-                            size: 32,
-                          ),
-                          if (constraints.maxWidth >= AppBreakpoints.wide) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              auth.profile?.effectiveDisplayName ?? '',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: AppColors.muted,
-                              ),
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (auth.profile?.username.isNotEmpty == true)
-                              Text(
-                                '@${auth.profile!.username}',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: AppColors.muted,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                          ],
-                        ],
-                      ),
+                    destinations: destinations,
+                    extended: extended,
+                    onToggleExtended: () => setState(
+                      () => _sidebarExtendedPreference = !extended,
                     ),
-                    trailing: Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: IconButton(
-                        tooltip: 'Cerrar sesión',
-                        onPressed: auth.signOut,
-                        icon: const Icon(Icons.logout),
-                      ),
-                    ),
-                    destinations: navItems
-                        .asMap()
-                        .entries
-                        .map(
-                          (entry) => NavigationRailDestination(
-                            icon: _navIcon(entry.key, entry.value, appState),
-                            selectedIcon: _navSelectedIcon(
-                              entry.key,
-                              entry.value,
-                              appState,
-                            ),
-                            label: Text(entry.value.label),
-                          ),
-                        )
-                        .toList(),
+                    userName: auth.profile?.effectiveDisplayName,
+                    userRole: auth.profile?.role.label,
+                    onSignOut: auth.signOut,
                   ),
                   const VerticalDivider(width: 1, thickness: 1),
                   Expanded(

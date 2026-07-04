@@ -21,11 +21,22 @@ Future<void> promptSaveReport(BuildContext context, AppState appState) async {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Guardar informe'),
-      content: TextField(
-        controller: nameController,
-        decoration: const InputDecoration(
-          labelText: 'Nombre del informe',
-          border: OutlineInputBorder(),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del informe',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _ReportModeSummary(style: appState.pdfReportStyle),
+          ],
         ),
       ),
       actions: [
@@ -231,6 +242,73 @@ class _ShareReportDialogState extends State<_ShareReportDialog> {
           child: const Text('Cancelar'),
         ),
       ],
+    );
+  }
+}
+
+/// Resumen de solo lectura del modo de reporte activo.
+///
+/// Muestra en el diálogo de guardado qué estilo (Completo/Clásico) se aplicará,
+/// sincronizado con la selección de la pantalla Exportar, para no elegirlo dos
+/// veces. El cambio se realiza en el paso "Modo de reporte".
+class _ReportModeSummary extends StatelessWidget {
+  const _ReportModeSummary({required this.style});
+
+  final PdfReportStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            style == PdfReportStyle.completo
+                ? Icons.analytics_outlined
+                : Icons.description_outlined,
+            size: 20,
+            color: AppColors.primaryGreen,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Modo de reporte: ${style.label}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  style.description,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 11.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Se cambia en Exportar › Modo de reporte.',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 10.5,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
