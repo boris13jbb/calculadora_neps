@@ -5,6 +5,7 @@ import '../../models/pdf_report_style.dart';
 import '../../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import 'export_column_selector.dart';
+import 'report_style_selector.dart';
 
 Future<void> promptSaveReport(BuildContext context, AppState appState) async {
   if (appState.records.isEmpty) {
@@ -164,32 +165,61 @@ class _ShareReportDialogState extends State<_ShareReportDialog> {
                 onChanged: (columns) => setState(() => _selected = columns),
               ),
               const SizedBox(height: 14),
-              const Text(
-                'Modo de reporte (PDF, CSV, Excel)',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
-              ),
-              const SizedBox(height: 6),
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<PdfReportStyle>(
-                  segments: PdfReportStyle.values
-                      .map(
-                        (style) => ButtonSegment<PdfReportStyle>(
-                          value: style,
-                          label: Text(style.label),
-                        ),
-                      )
-                      .toList(),
-                  selected: {_style},
-                  showSelectedIcon: false,
-                  onSelectionChanged: (selection) =>
-                      setState(() => _style = selection.first),
+              ReportStyleSelector(
+                compact: true,
+                selected: _style,
+                onChanged: (style) => setState(() => _style = style),
+                titleStyle: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                _style.description,
-                style: const TextStyle(fontSize: 11, color: AppColors.muted),
+              const SizedBox(height: 16),
+              const Text(
+                'Formato de exportación',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final stacked = constraints.maxWidth < 360;
+                  final buttons = [
+                    _ShareFormatButton(
+                      label: 'CSV',
+                      color: AppColors.primaryGreen,
+                      onPressed: () => _share('csv'),
+                    ),
+                    _ShareFormatButton(
+                      label: 'Excel',
+                      color: AppColors.primaryGreen,
+                      onPressed: () => _share('excel'),
+                    ),
+                    _ShareFormatButton(
+                      label: 'PDF',
+                      color: AppColors.accent,
+                      foreground: AppColors.textDark,
+                      onPressed: () => _share('pdf'),
+                    ),
+                  ];
+
+                  if (stacked) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var i = 0; i < buttons.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 8),
+                          buttons[i],
+                        ],
+                      ],
+                    );
+                  }
+
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: buttons,
+                  );
+                },
               ),
             ],
           ),
@@ -200,27 +230,34 @@ class _ShareReportDialogState extends State<_ShareReportDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancelar'),
         ),
-        FilledButton(
-          style:
-              FilledButton.styleFrom(backgroundColor: AppColors.primaryGreen),
-          onPressed: () => _share('csv'),
-          child: const Text('CSV'),
-        ),
-        FilledButton(
-          style:
-              FilledButton.styleFrom(backgroundColor: AppColors.primaryGreen),
-          onPressed: () => _share('excel'),
-          child: const Text('Excel'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: AppColors.accent,
-            foregroundColor: AppColors.textDark,
-          ),
-          onPressed: () => _share('pdf'),
-          child: const Text('PDF'),
-        ),
       ],
+    );
+  }
+}
+
+class _ShareFormatButton extends StatelessWidget {
+  const _ShareFormatButton({
+    required this.label,
+    required this.color,
+    required this.onPressed,
+    this.foreground = Colors.white,
+  });
+
+  final String label;
+  final Color color;
+  final Color foreground;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton(
+      style: FilledButton.styleFrom(
+        backgroundColor: color,
+        foregroundColor: foreground,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      ),
+      onPressed: onPressed,
+      child: Text(label),
     );
   }
 }

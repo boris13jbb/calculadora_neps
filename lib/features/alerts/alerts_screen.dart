@@ -279,6 +279,60 @@ class _FiltersBar extends StatelessWidget {
     final telas = RecordFilterHelper.uniqueTelas(records);
     final lotes = RecordFilterHelper.uniqueLotes(records);
 
+    final telarDropdown = _FilterDropdown<String?>(
+      label: 'Telar',
+      value: filters.telar,
+      items: [null, ...telares],
+      itemLabel: (v) => v ?? 'Todos',
+      onChanged: onTelarChanged,
+      width: compact ? null : 140,
+    );
+    final telaDropdown = _FilterDropdown<String?>(
+      label: 'Tela',
+      value: filters.tela,
+      items: [null, ...telas],
+      itemLabel: (v) => v ?? 'Todas',
+      onChanged: onTelaChanged,
+      width: compact ? null : 160,
+    );
+    final loteDropdown = _FilterDropdown<String?>(
+      label: 'Lote/trama',
+      value: filters.loteTrama,
+      items: [null, ...lotes],
+      itemLabel: (v) => v ?? 'Todos',
+      onChanged: onLoteChanged,
+      width: compact ? null : 180,
+    );
+    final estadoDropdown = _FilterDropdown<AlertLevel?>(
+      label: 'Estado',
+      value: filters.estado,
+      items: [null, ...AlertLevel.values],
+      itemLabel: (v) => v?.label ?? 'Todos',
+      onChanged: onEstadoChanged,
+      width: compact ? null : 140,
+    );
+    final desdeButton = _DateFilterButton(
+      label: 'Desde',
+      date: filters.dateFrom,
+      onPressed: onDateFrom,
+      compact: compact,
+      stretch: true,
+    );
+    final hastaButton = _DateFilterButton(
+      label: 'Hasta',
+      date: filters.dateTo,
+      onPressed: onDateTo,
+      compact: compact,
+      stretch: true,
+    );
+    final clearButton = filters.hasActiveFilters
+        ? TextButton.icon(
+            onPressed: onClear,
+            icon: const Icon(Icons.filter_alt_off, size: 16),
+            label: const Text('Limpiar'),
+          )
+        : null;
+
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -286,76 +340,138 @@ class _FiltersBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final useGrid = compact || constraints.maxWidth < 560;
+
+          if (useGrid) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _FilterRow(children: [telarDropdown, telaDropdown]),
+                const SizedBox(height: 8),
+                _FilterRow(children: [loteDropdown, estadoDropdown]),
+                const SizedBox(height: 8),
+                _FilterRow(children: [desdeButton, hastaButton]),
+                if (clearButton != null) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: clearButton,
+                  ),
+                ],
+              ],
+            );
+          }
+
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              telarDropdown,
+              telaDropdown,
+              loteDropdown,
+              estadoDropdown,
+              _DateFilterButton(
+                label: 'Desde',
+                date: filters.dateFrom,
+                onPressed: onDateFrom,
+                compact: compact,
+              ),
+              _DateFilterButton(
+                label: 'Hasta',
+                date: filters.dateTo,
+                onPressed: onDateTo,
+                compact: compact,
+              ),
+              if (clearButton != null) clearButton,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FilterRow extends StatelessWidget {
+  const _FilterRow({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          Expanded(child: children[i]),
+        ],
+      ],
+    );
+  }
+}
+
+class _DateFilterButton extends StatelessWidget {
+  const _DateFilterButton({
+    required this.label,
+    required this.date,
+    required this.onPressed,
+    required this.compact,
+    this.stretch = false,
+  });
+
+  final String label;
+  final DateTime? date;
+  final VoidCallback onPressed;
+  final bool compact;
+  final bool stretch;
+
+  String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    final text = date != null ? _fmt(date!) : label;
+    final icon = date != null ? Icons.event : Icons.date_range;
+    final textStyle = TextStyle(fontSize: compact ? 11 : 13);
+
+    if (!stretch) {
+      return OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 16),
+        label: Text(
+          text,
+          overflow: TextOverflow.ellipsis,
+          style: textStyle,
+        ),
+      );
+    }
+
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 8 : 12,
+          vertical: compact ? 10 : 12,
+        ),
+      ),
+      child: Row(
         children: [
-          _FilterDropdown<String?>(
-            label: 'Telar',
-            value: filters.telar,
-            items: [null, ...telares],
-            itemLabel: (v) => v ?? 'Todos',
-            onChanged: onTelarChanged,
-            width: compact ? 120 : 140,
-          ),
-          _FilterDropdown<String?>(
-            label: 'Tela',
-            value: filters.tela,
-            items: [null, ...telas],
-            itemLabel: (v) => v ?? 'Todas',
-            onChanged: onTelaChanged,
-            width: compact ? 120 : 160,
-          ),
-          _FilterDropdown<String?>(
-            label: 'Lote/trama',
-            value: filters.loteTrama,
-            items: [null, ...lotes],
-            itemLabel: (v) => v ?? 'Todos',
-            onChanged: onLoteChanged,
-            width: compact ? 130 : 180,
-          ),
-          _FilterDropdown<AlertLevel?>(
-            label: 'Estado',
-            value: filters.estado,
-            items: [null, ...AlertLevel.values],
-            itemLabel: (v) => v?.label ?? 'Todos',
-            onChanged: onEstadoChanged,
-            width: compact ? 120 : 140,
-          ),
-          OutlinedButton.icon(
-            onPressed: onDateFrom,
-            icon: const Icon(Icons.date_range, size: 16),
-            label: Text(
-              filters.dateFrom != null
-                  ? 'Desde ${_fmt(filters.dateFrom!)}'
-                  : 'Desde',
-              style: TextStyle(fontSize: compact ? 11 : 13),
+          Icon(icon, size: 16),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              overflow: TextOverflow.ellipsis,
+              style: textStyle,
             ),
           ),
-          OutlinedButton.icon(
-            onPressed: onDateTo,
-            icon: const Icon(Icons.event, size: 16),
-            label: Text(
-              filters.dateTo != null
-                  ? 'Hasta ${_fmt(filters.dateTo!)}'
-                  : 'Hasta',
-              style: TextStyle(fontSize: compact ? 11 : 13),
-            ),
-          ),
-          if (filters.hasActiveFilters)
-            TextButton.icon(
-              onPressed: onClear,
-              icon: const Icon(Icons.filter_alt_off, size: 16),
-              label: const Text('Limpiar'),
-            ),
         ],
       ),
     );
   }
-
-  String _fmt(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
 class _FilterDropdown<T> extends StatelessWidget {
@@ -365,7 +481,7 @@ class _FilterDropdown<T> extends StatelessWidget {
     required this.items,
     required this.itemLabel,
     required this.onChanged,
-    this.width = 140,
+    this.width,
   });
 
   final String label;
@@ -373,35 +489,38 @@ class _FilterDropdown<T> extends StatelessWidget {
   final List<T> items;
   final String Function(T) itemLabel;
   final ValueChanged<T?> onChanged;
-  final double width;
+  final double? width;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: DropdownButtonFormField<T>(
-        value: value,
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-        items: items
-            .map(
-              (item) => DropdownMenuItem(
-                value: item,
-                child: Text(
-                  itemLabel(item),
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            )
-            .toList(),
-        onChanged: onChanged,
+    final field = DropdownButtonFormField<T>(
+      value: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       ),
+      items: items
+          .map(
+            (item) => DropdownMenuItem(
+              value: item,
+              child: Text(
+                itemLabel(item),
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: onChanged,
     );
+
+    if (width == null) return field;
+
+    return SizedBox(width: width, child: field);
   }
 }
 

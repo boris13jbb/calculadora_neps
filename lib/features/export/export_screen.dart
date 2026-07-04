@@ -11,6 +11,7 @@ import '../../core/widgets/app_page.dart';
 import '../../core/widgets/empty_state.dart';
 
 import '../../core/widgets/export_column_selector.dart';
+import '../../core/widgets/report_style_selector.dart';
 
 import '../../core/widgets/formula_box.dart';
 
@@ -18,7 +19,6 @@ import '../../core/widgets/report_actions.dart';
 
 import '../../core/permissions/permission.dart';
 import '../../core/widgets/permission_gate.dart';
-import '../../models/pdf_report_style.dart';
 import '../../providers/app_state.dart';
 
 class ExportScreen extends StatelessWidget {
@@ -352,48 +352,10 @@ class _ReportStyleCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Modo de reporte (PDF, CSV, Excel)',
-            style: TextStyle(
-              fontWeight: FontWeight.w900,
-              fontSize: compact ? 13 : 15,
-            ),
-          ),
-          SizedBox(height: compact ? 6 : 10),
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<PdfReportStyle>(
-              segments: PdfReportStyle.values
-                  .map(
-                    (style) => ButtonSegment<PdfReportStyle>(
-                      value: style,
-                      label: Text(style.label),
-                      icon: Icon(
-                        style == PdfReportStyle.completo
-                            ? Icons.analytics_outlined
-                            : Icons.description_outlined,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              selected: {appState.pdfReportStyle},
-              showSelectedIcon: false,
-              onSelectionChanged: (selection) =>
-                  appState.setPdfReportStyle(selection.first),
-            ),
-          ),
-          SizedBox(height: compact ? 4 : 6),
-          Text(
-            appState.pdfReportStyle.description,
-            style: TextStyle(
-              color: AppColors.muted,
-              fontSize: compact ? 11 : 12,
-            ),
-          ),
-        ],
+      child: ReportStyleSelector(
+        compact: compact,
+        selected: appState.pdfReportStyle,
+        onChanged: appState.setPdfReportStyle,
       ),
     );
   }

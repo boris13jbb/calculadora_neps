@@ -239,24 +239,44 @@ class _UsersScreenState extends State<UsersScreen> {
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Text(
-              'Administración de usuarios',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textDark,
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stacked = constraints.maxWidth < 520;
+          final title = const Text(
+            'Administración de usuarios',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: AppColors.textDark,
             ),
-          ),
-          FilledButton.icon(
+          );
+          final createButton = FilledButton.icon(
             onPressed: _showCreateDialog,
             icon: const Icon(Icons.person_add_outlined),
             label: const Text('Nuevo usuario'),
-          ),
-        ],
+          );
+
+          if (stacked) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                title,
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: createButton,
+                ),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: title),
+              createButton,
+            ],
+          );
+        },
       ),
     );
   }
@@ -469,23 +489,30 @@ class _UsersScreenState extends State<UsersScreen> {
                 Row(
                   children: [
                     _StatusBadge(active: user.isActive),
-                    const Spacer(),
-                    if (user.createdAt != null)
-                      Text(
-                        'Creado: ${dateFormat(user.createdAt)}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.muted,
+                    if (user.createdAt != null) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Creado: ${dateFormat(user.createdAt)}',
+                          textAlign: TextAlign.end,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.muted,
+                          ),
                         ),
                       ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 12),
                 if (busy)
                   const Center(child: CircularProgressIndicator())
                 else
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.end,
                     children: [
                       TextButton.icon(
                         onPressed: () => _showEditDialog(user),

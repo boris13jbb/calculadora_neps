@@ -400,10 +400,12 @@ class _MobileCaptureActionBar extends StatelessWidget {
       borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final ultraNarrow = constraints.maxWidth < 320;
+
+            final iconActions = Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton.filled(
                   style: IconButton.styleFrom(
@@ -443,26 +445,28 @@ class _MobileCaptureActionBar extends StatelessWidget {
                       : () => promptNewCaptureSession(context, appState),
                   icon: const Icon(Icons.delete_sweep, size: 20),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      foregroundColor: AppColors.textDark,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                    ),
-                    onPressed: onAdd,
-                    icon: const Icon(Icons.add, size: 20),
-                    label: const Text(
-                      'Agregar',
-                      style: TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                ),
               ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            );
+
+            final addButton = FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: AppColors.textDark,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              onPressed: onAdd,
+              icon: const Icon(Icons.add, size: 20),
+              label: const Text(
+                'Agregar',
+                style: TextStyle(fontWeight: FontWeight.w900),
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+
+            final secondaryActions = Wrap(
+              spacing: 4,
+              runSpacing: 0,
+              alignment: WrapAlignment.spaceBetween,
               children: [
                 TextButton(
                   onPressed: appState.clearCaptureFields,
@@ -479,8 +483,35 @@ class _MobileCaptureActionBar extends StatelessWidget {
                   label: const Text('Filtros', style: TextStyle(fontSize: 12)),
                 ),
               ],
-            ),
-          ],
+            );
+
+            if (ultraNarrow) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(alignment: Alignment.centerLeft, child: iconActions),
+                  const SizedBox(height: 6),
+                  addButton,
+                  secondaryActions,
+                ],
+              );
+            }
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    iconActions,
+                    const SizedBox(width: 8),
+                    Expanded(child: addButton),
+                  ],
+                ),
+                secondaryActions,
+              ],
+            );
+          },
         ),
       ),
     );
