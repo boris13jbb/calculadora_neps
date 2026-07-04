@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/errors/error_handler.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_input_decoration.dart';
@@ -81,8 +82,11 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
           .mergeFabrics(appState.fabrics, imported);
       await appState.saveFabrics(merged);
       appState.showMessage('Se importaron ${imported.length} telas.');
-    } catch (e) {
-      appState.showMessage('Error al importar Excel: $e');
+    } catch (e, stack) {
+      ErrorHandler.log(e, stack, 'importFabricExcel');
+      appState.showMessage(
+        'Error al importar Excel: ${ErrorHandler.userMessage(e)}',
+      );
     } finally {
       if (mounted) setState(() => isImporting = false);
     }
@@ -123,8 +127,11 @@ class _FabricCatalogScreenState extends State<FabricCatalogScreen> {
       }
 
       appState.showMessage('Lista de telas exportada correctamente.');
-    } catch (e) {
-      appState.showMessage('Error al exportar telas: $e');
+    } catch (e, stack) {
+      ErrorHandler.log(e, stack, 'exportFabrics');
+      appState.showMessage(
+        'Error al exportar telas: ${ErrorHandler.userMessage(e)}',
+      );
     } finally {
       if (mounted) setState(() => isExporting = false);
     }
@@ -393,9 +400,7 @@ class _CatalogStatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final counter = filtered
-        ? '$visible de $total tela(s)'
-        : '$total tela(s)';
+    final counter = filtered ? '$visible de $total tela(s)' : '$total tela(s)';
     return Row(
       children: [
         Expanded(

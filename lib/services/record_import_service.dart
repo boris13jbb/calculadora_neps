@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart' as xls;
 
 import '../core/constants.dart';
+import '../core/errors/app_exception.dart';
 import '../models/import_row_result.dart';
 import '../models/nep_record.dart';
 import '../models/record_import_result.dart';
@@ -22,22 +23,31 @@ class RecordImportService {
     required String fileName,
     List<NepRecord> existingRecords = const [],
   }) {
-    final lowerName = fileName.toLowerCase();
-    if (lowerName.endsWith('.csv')) {
-      final content = utf8.decode(bytes, allowMalformed: true);
-      return importFromCsv(content, existingRecords: existingRecords);
-    }
+    try {
+      final lowerName = fileName.toLowerCase();
+      if (lowerName.endsWith('.csv')) {
+        final content = utf8.decode(bytes, allowMalformed: true);
+        return importFromCsv(content, existingRecords: existingRecords);
+      }
 
-    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+      if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+        return importFromExcel(bytes, existingRecords: existingRecords);
+      }
+
+      if (_looksLikeCsv(bytes)) {
+        final content = utf8.decode(bytes, allowMalformed: true);
+        return importFromCsv(content, existingRecords: existingRecords);
+      }
+
       return importFromExcel(bytes, existingRecords: existingRecords);
+    } on ImportException {
+      rethrow;
+    } catch (error) {
+      throw ImportException(
+        'No se pudo leer el archivo. Verifique que sea CSV o Excel válido.',
+        cause: error,
+      );
     }
-
-    if (_looksLikeCsv(bytes)) {
-      final content = utf8.decode(bytes, allowMalformed: true);
-      return importFromCsv(content, existingRecords: existingRecords);
-    }
-
-    return importFromExcel(bytes, existingRecords: existingRecords);
   }
 
   RecordImportResult importFromCsv(
@@ -60,21 +70,28 @@ class RecordImportService {
     Uint8List bytes, {
     List<NepRecord> existingRecords = const [],
   }) {
-    final excel = xls.Excel.decodeBytes(bytes);
-    final rows = <List<String>>[];
+    try {
+      final excel = xls.Excel.decodeBytes(bytes);
+      final rows = <List<String>>[];
 
-    for (final sheetName in excel.tables.keys) {
-      final sheet = excel.tables[sheetName];
-      if (sheet == null || sheet.rows.isEmpty) continue;
+      for (final sheetName in excel.tables.keys) {
+        final sheet = excel.tables[sheetName];
+        if (sheet == null || sheet.rows.isEmpty) continue;
 
-      for (final row in sheet.rows) {
-        final values = row.map(_excelCellToString).toList();
-        if (values.every((value) => value.trim().isEmpty)) continue;
-        rows.add(values);
+        for (final row in sheet.rows) {
+          final values = row.map(_excelCellToString).toList();
+          if (values.every((value) => value.trim().isEmpty)) continue;
+          rows.add(values);
+        }
       }
-    }
 
-    return _buildResult(rows, existingRecords: existingRecords);
+      return _buildResult(rows, existingRecords: existingRecords);
+    } catch (error) {
+      throw ImportException(
+        'El archivo Excel no pudo interpretarse. Compruebe el formato.',
+        cause: error,
+      );
+    }
   }
 
   RecordImportResult _buildResult(
@@ -361,7 +378,8 @@ class RecordImportService {
     if (normalized.contains('MTS')) return _ImportField.mts;
     if (normalized.contains('TURNO')) return _ImportField.turno;
     if (normalized.contains('OPERARIO')) return _ImportField.operario;
-    if (normalized.contains('LINEA') || normalized.contains('LINEAPRODUCCION')) {
+    if (normalized.contains('LINEA') ||
+        normalized.contains('LINEAPRODUCCION')) {
       return _ImportField.lineaProduccion;
     }
     if (normalized.contains('OBSERVACION') || normalized.contains('NOTA')) {

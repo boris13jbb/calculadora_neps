@@ -228,9 +228,8 @@ class _AlertsBell extends StatelessWidget {
     );
 
     return IconButton(
-      tooltip: count > 0
-          ? '$count alerta(s) crítica(s)'
-          : 'Sin alertas críticas',
+      tooltip:
+          count > 0 ? '$count alerta(s) crítica(s)' : 'Sin alertas críticas',
       onPressed: alertsIndex == null
           ? null
           : () => appState.setNavigationIndex(alertsIndex),

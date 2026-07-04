@@ -98,14 +98,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           autofillHints: const [AutofillHints.username],
                           textInputAction: TextInputAction.next,
                           autocorrect: false,
-                          decoration: appInputDecoration('operario01')
-                              .copyWith(
-                                labelText: 'Usuario',
-                                helperText:
-                                    'Super admin: puede usar correo real',
-                                helperMaxLines: 2,
-                              ),
-                          validator: UsernameAuthHelper.validateUsernameOrEmailInput,
+                          decoration: appInputDecoration('operario01').copyWith(
+                            labelText: 'Usuario',
+                            helperText: 'Super admin: puede usar correo real',
+                            helperMaxLines: 2,
+                          ),
+                          validator:
+                              UsernameAuthHelper.validateUsernameOrEmailInput,
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -114,20 +113,19 @@ class _LoginScreenState extends State<LoginScreen> {
                           autofillHints: const [AutofillHints.password],
                           textInputAction: TextInputAction.done,
                           onFieldSubmitted: (_) => _submit(),
-                          decoration: appInputDecoration('Contraseña')
-                              .copyWith(
-                                labelText: 'Contraseña',
-                                suffixIcon: IconButton(
-                                  onPressed: () => setState(
-                                    () => _obscurePassword = !_obscurePassword,
-                                  ),
-                                  icon: Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_outlined
-                                        : Icons.visibility_off_outlined,
-                                  ),
-                                ),
+                          decoration: appInputDecoration('Contraseña').copyWith(
+                            labelText: 'Contraseña',
+                            suffixIcon: IconButton(
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
                               ),
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                            ),
+                          ),
                           validator: (value) {
                             if ((value ?? '').isEmpty) {
                               return 'Ingrese su contraseña.';

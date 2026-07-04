@@ -45,8 +45,7 @@ class AlertDistribution {
 
 /// Cálculos analíticos para dashboard, reportes y alertas.
 class AnalyticsService {
-  AnalyticsService({AlertService? alerts})
-      : _alerts = alerts ?? alertService;
+  AnalyticsService({AlertService? alerts}) : _alerts = alerts ?? alertService;
 
   final AlertService _alerts;
 

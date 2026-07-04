@@ -62,15 +62,18 @@ class AppUser {
   bool get isGerencia => isGerenciaRole;
 
   bool get canManageUsers =>
-      isActive && isSuperAdminRole &&
+      isActive &&
+      isSuperAdminRole &&
       RolePermissions.has(role, Permission.manageUsers);
   bool get canCreateUsers => canManageUsers;
   bool get canDeleteUsers =>
-      isActive && isSuperAdminRole &&
+      isActive &&
+      isSuperAdminRole &&
       RolePermissions.has(role, Permission.deleteUsers);
   bool get canResetPasswords => canManageUsers;
   bool get canChangeRoles =>
-      isActive && isSuperAdminRole &&
+      isActive &&
+      isSuperAdminRole &&
       RolePermissions.has(role, Permission.changeRoles);
   bool get canViewDashboard =>
       isActive && RolePermissions.has(role, Permission.viewDashboard);

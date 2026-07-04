@@ -25,8 +25,10 @@ class AppBreadcrumb extends StatelessWidget {
             segments[i],
             style: TextStyle(
               fontSize: 12,
-              fontWeight: i == segments.length - 1 ? FontWeight.w800 : FontWeight.w600,
-              color: i == segments.length - 1 ? AppColors.accent : AppColors.muted,
+              fontWeight:
+                  i == segments.length - 1 ? FontWeight.w800 : FontWeight.w600,
+              color:
+                  i == segments.length - 1 ? AppColors.accent : AppColors.muted,
             ),
           ),
         ],

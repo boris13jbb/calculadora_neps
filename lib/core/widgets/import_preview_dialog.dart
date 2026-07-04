@@ -184,9 +184,8 @@ class _ImportPreviewDialog extends StatelessWidget {
           child: const Text('Cancelar'),
         ),
         FilledButton(
-          onPressed: importable == 0
-              ? null
-              : () => Navigator.of(context).pop(true),
+          onPressed:
+              importable == 0 ? null : () => Navigator.of(context).pop(true),
           child: Text('Importar $importable registros'),
         ),
       ],

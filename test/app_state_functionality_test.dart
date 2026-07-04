@@ -1,3 +1,5 @@
+import 'package:calculadora_neps/models/app_user.dart';
+import 'package:calculadora_neps/models/app_user_role.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,8 +12,15 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  Future<AppState> createReadyState() async {
+  Future<AppState> createReadyState({AppUserRole role = AppUserRole.operario}) async {
     final state = AppState();
+    state.applyAuthProfile(
+      AppUser(
+        uid: 'test-uid',
+        username: 'tester',
+        role: role,
+      ),
+    );
     await state.initialize();
     return state;
   }
@@ -64,7 +73,7 @@ void main() {
     });
 
     test('vaciar registros inicia nueva sesion', () async {
-      final state = await createReadyState();
+      final state = await createReadyState(role: AppUserRole.admin);
       state.useManualFabric = true;
       state.manualTelaController.text = 'BOLTON';
       state.loteFullController.text = '63E264H10A';
@@ -81,7 +90,7 @@ void main() {
 
   group('Registros y filtros', () {
     test('vaciar tabla elimina todos los registros', () async {
-      final state = await createReadyState();
+      final state = await createReadyState(role: AppUserRole.admin);
       state.records = [
         NepRecord(
           telar: '1',
@@ -132,7 +141,7 @@ void main() {
 
   group('Catalogo de telas', () {
     test('guardar y cargar telas', () async {
-      final state = await createReadyState();
+      final state = await createReadyState(role: AppUserRole.admin);
       await state.saveFabrics(['BOLTON', 'BROKER']);
       expect(state.fabrics, containsAll(['BOLTON', 'BROKER']));
 

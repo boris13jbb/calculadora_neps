@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
+import '../core/errors/error_handler.dart';
 import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
 import '../models/record_filters.dart';
@@ -40,8 +41,7 @@ class ReportStorageService {
       await _persistReportsLocally(merged);
       return merged;
     } catch (error, stackTrace) {
-      debugPrint('Error al cargar informes desde Firebase: $error');
-      debugPrint('$stackTrace');
+      ErrorHandler.log(error, stackTrace, 'loadReportsFirebase');
       if (local.isEmpty) rethrow;
     }
 
@@ -66,8 +66,7 @@ class ReportStorageService {
       try {
         await cloudSync.saveReport(report);
       } catch (error, stackTrace) {
-        debugPrint('Error al migrar informe ${report.id}: $error');
-        debugPrint('$stackTrace');
+        ErrorHandler.log(error, stackTrace, 'migrateReport');
         return;
       }
     }
@@ -106,8 +105,8 @@ class ReportStorageService {
           .map((item) => SavedReport.fromJson(Map<String, dynamic>.from(item)))
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    } catch (error) {
-      debugPrint('Error al leer informes locales: $error');
+    } catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'loadReportsLocally');
       return [];
     }
   }
@@ -164,8 +163,7 @@ class ReportStorageService {
         await _upsertReportLocally(saved);
         return saved;
       } catch (error, stackTrace) {
-        debugPrint('Error al guardar informe en Firebase: $error');
-        debugPrint('$stackTrace');
+        ErrorHandler.log(error, stackTrace, 'saveReportFirebase');
       }
     }
 
@@ -186,8 +184,7 @@ class ReportStorageService {
         await _removeReportLocally(id);
         return;
       } catch (error, stackTrace) {
-        debugPrint('Error al eliminar informe en Firebase: $error');
-        debugPrint('$stackTrace');
+        ErrorHandler.log(error, stackTrace, 'deleteReportFirebase');
       }
     }
 

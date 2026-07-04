@@ -55,7 +55,9 @@ class UsernameAuthHelper {
     if (input.isEmpty) return 'Ingrese su usuario.';
 
     if (isEmail(input)) {
-      if (!input.contains('.') || input.startsWith('@') || input.endsWith('@')) {
+      if (!input.contains('.') ||
+          input.startsWith('@') ||
+          input.endsWith('@')) {
         return 'Correo no válido.';
       }
       return null;
@@ -88,5 +90,4 @@ class UsernameAuthHelper {
     }
     return '';
   }
-
 }

@@ -6,6 +6,19 @@ deploy-functions-log.txt
 *.pyc
 *.swp
 .DS_Store
+
+# Variables de entorno y secretos (nunca subir)
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+**/serviceAccount*.json
+**/service-account*.json
+**/firebase-adminsdk*.json
+**/credentials.json
+**/secrets/
 .atom/
 .build/
 .buildlog/

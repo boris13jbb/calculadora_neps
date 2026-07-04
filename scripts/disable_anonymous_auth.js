@@ -13,12 +13,17 @@ async function getAccessToken() {
     return tokens.access_token;
   }
 
+  if (!tokens.client_id || !tokens.client_secret || !tokens.refresh_token) {
+    throw new Error(
+      'Tokens de Firebase CLI incompletos. Ejecute firebase login e intente de nuevo.',
+    );
+  }
+
   const auth = new GoogleAuth({
     credentials: {
       type: 'authorized_user',
-      client_id: tokens.client_id ||
-        '563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com',
-      client_secret: tokens.client_secret || 'j9pDscCJS3REPKoNEzuo1P9m8RvDdC3QT3sSRpD9',
+      client_id: tokens.client_id,
+      client_secret: tokens.client_secret,
       refresh_token: tokens.refresh_token,
     },
   });

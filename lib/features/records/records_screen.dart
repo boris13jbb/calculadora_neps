@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/errors/error_handler.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_page.dart';
@@ -13,7 +14,7 @@ import '../../core/widgets/records_table.dart';
 import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
 import '../../services/alert_service.dart';
-import '../../widgets/record_filters_panel.dart';
+import '../../core/widgets/record_filters_panel.dart';
 
 class RecordsScreen extends StatefulWidget {
   const RecordsScreen({super.key});
@@ -62,8 +63,11 @@ class _RecordsScreenState extends State<RecordsScreen> {
       if (!confirmed || !mounted) return;
 
       await appState.confirmImportRecords(preview.importableRecords);
-    } catch (e) {
-      appState.showMessage('Error al importar registros: $e');
+    } catch (e, stack) {
+      ErrorHandler.log(e, stack, 'importRecords');
+      appState.showMessage(
+        'Error al importar registros: ${ErrorHandler.userMessage(e)}',
+      );
     } finally {
       if (mounted) setState(() => isImporting = false);
     }

@@ -34,7 +34,8 @@ class _CorrectiveActionDialog extends StatefulWidget {
   final NepRecord record;
 
   @override
-  State<_CorrectiveActionDialog> createState() => _CorrectiveActionDialogState();
+  State<_CorrectiveActionDialog> createState() =>
+      _CorrectiveActionDialogState();
 }
 
 class _CorrectiveActionDialogState extends State<_CorrectiveActionDialog> {
@@ -174,7 +175,8 @@ class _CorrectiveActionDialogState extends State<_CorrectiveActionDialog> {
                 runSpacing: 6,
                 children: _accionesSugeridas.map((sugerencia) {
                   return ActionChip(
-                    label: Text(sugerencia, style: const TextStyle(fontSize: 11)),
+                    label:
+                        Text(sugerencia, style: const TextStyle(fontSize: 11)),
                     onPressed: () {
                       accionController.text = sugerencia;
                     },

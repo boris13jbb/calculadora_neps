@@ -81,7 +81,8 @@ class VicunhaSidebar extends StatelessWidget {
 
   Widget _buildBrand() {
     return Padding(
-      padding: EdgeInsets.fromLTRB(extended ? 16 : 12, 18, extended ? 12 : 12, 14),
+      padding:
+          EdgeInsets.fromLTRB(extended ? 16 : 12, 18, extended ? 12 : 12, 14),
       child: Row(
         mainAxisAlignment:
             extended ? MainAxisAlignment.start : MainAxisAlignment.center,
@@ -143,8 +144,7 @@ class VicunhaSidebar extends StatelessWidget {
   Widget _buildItem(int index) {
     final item = destinations[index];
     final selected = index == selectedIndex;
-    final foreground =
-        selected ? AppColors.sidebar : AppColors.headerMuted;
+    final foreground = selected ? AppColors.sidebar : AppColors.headerMuted;
 
     final iconWidget = Icon(
       selected ? item.selectedIcon : item.icon,
@@ -208,7 +208,8 @@ class VicunhaSidebar extends StatelessWidget {
   }
 
   Widget _buildFooter() {
-    final name = (userName == null || userName!.isEmpty) ? 'Usuario' : userName!;
+    final name =
+        (userName == null || userName!.isEmpty) ? 'Usuario' : userName!;
     final role = userRole ?? '';
     final initials = _initials(name);
 

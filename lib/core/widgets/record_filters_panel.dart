@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../core/layout/responsive_layout.dart';
-import '../core/theme/app_theme.dart';
-import '../core/widgets/app_input_decoration.dart';
-import '../models/nep_record.dart';
-import '../models/record_filters.dart';
-import '../utils/record_filter_helper.dart';
+import '../layout/responsive_layout.dart';
+import '../theme/app_theme.dart';
+import 'app_input_decoration.dart';
+import '../../models/nep_record.dart';
+import '../../models/record_filters.dart';
+import '../../utils/record_filter_helper.dart';
 import 'alert_filter_fields.dart';
 
 class _FilterPalette {

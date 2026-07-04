@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart' as xls;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/errors/app_exception.dart';
 import '../core/constants.dart';
 import 'fabric_catalog_io.dart'
     if (dart.library.html) 'fabric_catalog_io_stub.dart';
@@ -37,29 +38,38 @@ class FabricCatalogService {
   }
 
   List<String> importFromBytes(Uint8List bytes) {
-    final excel = xls.Excel.decodeBytes(bytes);
-    final names = <String>{};
+    try {
+      final excel = xls.Excel.decodeBytes(bytes);
+      final names = <String>{};
 
-    for (final sheetName in excel.tables.keys) {
-      final sheet = excel.tables[sheetName];
-      if (sheet == null || sheet.rows.isEmpty) continue;
+      for (final sheetName in excel.tables.keys) {
+        final sheet = excel.tables[sheetName];
+        if (sheet == null || sheet.rows.isEmpty) continue;
 
-      final columnIndex = _detectFabricColumnIndex(sheet);
-      final startRow =
-          columnIndex == 0 ? 0 : _detectDataStartRow(sheet, columnIndex);
+        final columnIndex = _detectFabricColumnIndex(sheet);
+        final startRow =
+            columnIndex == 0 ? 0 : _detectDataStartRow(sheet, columnIndex);
 
-      for (var rowIndex = startRow; rowIndex < sheet.rows.length; rowIndex++) {
-        final row = sheet.rows[rowIndex];
-        if (row.length <= columnIndex) continue;
+        for (var rowIndex = startRow;
+            rowIndex < sheet.rows.length;
+            rowIndex++) {
+          final row = sheet.rows[rowIndex];
+          if (row.length <= columnIndex) continue;
 
-        final value = _cellToString(row[columnIndex]);
-        if (value == null || value.isEmpty) continue;
-        if (_isHeaderValue(value)) continue;
-        names.add(value);
+          final value = _cellToString(row[columnIndex]);
+          if (value == null || value.isEmpty) continue;
+          if (_isHeaderValue(value)) continue;
+          names.add(value);
+        }
       }
-    }
 
-    return _normalizeList(names.toList());
+      return _normalizeList(names.toList());
+    } catch (error) {
+      throw ImportException(
+        'El archivo Excel de telas no pudo interpretarse.',
+        cause: error,
+      );
+    }
   }
 
   List<String> mergeFabrics(List<String> current, List<String> imported) {

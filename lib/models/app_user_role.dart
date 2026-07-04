@@ -1,4 +1,4 @@
-/// Roles del sistema (códigos en minúsculas, alineados con custom claims).
+/// Rol canónico alineado con custom claims de Firebase Auth y permisos de la app.
 enum AppUserRole {
   superAdmin('super_admin', 'Super Admin'),
   admin('admin', 'Administrador'),
@@ -42,6 +42,5 @@ enum AppUserRole {
 
   bool get isAdminOrAbove => isSuperAdmin || isAdmin;
 
-  bool get isSupervisorOrAbove =>
-      isSuperAdmin || isAdmin || isSupervisor;
+  bool get isSupervisorOrAbove => isSuperAdmin || isAdmin || isSupervisor;
 }

@@ -75,8 +75,7 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
     manualTelaController = TextEditingController(
       text: useManualFabric ? record.tela : '',
     );
-    observacionController =
-        TextEditingController(text: record.observacion);
+    observacionController = TextEditingController(text: record.observacion);
   }
 
   @override

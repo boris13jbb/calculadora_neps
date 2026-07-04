@@ -5,25 +5,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 
+import '../core/errors/app_exception.dart';
 import '../models/app_user.dart';
 import '../models/app_user_role.dart';
 import '../services/user_admin_service.dart';
 import '../utils/firestore_json_helper.dart';
 import '../utils/username_auth_helper.dart';
-
-/// Error de negocio devuelto por el trigger de la cola (status `failed`).
-///
-/// Representa un fallo real y esperado (p. ej. "el usuario ya existe" o
-/// "no se puede desactivar al último super administrador"). No debe activar
-/// el fallback al callable, porque el mensaje ya es definitivo para el usuario.
-class UserAdminRequestFailure implements Exception {
-  UserAdminRequestFailure(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
 
 /// Repositorio de administración de usuarios.
 ///
@@ -68,7 +55,7 @@ class UserAdminRepository {
         role: role,
         isActive: isActive,
       );
-    } on UserAdminRequestFailure {
+    } on UserAdminException {
       rethrow;
     } catch (error) {
       debugPrint('Cola creación falló, probando callable: $error');
@@ -103,7 +90,7 @@ class UserAdminRepository {
         data,
         incompleteMessage: 'Respuesta incompleta al actualizar el usuario.',
       );
-    } on UserAdminRequestFailure {
+    } on UserAdminException {
       rethrow;
     } catch (error) {
       debugPrint('Cola update falló, probando callable: $error');
@@ -129,7 +116,7 @@ class UserAdminRepository {
         },
         failureFallbackMessage: 'No se pudo restablecer la contraseña.',
       );
-    } on UserAdminRequestFailure {
+    } on UserAdminException {
       rethrow;
     } catch (error) {
       debugPrint('Cola resetPassword falló, probando callable: $error');
@@ -150,7 +137,7 @@ class UserAdminRepository {
             ? 'No se pudo activar el usuario.'
             : 'No se pudo desactivar el usuario.',
       );
-    } on UserAdminRequestFailure {
+    } on UserAdminException {
       rethrow;
     } catch (error) {
       debugPrint('Cola $type falló, probando callable: $error');
@@ -168,7 +155,7 @@ class UserAdminRepository {
         {'type': 'delete', 'uid': uid},
         failureFallbackMessage: 'No se pudo eliminar el usuario.',
       );
-    } on UserAdminRequestFailure {
+    } on UserAdminException {
       rethrow;
     } catch (error) {
       debugPrint('Cola delete falló, probando callable: $error');
@@ -265,7 +252,7 @@ class UserAdminRepository {
 
   /// Escucha el documento de solicitud hasta que el trigger lo complete.
   ///
-  /// Devuelve los datos finales en `completed`, lanza [UserAdminRequestFailure]
+  /// Devuelve los datos finales en `completed`, lanza [UserAdminException]
   /// en `failed` (error de negocio definitivo) y una excepción genérica ante
   /// timeout o error de stream (recuperable vía fallback al callable).
   Future<Map<String, dynamic>> _awaitRequestCompletion(
@@ -287,7 +274,7 @@ class UserAdminRepository {
         } else if (status == 'failed') {
           if (!completer.isCompleted) {
             completer.completeError(
-              UserAdminRequestFailure(
+              UserAdminException(
                 data['errorMessage']?.toString() ?? failureFallbackMessage,
               ),
             );

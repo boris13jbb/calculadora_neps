@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/alert_config.dart';
 import '../core/constants.dart';
+import '../core/errors/error_handler.dart';
 import '../models/app_user.dart';
 import '../models/app_user_role.dart';
 import '../models/alert_level.dart';
@@ -20,9 +20,9 @@ import '../models/pdf_report_style.dart';
 import '../models/record_filters.dart';
 import '../models/record_import_result.dart';
 import '../models/saved_report.dart';
-import '../models/user_role.dart';
 import '../services/alert_config_service.dart';
 import '../services/alert_service.dart';
+import '../services/cloud_sync_coordinator.dart';
 import '../services/cloud_sync_port.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/fabric_catalog_service.dart';
@@ -33,6 +33,7 @@ import '../services/notification_service.dart';
 import '../services/permissions_service.dart';
 import '../core/permissions/permission.dart';
 import '../core/permissions/role_permissions.dart';
+import '../services/record_export_coordinator.dart';
 import '../services/record_import_service.dart';
 import '../services/report_export_service.dart';
 import '../services/report_storage_service.dart';
@@ -72,6 +73,9 @@ class AppState extends ChangeNotifier {
 
     return AppState._(
       cloudSyncService: syncService,
+      cloudSyncCoordinator: syncService != null
+          ? CloudSyncCoordinator(syncService)
+          : null,
       fabricCatalogService: fabricCatalogService ?? FabricCatalogService(),
       loteTramaCatalogService:
           loteTramaCatalogService ?? LoteTramaCatalogService(),
@@ -84,28 +88,30 @@ class AppState extends ChangeNotifier {
 
   AppState._({
     this.cloudSyncService,
+    this.cloudSyncCoordinator,
     required this.fabricCatalogService,
     required this.loteTramaCatalogService,
     required this.recordImportService,
     required this.reportStorageService,
     required this.reportExportService,
-  });
+    RecordExportCoordinator? recordExportCoordinator,
+  }) : recordExportCoordinator = recordExportCoordinator ??
+            RecordExportCoordinator(exportService: reportExportService);
 
   CloudSyncPort? cloudSyncService;
+  CloudSyncCoordinator? cloudSyncCoordinator;
   final FabricCatalogService fabricCatalogService;
   final LoteTramaCatalogService loteTramaCatalogService;
   final RecordImportService recordImportService;
   final ReportStorageService reportStorageService;
   final ReportExportService reportExportService;
+  final RecordExportCoordinator recordExportCoordinator;
 
   bool cloudSyncEnabled = false;
   String? cloudSyncError;
-  UserRole userRole = UserRole.supervisor;
   String? _authUid;
   String? _authUsername;
   AppUserRole? _authAppRole;
-  StreamSubscription<List<NepRecord>>? _recordsSubscription;
-  StreamSubscription<List<String>>? _fabricsSubscription;
 
   String? get authUsername => _authUsername;
 
@@ -119,7 +125,8 @@ class AppState extends ChangeNotifier {
   final TextEditingController manualTelaController = TextEditingController();
   final TextEditingController turnoController = TextEditingController();
   final TextEditingController operarioController = TextEditingController();
-  final TextEditingController lineaProduccionController = TextEditingController();
+  final TextEditingController lineaProduccionController =
+      TextEditingController();
   final TextEditingController observacionController = TextEditingController();
   final TextEditingController accionInmediataController =
       TextEditingController();
@@ -148,7 +155,8 @@ class AppState extends ChangeNotifier {
 
   bool get canCapture => _hasPermission(Permission.captureRecords);
 
-  bool get canImportRecords => permissionsService.canImportRecords(_authAppRole);
+  bool get canImportRecords =>
+      permissionsService.canImportRecords(_authAppRole);
 
   bool get canDeleteRecords => _hasPermission(Permission.deleteRecords);
 
@@ -172,59 +180,15 @@ class AppState extends ChangeNotifier {
   bool get isReadOnlyUser => permissionsService.isReadOnly(_authAppRole);
 
   bool _hasPermission(Permission permission) {
-    if (_authAppRole != null) {
-      return RolePermissions.has(_authAppRole!, permission);
-    }
-    return _legacyPermission(permission);
-  }
-
-  bool _legacyPermission(Permission permission) {
-    switch (permission) {
-      case Permission.captureRecords:
-        return permissionsService.canCaptureLegacy(userRole);
-      case Permission.editRecords:
-        return userRole.canDeleteRecords;
-      case Permission.deleteRecords:
-        return permissionsService.canDeleteRecordsLegacy(userRole);
-      case Permission.clearAllRecords:
-        return permissionsService.canClearAllRecordsLegacy(userRole);
-      case Permission.applyCorrectiveAction:
-        return permissionsService.canApplyCorrectiveActionLegacy(userRole);
-      case Permission.manageFabrics:
-        return permissionsService.canManageFabricsLegacy(userRole);
-      case Permission.manageReports:
-        return permissionsService.canManageReportsLegacy(userRole);
-      case Permission.exportReports:
-        return userRole.canExport;
-      case Permission.editAlertConfig:
-        return permissionsService.canEditAlertConfigLegacy(userRole);
-      case Permission.manageSettings:
-        return userRole.isAdmin;
-      default:
-        return false;
-    }
+    return RolePermissions.has(authRole, permission);
   }
 
   void applyAuthProfile(AppUser user) {
     _authUid = user.uid;
-    _authUsername = user.username.isNotEmpty ? user.username : user.effectiveDisplayName;
+    _authUsername =
+        user.username.isNotEmpty ? user.username : user.effectiveDisplayName;
     _authAppRole = user.role;
-    userRole = _mapAppUserRole(user.role);
     notifyListeners();
-  }
-
-  UserRole _mapAppUserRole(AppUserRole role) {
-    switch (role) {
-      case AppUserRole.superAdmin:
-      case AppUserRole.admin:
-        return UserRole.administrador;
-      case AppUserRole.supervisor:
-        return UserRole.supervisor;
-      case AppUserRole.operario:
-        return UserRole.operario;
-      case AppUserRole.gerencia:
-        return UserRole.gerencia;
-    }
   }
 
   bool _requirePermission(bool allowed, String action) {
@@ -321,8 +285,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
-    _recordsSubscription?.cancel();
-    _fabricsSubscription?.cancel();
+    cloudSyncCoordinator?.dispose();
     nepsController.removeListener(notifyListeners);
     loteSuffixController.removeListener(notifyListeners);
     loteFullController.removeListener(_handleLoteFullChanged);
@@ -371,8 +334,7 @@ class AppState extends ChangeNotifier {
     } catch (error, stackTrace) {
       bootstrapError =
           'No se pudieron cargar los datos guardados. Verifique el almacenamiento local.';
-      debugPrint('Error al cargar datos locales: $error');
-      debugPrint('$stackTrace');
+      ErrorHandler.log(error, stackTrace, 'loadLocalData');
     }
 
     isLoading = false;
@@ -395,8 +357,7 @@ class AppState extends ChangeNotifier {
         await reportStorageService.migrateLocalReportsIfNeeded();
         notifyListeners();
       } catch (error, stackTrace) {
-        debugPrint('No se pudo preparar sync de informes: $error');
-        debugPrint('$stackTrace');
+        ErrorHandler.log(error, stackTrace, 'prepareReportSync');
       }
     }
     return reportStorageService.loadReports();
@@ -407,14 +368,16 @@ class AppState extends ChangeNotifier {
 
     try {
       cloudSyncService = CloudSyncService();
+      cloudSyncCoordinator = CloudSyncCoordinator(cloudSyncService!);
       reportStorageService.attachCloudSync(cloudSyncService);
       await _connectCloudInBackground();
     } catch (error, stackTrace) {
       cloudSyncService = null;
+      cloudSyncCoordinator?.dispose();
+      cloudSyncCoordinator = null;
       reportStorageService.attachCloudSync(null);
       cloudSyncEnabled = false;
-      debugPrint('Sincronizacion en la nube no disponible: $error');
-      debugPrint('$stackTrace');
+      ErrorHandler.log(error, stackTrace, 'enableCloudSync');
     }
   }
 
@@ -561,9 +524,11 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _loadCloudData() async {
-    final cloud = cloudSyncService!;
+    final coordinator = cloudSyncCoordinator;
+    if (coordinator == null) return;
+
     try {
-      await cloud.bootstrap();
+      await coordinator.bootstrap();
       cloudSyncEnabled = true;
       cloudSyncError = null;
     } catch (error, stackTrace) {
@@ -575,57 +540,64 @@ class AppState extends ChangeNotifier {
     final localFabrics = await fabricCatalogService.loadFabrics();
 
     try {
-      await cloud.migrateLocalDataIfNeeded(
+      await coordinator.migrateLocalData(
         localRecords: localRecords,
         localFabrics: localFabrics,
       );
     } catch (error, stackTrace) {
-      debugPrint('Migración local parcial omitida: $error');
-      debugPrint('$stackTrace');
+      ErrorHandler.log(error, stackTrace, 'migrateLocalData');
     }
 
     try {
       await reportStorageService.migrateLocalReportsIfNeeded();
     } catch (error, stackTrace) {
-      debugPrint('Migración de informes omitida: $error');
-      debugPrint('$stackTrace');
+      ErrorHandler.log(error, stackTrace, 'migrateReports');
     }
 
     try {
-      await cloud.syncFabricsWithLocal(localFabrics);
+      await coordinator.syncFabricsWithLocal(localFabrics);
     } catch (error, stackTrace) {
-      debugPrint('Sync de telas omitida: $error');
-      debugPrint('$stackTrace');
+      ErrorHandler.log(error, stackTrace, 'syncFabrics');
     }
 
     await _refreshUserRoleAndConfig();
 
     try {
-      await _bindCloudSubscriptions(waitForFirstSnapshot: true);
+      await coordinator.bindSubscriptions(
+        waitForFirstSnapshot: true,
+        onRecords: (data) {
+          records = data;
+          unawaited(_cacheRecordsLocally(data));
+          notifyListeners();
+        },
+        onFabrics: (data) {
+          fabrics = data;
+          _syncFabricSelection();
+          unawaited(_cacheFabricsLocally(data));
+          notifyListeners();
+        },
+      );
     } catch (error, stackTrace) {
-      debugPrint('Suscripciones en la nube parciales: $error');
-      debugPrint('$stackTrace');
+      ErrorHandler.log(error, stackTrace, 'cloudSubscriptions');
     }
 
     notifyListeners();
   }
 
   Future<void> _refreshUserRoleAndConfig() async {
-    final cloud = cloudSyncService;
-    if (cloud == null) return;
+    final coordinator = cloudSyncCoordinator;
+    if (coordinator == null) return;
 
     try {
-      if (_authAppRole == null) {
-        userRole = await cloud.fetchUserRole();
-      }
-      final remoteConfig = await cloud.fetchAlertConfig();
+      _authAppRole ??= await coordinator.fetchUserRole();
+      final remoteConfig = await coordinator.fetchAlertConfig();
       if (remoteConfig != null) {
         alertConfigService.applyFromFirestore(remoteConfig);
         alertService.updateConfig(alertConfigService.config);
       }
       notifyListeners();
-    } catch (error) {
-      debugPrint('No se pudo cargar rol/config remota: $error');
+    } catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'refreshUserRoleAndConfig');
     }
   }
 
@@ -634,73 +606,42 @@ class AppState extends ChangeNotifier {
       onTokenRegistered: (token) async {
         if (cloudSyncService == null || !cloudSyncEnabled) return;
         try {
-          await cloudSyncService!.registerFcmToken(token);
-        } catch (error) {
-          debugPrint('No se pudo registrar token FCM: $error');
+          await cloudSyncCoordinator!.registerFcmToken(token);
+        } catch (error, stack) {
+          ErrorHandler.log(error, stack, 'registerFcmToken');
         }
       },
     );
   }
 
-  Future<void> _bindCloudSubscriptions({
-    required bool waitForFirstSnapshot,
-  }) async {
-    final cloud = cloudSyncService!;
-    final recordsReady = Completer<void>();
-    final fabricsReady = Completer<void>();
+  Future<void> _ensureCloudSubscriptions() async {
+    final coordinator = cloudSyncCoordinator;
+    if (coordinator == null) return;
 
-    _recordsSubscription?.cancel();
-    _fabricsSubscription?.cancel();
-
-    _recordsSubscription = cloud.watchRecords().listen(
-      (data) {
+    await coordinator.bindSubscriptions(
+      onRecords: (data) {
         records = data;
         unawaited(_cacheRecordsLocally(data));
-        if (!recordsReady.isCompleted) recordsReady.complete();
         notifyListeners();
       },
-      onError: (error) {
-        if (!recordsReady.isCompleted) recordsReady.completeError(error);
-      },
-    );
-
-    _fabricsSubscription = cloud.watchFabrics().listen(
-      (data) {
+      onFabrics: (data) {
         fabrics = data;
         _syncFabricSelection();
         unawaited(_cacheFabricsLocally(data));
-        if (!fabricsReady.isCompleted) fabricsReady.complete();
         notifyListeners();
       },
-      onError: (error) {
-        if (!fabricsReady.isCompleted) fabricsReady.completeError(error);
-      },
     );
-
-    if (waitForFirstSnapshot) {
-      try {
-        await Future.wait([
-          recordsReady.future,
-          fabricsReady.future,
-        ]).timeout(const Duration(seconds: 15));
-      } on TimeoutException {
-        if (!recordsReady.isCompleted) recordsReady.complete();
-        if (!fabricsReady.isCompleted) fabricsReady.complete();
-      }
-    }
   }
 
   Future<bool> _ensureCloudReady() async {
-    if (cloudSyncService == null) return false;
+    final coordinator = cloudSyncCoordinator;
+    if (coordinator == null) return false;
 
     try {
-      await cloudSyncService!.bootstrap();
+      await coordinator.bootstrap();
       cloudSyncEnabled = true;
-
-      if (_fabricsSubscription == null || _recordsSubscription == null) {
-        await _bindCloudSubscriptions(waitForFirstSnapshot: false);
-      }
-
+      cloudSyncError = null;
+      await _ensureCloudSubscriptions();
       return true;
     } catch (error, stackTrace) {
       _markCloudUnavailable(error, stackTrace);
@@ -710,9 +651,8 @@ class AppState extends ChangeNotifier {
 
   void _markCloudUnavailable(Object error, StackTrace stackTrace) {
     cloudSyncEnabled = false;
-    cloudSyncError = error.toString();
-    debugPrint('Sincronizacion en la nube no disponible: $error');
-    debugPrint('$stackTrace');
+    cloudSyncError = ErrorHandler.userMessage(error);
+    ErrorHandler.log(error, stackTrace, 'cloudSync');
     notifyListeners();
   }
 
@@ -760,7 +700,8 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveFabrics(List<String> updated) async {
-    if (!_requirePermission(canManageFabrics, 'administrar el catálogo de telas')) {
+    if (!_requirePermission(
+        canManageFabrics, 'administrar el catálogo de telas')) {
       return;
     }
     final normalized = fabricCatalogService.mergeFabrics([], updated);
@@ -775,21 +716,14 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    if (await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        final saved = await cloudSyncService!.saveFabrics(normalized);
+        final saved = await cloudSyncCoordinator!.saveFabrics(normalized);
         await _cacheFabricsLocally(saved);
-
-        if (_fabricsSubscription == null) {
-          fabrics = saved;
-          _syncFabricSelection();
-          notifyListeners();
-        }
-
         showMessage('Catalogo de telas guardado en Firebase.');
         return;
-      } catch (error) {
-        debugPrint('No se pudo guardar telas en Firebase: $error');
+      } catch (error, stackTrace) {
+        ErrorHandler.log(error, stackTrace, 'saveFabrics');
         if (error.toString().contains('permission-denied')) {
           cloudSyncError = null;
         }
@@ -800,9 +734,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveData() async {
-    if (cloudSyncService != null && await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncService!.replaceRecords(records);
+        await cloudSyncCoordinator!.replaceRecords(records);
         return;
       } catch (_) {
         cloudSyncEnabled = false;
@@ -813,18 +747,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _persistRecord(NepRecord record) async {
-    if (cloudSyncService != null && await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncService!.upsertRecord(record);
-        if (_recordsSubscription == null) {
-          records = [...records, record];
-          await _cacheRecordsLocally(records);
-          notifyListeners();
-        }
+        await cloudSyncCoordinator!.upsertRecord(record);
         return;
-      } catch (error) {
+      } catch (error, stackTrace) {
         cloudSyncEnabled = false;
-        debugPrint('Error al guardar en Firebase: $error');
+        ErrorHandler.log(error, stackTrace, 'persistRecord');
         showMessage(
           'No se pudo sincronizar con Firebase. Registro guardado localmente.',
         );
@@ -837,9 +766,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _persistRecords(List<NepRecord> updatedRecords) async {
-    if (cloudSyncService != null && await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncService!.upsertRecords(updatedRecords);
+        await cloudSyncCoordinator!.upsertRecords(updatedRecords);
         return;
       } catch (_) {
         cloudSyncEnabled = false;
@@ -852,9 +781,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _replaceAllRecords(List<NepRecord> updatedRecords) async {
-    if (cloudSyncService != null && await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncService!.replaceRecords(updatedRecords);
+        await cloudSyncCoordinator!.replaceRecords(updatedRecords);
         return;
       } catch (_) {
         cloudSyncEnabled = false;
@@ -867,9 +796,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _removeRecord(String recordId) async {
-    if (cloudSyncService != null && await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncService!.deleteRecord(recordId);
+        await cloudSyncCoordinator!.deleteRecord(recordId);
         return;
       } catch (_) {
         cloudSyncEnabled = false;
@@ -882,9 +811,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _clearAllRecords() async {
-    if (cloudSyncService != null && await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncService!.clearRecords();
+        await cloudSyncCoordinator!.clearRecords();
         return;
       } catch (_) {
         cloudSyncEnabled = false;
@@ -947,8 +876,9 @@ class AppState extends ChangeNotifier {
 
     try {
       await action();
-    } catch (e) {
-      showMessage('Error al exportar: $e');
+    } catch (e, stack) {
+      ErrorHandler.log(e, stack, 'runExport');
+      showMessage('Error al exportar: ${ErrorHandler.userMessage(e)}');
     } finally {
       isExporting = false;
       notifyListeners();
@@ -974,16 +904,11 @@ class AppState extends ChangeNotifier {
     final selected = columns ?? exportColumns;
     final reportStyle = style ?? pdfReportStyle;
     await runExport(() async {
-      await FileShareHelper.shareTextContent(
-        content: reportExportService.buildCsvText(
-          visibleRecords,
-          columns: selected,
-          style: reportStyle,
-        ),
-        fileName: 'reporte_neps_$timestamp.csv',
-        mimeType: 'text/csv',
-        shareText: 'Reporte CSV de Neps',
-        bom: true,
+      await recordExportCoordinator.shareCsv(
+        records: visibleRecords,
+        columns: selected,
+        style: reportStyle,
+        fileTimestamp: timestamp,
       );
       showMessage('Reporte CSV listo para compartir o descargar.');
     });
@@ -996,20 +921,11 @@ class AppState extends ChangeNotifier {
     final selected = columns ?? exportColumns;
     final reportStyle = style ?? pdfReportStyle;
     await runExport(() async {
-      final bytes = reportExportService.buildExcelBytes(
-        visibleRecords,
+      await recordExportCoordinator.shareExcel(
+        records: visibleRecords,
         columns: selected,
         style: reportStyle,
-      );
-      if (bytes == null) {
-        showMessage('No se pudo generar el archivo Excel.');
-        return;
-      }
-      await FileShareHelper.shareBytes(
-        bytes: bytes,
-        fileName: 'reporte_neps_$timestamp.xlsx',
-        mimeType: FileShareHelper.excelMimeType,
-        shareText: 'Reporte Excel de Neps',
+        fileTimestamp: timestamp,
       );
       showMessage('Reporte Excel listo para compartir o descargar.');
     });
@@ -1019,10 +935,9 @@ class AppState extends ChangeNotifier {
     Set<ExportColumn>? columns,
     PdfReportStyle? style,
   }) {
-    final selected = columns ?? exportColumns;
-    return reportExportService.buildPdfBytes(
+    return recordExportCoordinator.buildPdfBytes(
       records: visibleRecords,
-      columns: selected,
+      columns: columns ?? exportColumns,
       style: style ?? pdfReportStyle,
       filtersDescription: filters.hasActiveFilters
           ? FilterDescriptionHelper.describe(filters)
@@ -1034,20 +949,31 @@ class AppState extends ChangeNotifier {
     Set<ExportColumn>? columns,
     PdfReportStyle? style,
   }) async {
+    final selected = columns ?? exportColumns;
+    final reportStyle = style ?? pdfReportStyle;
     await runExport(() async {
-      final bytes = await buildPdfBytes(columns: columns, style: style);
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: 'reporte_neps_$timestamp.pdf',
+      await recordExportCoordinator.sharePdf(
+        records: visibleRecords,
+        columns: selected,
+        style: reportStyle,
+        fileTimestamp: timestamp,
+        filtersDescription: filters.hasActiveFilters
+            ? FilterDescriptionHelper.describe(filters)
+            : null,
       );
     });
   }
 
   Future<void> printPdf({PdfReportStyle? style}) async {
+    final reportStyle = style ?? pdfReportStyle;
     await runExport(() async {
-      await Printing.layoutPdf(
-        name: 'Reporte Neps VICUNHA',
-        onLayout: (_) async => buildPdfBytes(style: style),
+      await recordExportCoordinator.printPdf(
+        records: visibleRecords,
+        columns: exportColumns,
+        style: reportStyle,
+        filtersDescription: filters.hasActiveFilters
+            ? FilterDescriptionHelper.describe(filters)
+            : null,
       );
     });
   }
@@ -1061,8 +987,8 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    final text = reportExportService.buildTabText(
-      visibleRecords,
+    final text = recordExportCoordinator.buildTabText(
+      records: visibleRecords,
       columns: columns ?? exportColumns,
     );
 
@@ -1117,9 +1043,11 @@ class AppState extends ChangeNotifier {
           'Sincronice con Firebase para compartirlo con el equipo.',
         );
       }
-    } catch (error) {
-      debugPrint('Error al guardar informe: $error');
-      showMessage('No se pudo guardar el informe. Intente nuevamente.');
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'saveReport');
+      showMessage(
+        'No se pudo guardar el informe: ${ErrorHandler.userMessage(error)}',
+      );
     }
   }
 
@@ -1190,13 +1118,16 @@ class AppState extends ChangeNotifier {
       showMessage(
         'Se importaron ${toImport.length} registros correctamente.',
       );
-    } catch (e) {
-      showMessage('Error al importar registros: $e');
+    } catch (e, stack) {
+      ErrorHandler.log(e, stack, 'confirmImportRecords');
+      showMessage(
+          'Error al importar registros: ${ErrorHandler.userMessage(e)}');
     }
   }
 
   Future<void> downloadImportTemplate() async {
-    if (!_requirePermission(canImportRecords, 'descargar plantillas de importación')) {
+    if (!_requirePermission(
+        canImportRecords, 'descargar plantillas de importación')) {
       return;
     }
     try {
@@ -1208,8 +1139,10 @@ class AppState extends ChangeNotifier {
         shareText: 'Plantilla para importar registros de neps',
         subject: 'Plantilla importación Neps',
       );
-    } catch (e) {
-      showMessage('No se pudo generar la plantilla: $e');
+    } catch (e, stack) {
+      ErrorHandler.log(e, stack, 'downloadImportTemplate');
+      showMessage(
+          'No se pudo generar la plantilla: ${ErrorHandler.userMessage(e)}');
     }
   }
 
@@ -1268,8 +1201,10 @@ class AppState extends ChangeNotifier {
       }
 
       await confirmImportRecords(result.importableRecords);
-    } catch (e) {
-      showMessage('Error al importar registros: $e');
+    } catch (e, stack) {
+      ErrorHandler.log(e, stack, 'importRecords');
+      showMessage(
+          'Error al importar registros: ${ErrorHandler.userMessage(e)}');
     }
   }
 
@@ -1288,20 +1223,21 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveAlertConfig(AlertConfig config) async {
-    if (!_requirePermission(canEditAlertConfig, 'modificar los límites de alerta')) {
+    if (!_requirePermission(
+        canEditAlertConfig, 'modificar los límites de alerta')) {
       return;
     }
 
     await alertConfigService.save(config);
     alertService.updateConfig(config);
 
-    if (cloudSyncService != null && await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncService!.saveAlertConfig(
+        await cloudSyncCoordinator!.saveAlertConfig(
           alertConfigService.toFirestoreMap(),
         );
-      } catch (error) {
-        debugPrint('No se pudo sincronizar config a Firebase: $error');
+      } catch (error, stackTrace) {
+        ErrorHandler.log(error, stackTrace, 'saveAlertConfig');
       }
     }
 
@@ -1477,21 +1413,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _updateRecord(NepRecord record) async {
-    if (cloudSyncService != null && await _ensureCloudReady()) {
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncService!.upsertRecord(record);
-        if (_recordsSubscription == null) {
-          records = [
-            for (final item in records)
-              if (item.id == record.id) record else item,
-          ];
-          await _cacheRecordsLocally(records);
-          notifyListeners();
-        }
+        await cloudSyncCoordinator!.upsertRecord(record);
         return;
-      } catch (error) {
+      } catch (error, stackTrace) {
         cloudSyncEnabled = false;
-        debugPrint('Error al actualizar en Firebase: $error');
+        ErrorHandler.log(error, stackTrace, 'updateRecord');
         showMessage(
           'No se pudo sincronizar con Firebase. Cambio guardado localmente.',
         );

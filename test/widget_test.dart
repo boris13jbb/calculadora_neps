@@ -25,7 +25,8 @@ void main() {
 
     expect(find.text('VICUNHA Calculadora Neps'), findsOneWidget);
     expect(find.text('Iniciar sesión'), findsOneWidget);
-    expect(find.text('Recuperar contraseña (solo super admin)'), findsOneWidget);
+    expect(
+        find.text('Recuperar contraseña (solo super admin)'), findsOneWidget);
   });
 
   testWidgets('Login responsive en móvil', (WidgetTester tester) async {

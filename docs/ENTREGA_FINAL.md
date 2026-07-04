@@ -9,7 +9,7 @@ Sistema de control de calidad textil para registro, análisis y exportación de 
 | **Stack** | Flutter 3.x, Provider, Firebase/Firestore, SharedPreferences |
 | **Plataformas** | Android, Web, Windows |
 | **Fórmula** | `Mts calculados = Neps / 0.09` |
-| **Tests** | `flutter test` — suite unitaria y widget |
+| **Tests** | `flutter test` — 96 tests unitarios y widget |
 
 ## Fases completadas
 

@@ -139,7 +139,8 @@ class RecordFilterHelper {
       return false;
     }
 
-    if (filters.soloConAccionCorrectiva && record.accionCorrectiva.trim().isEmpty) {
+    if (filters.soloConAccionCorrectiva &&
+        record.accionCorrectiva.trim().isEmpty) {
       return false;
     }
 

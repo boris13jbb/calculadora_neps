@@ -110,9 +110,7 @@ class AlertService {
     List<NepRecord> records, {
     int limit = 10,
   }) {
-    return _groupSummaries(records, (r) => r.tela)
-        .take(limit)
-        .toList();
+    return _groupSummaries(records, (r) => r.tela).take(limit).toList();
   }
 
   /// Lotes/tramas más problemáticos por total de neps.
@@ -120,9 +118,7 @@ class AlertService {
     List<NepRecord> records, {
     int limit = 10,
   }) {
-    return _groupSummaries(records, (r) => r.loteTrama)
-        .take(limit)
-        .toList();
+    return _groupSummaries(records, (r) => r.loteTrama).take(limit).toList();
   }
 
   /// Tela más problemática (mayor total de neps).
@@ -208,7 +204,9 @@ class AlertService {
 
     criticalForTelar.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-    for (var i = 0; i <= criticalForTelar.length - _config.cantidadReincidenciasCriticas; i++) {
+    for (var i = 0;
+        i <= criticalForTelar.length - _config.cantidadReincidenciasCriticas;
+        i++) {
       final windowStart = criticalForTelar[i].createdAt;
       final windowEnd = windowStart.add(
         Duration(days: _config.diasParaReincidencia),

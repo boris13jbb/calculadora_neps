@@ -55,8 +55,14 @@ void main() {
       final now = DateTime(2026, 6, 29, 10);
       final records = [
         _record(telar: '12', neps: 70, createdAt: now),
-        _record(telar: '12', neps: 90, createdAt: now.add(const Duration(hours: 2))),
-        _record(telar: '12', neps: 100, createdAt: now.add(const Duration(hours: 4))),
+        _record(
+            telar: '12',
+            neps: 90,
+            createdAt: now.add(const Duration(hours: 2))),
+        _record(
+            telar: '12',
+            neps: 100,
+            createdAt: now.add(const Duration(hours: 4))),
       ];
 
       expect(service.isTelarReincident('12', records), isTrue);

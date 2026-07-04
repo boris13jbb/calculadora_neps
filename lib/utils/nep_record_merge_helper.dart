@@ -20,9 +20,8 @@ class NepRecordMergeHelper {
 
     for (final record in incoming) {
       final current = byId[record.id];
-      byId[record.id] = current == null
-          ? record
-          : resolveConflict(current, record);
+      byId[record.id] =
+          current == null ? record : resolveConflict(current, record);
     }
 
     final merged = byId.values.toList()

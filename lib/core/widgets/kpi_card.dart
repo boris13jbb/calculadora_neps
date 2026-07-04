@@ -173,8 +173,7 @@ class KpiStrip extends StatelessWidget {
           spacing: spacing,
           runSpacing: spacing,
           children: [
-            for (final card in cards)
-              SizedBox(width: itemWidth, child: card),
+            for (final card in cards) SizedBox(width: itemWidth, child: card),
           ],
         );
       },

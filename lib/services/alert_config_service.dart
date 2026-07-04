@@ -60,7 +60,8 @@ class AlertConfigService {
   void applyFromFirestore(Map<String, dynamic>? data) {
     if (data == null) return;
     _config = AlertConfig(
-      limiteNormalMax: data['limiteNormalMax'] as int? ?? _config.limiteNormalMax,
+      limiteNormalMax:
+          data['limiteNormalMax'] as int? ?? _config.limiteNormalMax,
       limiteAdvertenciaMax:
           data['limiteAdvertenciaMax'] as int? ?? _config.limiteAdvertenciaMax,
       diasParaReincidencia:

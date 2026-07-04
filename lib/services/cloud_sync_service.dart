@@ -1,15 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/errors/error_handler.dart';
 import '../core/constants.dart';
 import '../firebase_options.dart';
+import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
 import '../utils/firestore_json_helper.dart';
 import '../models/saved_report.dart';
-import '../models/user_role.dart';
 import 'cloud_sync_port.dart';
 
 class CloudSyncService implements CloudSyncPort {
@@ -123,8 +123,7 @@ class CloudSyncService implements CloudSyncPort {
       try {
         await upsertRecords(localRecords);
       } catch (error, stackTrace) {
-        debugPrint('Migración de registros omitida: $error');
-        debugPrint('$stackTrace');
+        ErrorHandler.log(error, stackTrace, 'migrateRecords');
       }
     }
 
@@ -132,8 +131,7 @@ class CloudSyncService implements CloudSyncPort {
       try {
         await syncFabricsWithLocal(localFabrics);
       } catch (error, stackTrace) {
-        debugPrint('Migración de telas omitida: $error');
-        debugPrint('$stackTrace');
+        ErrorHandler.log(error, stackTrace, 'migrateFabrics');
       }
     }
 
@@ -261,10 +259,10 @@ class CloudSyncService implements CloudSyncPort {
   }
 
   @override
-  Future<UserRole> fetchUserRole() async {
+  Future<AppUserRole> fetchUserRole() async {
     final userId = await _requireUserId();
     final snap = await _workspace.collection('users').doc(userId).get();
-    return UserRole.fromCode(snap.data()?['role']?.toString());
+    return AppUserRole.fromCode(snap.data()?['role']?.toString());
   }
 
   @override

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
+import '../core/errors/error_handler.dart';
 import '../core/permissions/permission.dart';
 import '../models/app_user.dart';
 import '../models/app_user_role.dart';
@@ -39,7 +40,9 @@ class AuthProvider extends ChangeNotifier {
   AppUserRole get role => profile?.role ?? AppUserRole.operario;
 
   bool get isAuthenticated =>
-      status == AuthStatus.authenticated && profile != null && profile!.isActive;
+      status == AuthStatus.authenticated &&
+      profile != null &&
+      profile!.isActive;
 
   void initialize() {
     _authSub?.cancel();
@@ -86,8 +89,7 @@ class AuthProvider extends ChangeNotifier {
 
       if (!loaded.isActive || loaded.deletedAt != null) {
         status = AuthStatus.deactivated;
-        errorMessage =
-            'Usuario desactivado. Contacte al super administrador.';
+        errorMessage = 'Usuario desactivado. Contacte al super administrador.';
         profile = loaded;
         await _authService.signOut();
         notifyListeners();
@@ -104,9 +106,11 @@ class AuthProvider extends ChangeNotifier {
       status = AuthStatus.authenticated;
       unawaited(_authService.touchLastLogin(user.uid));
       notifyListeners();
-    } catch (error) {
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'loadProfile');
       status = AuthStatus.accessDenied;
-      errorMessage = 'No se pudo cargar su perfil: $error';
+      errorMessage =
+          'No se pudo cargar su perfil: ${ErrorHandler.userMessage(error)}';
       await _authService.signOut();
       notifyListeners();
     }
@@ -128,7 +132,7 @@ class AuthProvider extends ChangeNotifier {
       await _authService.refreshIdToken();
     } on FirebaseAuthException catch (error) {
       status = AuthStatus.unauthenticated;
-      errorMessage = _mapAuthError(error);
+      errorMessage = ErrorHandler.userMessage(error);
       notifyListeners();
       rethrow;
     } on FormatException catch (error) {
@@ -160,23 +164,6 @@ class AuthProvider extends ChangeNotifier {
 
   bool hasPermission(Permission permission) {
     return profile?.hasPermission(permission) ?? false;
-  }
-
-  String _mapAuthError(FirebaseAuthException error) {
-    switch (error.code) {
-      case 'invalid-email':
-        return 'El usuario o correo no es válido.';
-      case 'user-disabled':
-        return 'Usuario desactivado. Contacte al super administrador.';
-      case 'user-not-found':
-      case 'wrong-password':
-      case 'invalid-credential':
-        return 'Usuario o contraseña incorrectos.';
-      case 'too-many-requests':
-        return 'Demasiados intentos. Intente más tarde.';
-      default:
-        return error.message ?? 'No se pudo iniciar sesión.';
-    }
   }
 
   @override

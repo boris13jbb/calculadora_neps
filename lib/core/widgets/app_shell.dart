@@ -180,9 +180,9 @@ class _ShellBody extends StatelessWidget {
         if (appState.cloudSyncError != null)
           StatusBanner(
             type: StatusBannerType.warning,
-            message: appState.cloudSyncError!.contains('permission-denied')
+            message: appState.cloudSyncError!.contains('permisos')
                 ? 'Firebase conectado parcialmente. Si no ve informes, pulse Actualizar en Informes o recargue la página.'
-                : 'Sincronización en la nube limitada. Los datos locales siguen disponibles.',
+                : appState.cloudSyncError!,
           ),
         Expanded(
           child: IndexedStack(

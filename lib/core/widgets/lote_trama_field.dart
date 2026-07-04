@@ -185,9 +185,8 @@ class _LoteTramaFieldState extends State<LoteTramaField> {
                     style: appDropdownTextStyle(
                       ultraCompact: widget.ultraCompact,
                     ).copyWith(
-                      color: hasSelection
-                          ? AppColors.textDark
-                          : AppColors.muted,
+                      color:
+                          hasSelection ? AppColors.textDark : AppColors.muted,
                     ),
                   ),
                 ),
@@ -250,8 +249,10 @@ class _LoteTramaFieldState extends State<LoteTramaField> {
                       child: TextField(
                         controller: _manualController,
                         textCapitalization: TextCapitalization.characters,
-                        style: TextStyle(fontSize: widget.ultraCompact ? 12 : 14),
-                        decoration: _decoration('Agregar lote manual, ej. 63E264H10A'),
+                        style:
+                            TextStyle(fontSize: widget.ultraCompact ? 12 : 14),
+                        decoration:
+                            _decoration('Agregar lote manual, ej. 63E264H10A'),
                         onSubmitted: (_) => _addManualLote(),
                       ),
                     ),
@@ -260,7 +261,8 @@ class _LoteTramaFieldState extends State<LoteTramaField> {
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.primaryGreen,
                         foregroundColor: Colors.white,
-                        minimumSize: Size(widget.ultraCompact ? 40 : 44, widget.ultraCompact ? 40 : 44),
+                        minimumSize: Size(widget.ultraCompact ? 40 : 44,
+                            widget.ultraCompact ? 40 : 44),
                         padding: EdgeInsets.zero,
                       ),
                       onPressed: _addManualLote,

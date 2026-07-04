@@ -222,9 +222,7 @@ class ReportExportService {
 
     for (int i = 0; i < sorted.length; i++) {
       buffer.writeln(
-        _dataRow(sorted[i], i, selected, sorted)
-            .map(escapeCsv)
-            .join(','),
+        _dataRow(sorted[i], i, selected, sorted).map(escapeCsv).join(','),
       );
     }
 
@@ -674,23 +672,23 @@ class ReportExportService {
           ),
           pw.SizedBox(height: 14),
           pw.Text('Tabla principal de registros',
-              style: pw.TextStyle(
-                  fontWeight: pw.FontWeight.bold, fontSize: 12)),
+              style:
+                  pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
           pw.SizedBox(height: 6),
           _pdfRecordsTable(records, selected),
           if (critical.isNotEmpty) ...[
             pw.SizedBox(height: 14),
             pw.Text('Alertas críticas',
-                style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                style:
+                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
             pw.SizedBox(height: 6),
             _pdfAlertTable(critical, records),
           ],
           if (topTelars.isNotEmpty) ...[
             pw.SizedBox(height: 14),
             pw.Text('Top 10 telares con más neps',
-                style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                style:
+                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
             pw.SizedBox(height: 6),
             _pdfGroupTable(
               ['Telar', 'Total neps', 'Promedio', 'Registros'],
@@ -709,8 +707,8 @@ class ReportExportService {
           if (porTela.isNotEmpty) ...[
             pw.SizedBox(height: 14),
             pw.Text('Resumen por tela',
-                style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                style:
+                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
             pw.SizedBox(height: 6),
             _pdfGroupTable(
               ['Tela', 'Total neps', 'Promedio', 'Registros'],
@@ -729,8 +727,8 @@ class ReportExportService {
           if (porLote.isNotEmpty) ...[
             pw.SizedBox(height: 14),
             pw.Text('Resumen por lote/trama',
-                style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                style:
+                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
             pw.SizedBox(height: 6),
             _pdfGroupTable(
               ['Lote/trama', 'Total neps', 'Promedio', 'Registros'],
@@ -749,8 +747,8 @@ class ReportExportService {
           if (recommendations.isNotEmpty) ...[
             pw.SizedBox(height: 14),
             pw.Text('Recomendaciones automáticas',
-                style: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold, fontSize: 12)),
+                style:
+                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
             pw.SizedBox(height: 6),
             ...recommendations.map(
               (r) => pw.Bullet(text: r, style: const pw.TextStyle(fontSize: 9)),
@@ -839,8 +837,8 @@ class ReportExportService {
           pw.SizedBox(height: 4),
           pw.Text(
             title,
-            style: pw.TextStyle(
-                color: PdfColor.fromHex('#CFD8C5'), fontSize: 10),
+            style:
+                pw.TextStyle(color: PdfColor.fromHex('#CFD8C5'), fontSize: 10),
           ),
         ],
       ),
@@ -919,8 +917,8 @@ class ReportExportService {
           pw.SizedBox(height: 4),
           pw.Text(
             'Generado: ${_formatDate(generatedAt)}',
-            style: pw.TextStyle(
-                color: PdfColor.fromHex('#CFD8C5'), fontSize: 9),
+            style:
+                pw.TextStyle(color: PdfColor.fromHex('#CFD8C5'), fontSize: 9),
           ),
         ],
       ),

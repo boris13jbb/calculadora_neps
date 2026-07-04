@@ -58,8 +58,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     if (_filters.telar != null) {
       result = result
           .where(
-            (r) =>
-                r.telar.toLowerCase() == _filters.telar!.toLowerCase(),
+            (r) => r.telar.toLowerCase() == _filters.telar!.toLowerCase(),
           )
           .toList();
     }
@@ -74,8 +73,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
       result = result
           .where(
             (r) =>
-                r.loteTrama.toLowerCase() ==
-                _filters.loteTrama!.toLowerCase(),
+                r.loteTrama.toLowerCase() == _filters.loteTrama!.toLowerCase(),
           )
           .toList();
     }
@@ -86,7 +84,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
         _filters.dateFrom!.day,
       );
       result = result.where((r) {
-        final d = DateTime(r.createdAt.year, r.createdAt.month, r.createdAt.day);
+        final d =
+            DateTime(r.createdAt.year, r.createdAt.month, r.createdAt.day);
         return !d.isBefore(from);
       }).toList();
     }
@@ -511,8 +510,7 @@ class _FilterDropdown<T> extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         isDense: true,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       ),
       items: items

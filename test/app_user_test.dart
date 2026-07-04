@@ -15,7 +15,8 @@ void main() {
     });
 
     test('normalizeUsername quita espacios y pasa a minúsculas', () {
-      expect(UsernameAuthHelper.normalizeUsername(' Operario01 '), 'operario01');
+      expect(
+          UsernameAuthHelper.normalizeUsername(' Operario01 '), 'operario01');
     });
 
     test('buildInternalEmail genera email oculto', () {
@@ -47,7 +48,8 @@ void main() {
     });
 
     test('validateUsernameOrEmailInput acepta username válido', () {
-      expect(UsernameAuthHelper.validateUsernameOrEmailInput('operario01'), isNull);
+      expect(UsernameAuthHelper.validateUsernameOrEmailInput('operario01'),
+          isNull);
     });
   });
 

@@ -1,4 +1,7 @@
 {
+  "name": "regneps-scripts",
+  "description": "Dependencias Node.js para scripts administrativos locales (Firebase Admin)",
+  "private": true,
   "dependencies": {
     "firebase-admin": "^14.1.0"
   }

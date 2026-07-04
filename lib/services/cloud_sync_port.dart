@@ -1,6 +1,6 @@
+import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
 import '../models/saved_report.dart';
-import '../models/user_role.dart';
 
 /// Contrato de sincronizacion sin dependencias de Firebase en el arranque.
 abstract class CloudSyncPort {
@@ -35,7 +35,7 @@ abstract class CloudSyncPort {
 
   Future<void> deleteReport(String reportId);
 
-  Future<UserRole> fetchUserRole();
+  Future<AppUserRole> fetchUserRole();
 
   Future<Map<String, dynamic>?> fetchAlertConfig();
 

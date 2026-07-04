@@ -209,7 +209,7 @@ function serializeUserDoc(data) {
  */
 function toCallablePayload(payload) {
   return JSON.parse(JSON.stringify(payload, (_key, value) => {
-    if (value == null) return value;
+    if (value === null || value === undefined) return value;
     if (typeof value === "object" && typeof value.toDate === "function") {
       return value.toDate().toISOString();
     }

@@ -1,5 +1,7 @@
 # Autenticación, usuarios y roles — VICUNHA Calculadora Neps
 
+> Guía operativa. Para arquitectura, matriz de permisos y reglas Firestore, ver [AUTH_ROLES.md](AUTH_ROLES.md).
+
 ## Login con usuario (sin correo visible)
 
 | Tipo | Campo login | Firebase Auth interno |

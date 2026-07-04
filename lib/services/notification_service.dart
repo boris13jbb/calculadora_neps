@@ -41,7 +41,8 @@ class NotificationService {
   Future<void> _initializeAndroid({
     Future<void> Function(String token)? onTokenRegistered,
   }) async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     await _local.initialize(
       const InitializationSettings(android: androidSettings),
     );

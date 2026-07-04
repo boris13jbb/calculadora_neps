@@ -149,7 +149,8 @@ class _MobileRecordsList extends StatelessWidget {
               Expanded(
                 child: Text(
                   'T${item.telar} · ${appState.formatNumber(appState.calculateMts(item.neps))} mts',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 12),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

@@ -44,9 +44,7 @@ class DashboardScreen extends StatelessWidget {
             AppSectionHeader(
               icon: Icons.insights_outlined,
               title: 'Indicadores clave',
-              subtitle: phone
-                  ? null
-                  : 'Resumen ejecutivo del control de neps',
+              subtitle: phone ? null : 'Resumen ejecutivo del control de neps',
             ),
             SizedBox(height: phone ? 10 : 14),
             _KpiGrid(

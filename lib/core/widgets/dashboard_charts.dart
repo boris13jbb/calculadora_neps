@@ -61,7 +61,8 @@ class DashboardChartsSection extends StatelessWidget {
     final topTelas = analyticsService.topTelasPorNeps(records, limit: 8);
     final topLotes = analyticsService.topLotesPorNeps(records, limit: 8);
     final trend = analyticsService.tendenciaDiaria(records);
-    final avgByTelar = analyticsService.promedioPorTelar(records).take(10).toList();
+    final avgByTelar =
+        analyticsService.promedioPorTelar(records).take(10).toList();
     final distribution = analyticsService.distribucionPorEstado(records);
 
     return Column(

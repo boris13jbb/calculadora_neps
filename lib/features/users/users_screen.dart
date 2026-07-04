@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/errors/error_handler.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/permissions/permission.dart';
 import '../../core/theme/app_theme.dart';
@@ -61,10 +62,11 @@ class _UsersScreenState extends State<UsersScreen> {
           _loading = false;
         });
       }
-    } catch (error) {
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'loadUsers');
       if (mounted) {
         setState(() {
-          _error = error.toString();
+          _error = ErrorHandler.userMessage(error);
           _loading = false;
         });
       }
@@ -162,10 +164,11 @@ class _UsersScreenState extends State<UsersScreen> {
         await _adminRepo.disableUser(user.uid);
       }
       await _loadUsers();
-    } catch (error) {
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'toggleActive');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $error')),
+          SnackBar(content: Text(ErrorHandler.userMessage(error))),
         );
       }
     } finally {
@@ -206,10 +209,11 @@ class _UsersScreenState extends State<UsersScreen> {
           const SnackBar(content: Text('Usuario archivado.')),
         );
       }
-    } catch (error) {
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'toggleActive');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $error')),
+          SnackBar(content: Text(ErrorHandler.userMessage(error))),
         );
       }
     } finally {
@@ -730,10 +734,11 @@ class _UserFormDialogState extends State<_UserFormDialog> {
         );
       }
       if (mounted) Navigator.pop(context, result);
-    } catch (error) {
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'toggleActive');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $error')),
+          SnackBar(content: Text(ErrorHandler.userMessage(error))),
         );
       }
     } finally {
@@ -900,10 +905,11 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
         newPassword: _passwordController.text,
       );
       if (mounted) Navigator.pop(context, true);
-    } catch (error) {
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'toggleActive');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $error')),
+          SnackBar(content: Text(ErrorHandler.userMessage(error))),
         );
       }
     } finally {

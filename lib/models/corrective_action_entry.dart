@@ -18,8 +18,8 @@ class CorrectiveActionEntry {
 
   factory CorrectiveActionEntry.fromJson(Map<String, dynamic> json) {
     return CorrectiveActionEntry(
-      fecha: DateTime.tryParse(json['fecha']?.toString() ?? '') ??
-          DateTime.now(),
+      fecha:
+          DateTime.tryParse(json['fecha']?.toString() ?? '') ?? DateTime.now(),
       responsable: json['responsable']?.toString() ?? '',
       accion: json['accion']?.toString() ?? '',
     );

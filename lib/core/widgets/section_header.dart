@@ -40,9 +40,7 @@ class AppSectionHeader extends StatelessWidget {
             Flexible(
               child: Text(
                 title,
-                style: dense
-                    ? AppText.cardTitle
-                    : AppText.sectionTitle,
+                style: dense ? AppText.cardTitle : AppText.sectionTitle,
               ),
             ),
           ],

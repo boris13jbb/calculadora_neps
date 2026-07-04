@@ -37,8 +37,8 @@ class AppMaterialListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = backgroundColor ??
-        AppListTileStyles.sheetTileColor(selected: selected);
+    final bg =
+        backgroundColor ?? AppListTileStyles.sheetTileColor(selected: selected);
     return Material(
       color: bg,
       shape: shape,

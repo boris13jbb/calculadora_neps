@@ -77,8 +77,7 @@ class ReportStyleSelector extends StatelessWidget {
                       .toList(),
                   selected: {selected},
                   showSelectedIcon: false,
-                  onSelectionChanged: (selection) =>
-                      onChanged(selection.first),
+                  onSelectionChanged: (selection) => onChanged(selection.first),
                 ),
               ),
             if (showDescription) ...[

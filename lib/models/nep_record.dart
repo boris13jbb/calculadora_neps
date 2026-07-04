@@ -74,8 +74,7 @@ class NepRecord {
       if (fechaRevision != null)
         'fechaRevision': fechaRevision!.toIso8601String(),
       if (historialAcciones.isNotEmpty)
-        'historialAcciones':
-            historialAcciones.map((e) => e.toJson()).toList(),
+        'historialAcciones': historialAcciones.map((e) => e.toJson()).toList(),
       if (createdByUid != null && createdByUid!.isNotEmpty)
         'createdByUid': createdByUid,
       if (createdByEmail != null && createdByEmail!.isNotEmpty)

@@ -1,7 +1,8 @@
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/errors/error_handler.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_material_list_tile.dart';
@@ -18,7 +19,7 @@ import '../../providers/app_state.dart';
 import '../../utils/file_share_helper.dart';
 import '../../utils/record_filter_helper.dart';
 import '../../utils/report_share_helper.dart';
-import '../../widgets/record_filters_panel.dart';
+import '../../core/widgets/record_filters_panel.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -80,15 +81,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
           loadError = null;
         });
       }
-    } catch (error) {
-      debugPrint('Error al cargar informes: $error');
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'loadReports');
       if (mounted) {
         final syncError = context.read<AppState>().cloudSyncError;
         setState(() {
           reports = [];
-          loadError = syncError ??
-              'No se pudieron sincronizar los informes con Firebase. '
-              'Verifique conexión y autenticación anónima.';
+          loadError = syncError ?? ErrorHandler.userMessage(error);
         });
       }
     } finally {
@@ -258,8 +257,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
           _showMessage(desktopMessage);
         }
       });
-    } catch (e) {
-      _showMessage('Error al compartir informes: $e');
+    } catch (e, stack) {
+      ErrorHandler.log(e, stack, 'shareReports');
+      _showMessage(
+        'Error al compartir informes: ${ErrorHandler.userMessage(e)}',
+      );
     } finally {
       if (mounted) setState(() => isWorking = false);
     }
@@ -573,13 +575,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   : Icons.folder_open_outlined,
               title: loadError != null
                   ? 'Error al cargar informes'
-                  : (reports.isEmpty ? 'Sin informes guardados' : 'Sin coincidencias'),
+                  : (reports.isEmpty
+                      ? 'Sin informes guardados'
+                      : 'Sin coincidencias'),
               message: loadError ??
                   (reports.isEmpty
                       ? 'Guarde un informe desde Captura o Exportar para compartirlo con el equipo.'
                       : 'Ningún informe coincide con los filtros activos.'),
-              iconColor:
-                  loadError != null ? AppColors.danger : AppColors.muted,
+              iconColor: loadError != null ? AppColors.danger : AppColors.muted,
               actions: [
                 if (loadError != null)
                   EmptyStateAction(

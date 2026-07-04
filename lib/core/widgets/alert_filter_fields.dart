@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme/app_theme.dart';
-import '../models/alert_level.dart';
-import '../models/nep_record.dart';
-import '../models/record_filters.dart';
-import '../utils/record_filter_helper.dart';
+import '../theme/app_theme.dart';
+import '../../models/alert_level.dart';
+import '../../models/nep_record.dart';
+import '../../models/record_filters.dart';
+import '../../utils/record_filter_helper.dart';
 
 /// Filtros extendidos: alerta, producción y rangos rápidos.
 class ExtendedRecordFilterFields extends StatelessWidget {
@@ -134,7 +134,8 @@ class _AlertLevelDropdown extends StatelessWidget {
         initialValue: value,
         decoration: recordFilterDecoration('Estado alerta'),
         items: [
-          const DropdownMenuItem<AlertLevel?>(value: null, child: Text('Todos')),
+          const DropdownMenuItem<AlertLevel?>(
+              value: null, child: Text('Todos')),
           ...AlertLevel.values.map(
             (l) => DropdownMenuItem(value: l, child: Text(l.label)),
           ),

@@ -1,6 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:typed_data';
 
+import 'package:calculadora_neps/core/errors/app_exception.dart';
+import 'package:calculadora_neps/models/app_user.dart';
+import 'package:calculadora_neps/models/app_user_role.dart';
 import 'package:calculadora_neps/models/corrective_action_entry.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
@@ -66,6 +70,16 @@ NRO,FECHA,LOTE DE TRAMA,NOMBRE DE TELA,TELAR,NEPS,MTS CALCULADOS
       expect(result.records.single.tela, 'DENIM CLARO');
       expect(result.records.single.telar, '004');
     });
+
+    test('lanza ImportException con bytes Excel inválidos', () {
+      expect(
+        () => RecordImportService().importFromBytes(
+          Uint8List.fromList([0, 1, 2, 3]),
+          fileName: 'corrupto.xlsx',
+        ),
+        throwsA(isA<ImportException>()),
+      );
+    });
   });
 
   test('ImportTemplateService genera bytes Excel', () {
@@ -100,9 +114,17 @@ NRO,FECHA,LOTE DE TRAMA,NOMBRE DE TELA,TELAR,NEPS,MTS CALCULADOS
     expect(restored.requiereSeguimiento, isFalse);
   });
 
-  test('AppState.applyCorrectiveAction agrega historial y marca revisado', () async {
+  test('AppState.applyCorrectiveAction agrega historial y marca revisado',
+      () async {
     SharedPreferences.setMockInitialValues({});
     final appState = AppState();
+    appState.applyAuthProfile(
+      AppUser(
+        uid: 'supervisor-uid',
+        username: 'supervisor',
+        role: AppUserRole.supervisor,
+      ),
+    );
     appState.records = [
       NepRecord(
         id: 'r1',

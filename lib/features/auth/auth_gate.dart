@@ -28,8 +28,7 @@ class AuthGate extends StatelessWidget {
             child: EmptyState(
               icon: Icons.block,
               title: 'Usuario desactivado',
-              message: auth.errorMessage ??
-                  'Contacte al super administrador.',
+              message: auth.errorMessage ?? 'Contacte al super administrador.',
               iconColor: AppColors.danger,
               actions: [
                 EmptyStateAction(
