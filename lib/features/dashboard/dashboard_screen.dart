@@ -67,8 +67,8 @@ class DashboardScreen extends StatelessWidget {
               icon: Icons.bar_chart_outlined,
               title: 'Gráficas de análisis',
               subtitle: phone
-                  ? null
-                  : 'Distribución de neps por telar, tela, lote y tendencia',
+                  ? '8 visualizaciones · desliza para ver todas'
+                  : 'Telares, telas, lotes, tendencias y criticidad',
             ),
             SizedBox(height: phone ? 10 : 14),
             DashboardChartsSection(

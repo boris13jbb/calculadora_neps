@@ -108,6 +108,39 @@ class AnalyticsService {
     }).toList();
   }
 
+  /// Registros críticos agrupados por día (para tendencia de alertas).
+  List<DailyNepsPoint> tendenciaCriticosDiaria(List<NepRecord> records) {
+    final map = <DateTime, List<NepRecord>>{};
+    for (final record in records) {
+      if (_alerts.getAlertLevel(record.neps) != AlertLevel.critico) continue;
+      final day = DateTime(
+        record.createdAt.year,
+        record.createdAt.month,
+        record.createdAt.day,
+      );
+      map.putIfAbsent(day, () => []).add(record);
+    }
+
+    final days = map.keys.toList()..sort();
+    return days.map((day) {
+      final items = map[day]!;
+      final total = items.fold<double>(0, (s, r) => s + r.neps);
+      return DailyNepsPoint(
+        date: day,
+        totalNeps: total,
+        recordCount: items.length,
+        averageNeps: items.isEmpty ? 0 : total / items.length,
+      );
+    }).toList();
+  }
+
+  /// Top telares con desglose normal / advertencia / crítico.
+  List<TelarAlertSummary> topTelaresConAlertas(
+    List<NepRecord> records, {
+    int limit = 6,
+  }) =>
+      _alerts.detectTopTelarsByTotalNeps(records, limit: limit);
+
   List<GroupNepsSummary> topTelaresPorNeps(
     List<NepRecord> records, {
     int limit = 10,
