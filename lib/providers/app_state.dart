@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/navigation/app_navigation.dart';
 import '../core/alert_config.dart';
 import '../core/constants.dart';
 import '../core/errors/error_handler.dart';
@@ -73,9 +74,8 @@ class AppState extends ChangeNotifier {
 
     return AppState._(
       cloudSyncService: syncService,
-      cloudSyncCoordinator: syncService != null
-          ? CloudSyncCoordinator(syncService)
-          : null,
+      cloudSyncCoordinator:
+          syncService != null ? CloudSyncCoordinator(syncService) : null,
       fabricCatalogService: fabricCatalogService ?? FabricCatalogService(),
       loteTramaCatalogService:
           loteTramaCatalogService ?? LoteTramaCatalogService(),
@@ -142,6 +142,7 @@ class AppState extends ChangeNotifier {
   String? bootstrapError;
   int filterPanelKey = 0;
   int navigationIndex = 0;
+  AppNavId? pendingNavTarget;
   Set<ExportColumn> exportColumns = ExportColumn.defaultSelection();
   PdfReportStyle pdfReportStyle = PdfReportStyle.completo;
 
@@ -238,12 +239,12 @@ class AppState extends ChangeNotifier {
     final params = uri.queryParameters;
     if (params.isEmpty) return;
 
-    final screenIndex = SiriShortcutService.resolveScreenIndex(
+    final screenId = SiriShortcutService.resolveScreenId(
       SiriShortcutService.readParam(params, 'pantalla') ??
           SiriShortcutService.readParam(params, 'screen'),
     );
-    if (screenIndex != null) {
-      navigationIndex = screenIndex;
+    if (screenId != null) {
+      requestNavigation(screenId);
     }
 
     final telar = SiriShortcutService.readParam(params, 'telar');
@@ -306,7 +307,26 @@ class AppState extends ChangeNotifier {
 
   void setNavigationIndex(int index) {
     navigationIndex = index;
+    pendingNavTarget = null;
     notifyListeners();
+  }
+
+  /// Solicita navegación por id (resuelto en [AppShell] según permisos).
+  void requestNavigation(AppNavId id) {
+    pendingNavTarget = id;
+    notifyListeners();
+  }
+
+  /// Resuelve [pendingNavTarget] al índice visible del usuario.
+  void applyPendingNavigation(AppUser? user) {
+    final target = pendingNavTarget;
+    if (target == null) return;
+    pendingNavTarget = null;
+    final index = AppNavigation.indexOf(user, target);
+    if (index != null) {
+      navigationIndex = index;
+      notifyListeners();
+    }
   }
 
   /// Navega a registros aplicando filtros relacionados con una alerta.
@@ -320,8 +340,7 @@ class AppState extends ChangeNotifier {
     filters.tela = tela;
     filters.loteTrama = loteTrama;
     filterPanelKey++;
-    navigationIndex = 2;
-    notifyListeners();
+    requestNavigation(AppNavId.records);
   }
 
   Future<void> loadData() async {

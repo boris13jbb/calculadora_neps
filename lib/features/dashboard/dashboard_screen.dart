@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/layout/responsive_layout.dart';
+import '../../core/navigation/app_navigation.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/capture_session_actions.dart';
@@ -69,14 +70,25 @@ class DashboardScreen extends StatelessWidget {
               subtitle: phone
                   ? '8 visualizaciones · desliza para ver todas'
                   : 'Telares, telas, lotes, tendencias y criticidad',
+              trailing: TextButton.icon(
+                onPressed: () => AppNavigation.navigateIfAllowed(
+                    context, AppNavId.analytics),
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: Text(
+                  phone ? 'Ver más' : 'Ver gráficas completas',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
             ),
             SizedBox(height: phone ? 10 : 14),
             DashboardChartsSection(
               records: records,
               formatDecimal: appState.formatDecimal,
               compact: phone,
-              onGoToCapture: () => appState.setNavigationIndex(1),
-              onGoToRecords: () => appState.setNavigationIndex(2),
+              onGoToCapture: () =>
+                  AppNavigation.navigateIfAllowed(context, AppNavId.capture),
+              onGoToRecords: () =>
+                  AppNavigation.navigateIfAllowed(context, AppNavId.records),
             ),
             SizedBox(height: spacing + 8),
             const AppSectionHeader(
@@ -107,7 +119,8 @@ class DashboardScreen extends StatelessWidget {
                       label: 'Alertas',
                       icon: Icons.notifications_active,
                       color: AppColors.statusCritical,
-                      onTap: () => appState.setNavigationIndex(3),
+                      onTap: () => AppNavigation.navigateIfAllowed(
+                          context, AppNavId.alerts),
                     ),
                     _QuickAction(
                       width: itemWidth,
@@ -115,7 +128,21 @@ class DashboardScreen extends StatelessWidget {
                       label: 'Ver registros',
                       icon: Icons.table_chart,
                       color: AppColors.primaryGreen,
-                      onTap: () => appState.setNavigationIndex(2),
+                      onTap: () => AppNavigation.navigateIfAllowed(
+                        context,
+                        AppNavId.records,
+                      ),
+                    ),
+                    _QuickAction(
+                      width: itemWidth,
+                      compact: phone,
+                      label: 'Gráficas',
+                      icon: Icons.analytics,
+                      color: AppColors.primaryBlue,
+                      onTap: () => AppNavigation.navigateIfAllowed(
+                        context,
+                        AppNavId.analytics,
+                      ),
                     ),
                     _QuickAction(
                       width: itemWidth,
@@ -123,7 +150,10 @@ class DashboardScreen extends StatelessWidget {
                       label: 'Catálogo telas',
                       icon: Icons.texture,
                       color: AppColors.primaryBlue,
-                      onTap: () => appState.setNavigationIndex(4),
+                      onTap: () => AppNavigation.navigateIfAllowed(
+                        context,
+                        AppNavId.fabrics,
+                      ),
                     ),
                     _QuickAction(
                       width: itemWidth,
@@ -131,7 +161,10 @@ class DashboardScreen extends StatelessWidget {
                       label: 'Informes',
                       icon: Icons.folder_special,
                       color: AppColors.primaryBlue,
-                      onTap: () => appState.setNavigationIndex(5),
+                      onTap: () => AppNavigation.navigateIfAllowed(
+                        context,
+                        AppNavId.reports,
+                      ),
                     ),
                     _QuickAction(
                       width: itemWidth,
@@ -139,7 +172,10 @@ class DashboardScreen extends StatelessWidget {
                       label: 'Exportar',
                       icon: Icons.ios_share,
                       color: AppColors.primaryGreen,
-                      onTap: () => appState.setNavigationIndex(6),
+                      onTap: () => AppNavigation.navigateIfAllowed(
+                        context,
+                        AppNavId.export,
+                      ),
                     ),
                     _QuickAction(
                       width: itemWidth,
@@ -147,7 +183,10 @@ class DashboardScreen extends StatelessWidget {
                       label: 'Configuración',
                       icon: Icons.settings,
                       color: AppColors.primaryBlue,
-                      onTap: () => appState.setNavigationIndex(7),
+                      onTap: () => AppNavigation.navigateIfAllowed(
+                        context,
+                        AppNavId.settings,
+                      ),
                     ),
                   ],
                 );

@@ -28,6 +28,7 @@ class _AppShellState extends State<AppShell> {
     final appState = context.watch<AppState>();
     final auth = context.watch<AuthProvider>();
     final navItems = AppNavigation.visibleFor(auth.profile);
+    appState.applyPendingNavigation(auth.profile);
 
     if (appState.isLoading) {
       return const AppLoadingView();

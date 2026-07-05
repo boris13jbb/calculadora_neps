@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// de Firebase ni del `AuthGate`, que en pruebas siempre muestra el login).
 const _labels = <String>[
   'Inicio',
+  'Gráficas',
   'Captura',
   'Registros',
   'Alertas',
@@ -39,6 +40,11 @@ Future<void> _pumpSidebar(
   VoidCallback? onToggle,
   VoidCallback? onSignOut,
 }) async {
+  tester.view.physicalSize = const Size(1280, 1200);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
   await tester.pumpWidget(
     MaterialApp(
       theme: AppTheme.build(),

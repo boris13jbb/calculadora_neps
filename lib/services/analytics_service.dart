@@ -1,5 +1,8 @@
 import '../models/alert_level.dart';
+import '../models/analytics_period.dart';
+import '../models/analytics_summary.dart';
 import '../models/nep_record.dart';
+import '../models/time_series_point.dart';
 import '../services/alert_service.dart';
 import '../utils/record_filter_helper.dart';
 
@@ -215,6 +218,167 @@ class AnalyticsService {
     if (critical.isEmpty) return null;
     critical.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return critical.first;
+  }
+
+  double totalMtsCalculados(List<NepRecord> records) =>
+      records.fold(0.0, (sum, r) => sum + r.mtsCalculados);
+
+  double minNeps(List<NepRecord> records) {
+    if (records.isEmpty) return 0;
+    return records.map((r) => r.neps).reduce((a, b) => a < b ? a : b);
+  }
+
+  double maxNeps(List<NepRecord> records) {
+    if (records.isEmpty) return 0;
+    return records.map((r) => r.neps).reduce((a, b) => a > b ? a : b);
+  }
+
+  List<GroupNepsSummary> resumenPorTurno(List<NepRecord> records) =>
+      _groupByField(records, (r) => r.turno);
+
+  List<GroupNepsSummary> resumenPorOperario(List<NepRecord> records) =>
+      _groupByField(records, (r) => r.operario);
+
+  /// Agrupa registros según el periodo temporal seleccionado.
+  List<TimeSeriesPoint> tendenciaPorPeriodo(
+    List<NepRecord> records,
+    AnalyticsPeriod period,
+  ) {
+    if (records.isEmpty) return const [];
+
+    final effective =
+        period == AnalyticsPeriod.custom ? AnalyticsPeriod.day : period;
+
+    final map = <DateTime, List<NepRecord>>{};
+    for (final record in records) {
+      final key = _periodKey(record.createdAt, effective);
+      map.putIfAbsent(key, () => []).add(record);
+    }
+
+    final keys = map.keys.toList()..sort();
+    return keys
+        .map((key) => _toTimeSeriesPoint(key, map[key]!, effective))
+        .toList();
+  }
+
+  /// Construye un resumen completo para pantalla de gráficas y exportación.
+  AnalyticsSummary buildSummary(
+    List<NepRecord> records,
+    AnalyticsPeriod period,
+  ) {
+    return AnalyticsSummary(
+      totalRecords: totalRegistros(records),
+      totalNeps: totalNeps(records),
+      averageNeps: promedioNeps(records),
+      minNeps: minNeps(records),
+      maxNeps: maxNeps(records),
+      totalMts: totalMtsCalculados(records),
+      alertDistribution: distribucionPorEstado(records),
+      timeSeries: tendenciaPorPeriodo(records, period),
+      byTelar: topTelaresPorNeps(records, limit: 12),
+      byTurno: resumenPorTurno(records),
+      byOperario: resumenPorOperario(records),
+    );
+  }
+
+  List<GroupNepsSummary> _groupByField(
+    List<NepRecord> records,
+    String Function(NepRecord) field,
+  ) {
+    final map = <String, List<NepRecord>>{};
+    for (final record in records) {
+      final key = field(record).trim();
+      if (key.isEmpty) continue;
+      map.putIfAbsent(key, () => []).add(record);
+    }
+
+    final summaries = map.entries.map((entry) {
+      final items = entry.value;
+      final total = items.fold<double>(0, (s, r) => s + r.neps);
+      var critical = 0;
+      var warning = 0;
+      for (final item in items) {
+        switch (_alerts.getAlertLevel(item.neps)) {
+          case AlertLevel.normal:
+            break;
+          case AlertLevel.advertencia:
+            warning++;
+          case AlertLevel.critico:
+            critical++;
+        }
+      }
+      return GroupNepsSummary(
+        key: entry.key,
+        totalNeps: total,
+        recordCount: items.length,
+        averageNeps: items.isEmpty ? 0 : total / items.length,
+        criticalCount: critical,
+        warningCount: warning,
+      );
+    }).toList();
+
+    summaries.sort((a, b) => b.totalNeps.compareTo(a.totalNeps));
+    return summaries;
+  }
+
+  DateTime _periodKey(DateTime date, AnalyticsPeriod period) {
+    final day = DateTime(date.year, date.month, date.day);
+    return switch (period) {
+      AnalyticsPeriod.day || AnalyticsPeriod.custom => day,
+      AnalyticsPeriod.week => _weekStart(day),
+      AnalyticsPeriod.month => DateTime(day.year, day.month),
+      AnalyticsPeriod.year => DateTime(day.year),
+    };
+  }
+
+  DateTime _weekStart(DateTime day) =>
+      day.subtract(Duration(days: day.weekday - 1));
+
+  TimeSeriesPoint _toTimeSeriesPoint(
+    DateTime key,
+    List<NepRecord> items,
+    AnalyticsPeriod period,
+  ) {
+    final total = items.fold<double>(0, (s, r) => s + r.neps);
+    final mts = items.fold<double>(0, (s, r) => s + r.mtsCalculados);
+    return TimeSeriesPoint(
+      periodStart: key,
+      label: _periodLabel(key, period),
+      totalNeps: total,
+      recordCount: items.length,
+      averageNeps: items.isEmpty ? 0 : total / items.length,
+      totalMts: mts,
+    );
+  }
+
+  String _periodLabel(DateTime key, AnalyticsPeriod period) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return switch (period) {
+      AnalyticsPeriod.day ||
+      AnalyticsPeriod.custom =>
+        '${two(key.day)}/${two(key.month)}/${key.year}',
+      AnalyticsPeriod.week => 'Sem ${key.day}/${two(key.month)}/${key.year}',
+      AnalyticsPeriod.month => '${_monthName(key.month)} ${key.year}',
+      AnalyticsPeriod.year => key.year.toString(),
+    };
+  }
+
+  String _monthName(int month) {
+    const names = [
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
+    return names[month - 1];
   }
 }
 

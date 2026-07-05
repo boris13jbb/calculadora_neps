@@ -5,7 +5,8 @@ enum DateQuickRange {
   hoy('Hoy'),
   ayer('Ayer'),
   estaSemana('Esta semana'),
-  esteMes('Este mes');
+  esteMes('Este mes'),
+  esteAno('Este año');
 
   const DateQuickRange(this.label);
 

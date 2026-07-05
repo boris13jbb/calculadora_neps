@@ -8,11 +8,17 @@ import '../../features/records/records_screen.dart';
 import '../../features/reports/reports_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/users/users_screen.dart';
+import '../../features/analytics/analytics_screen.dart';
 import '../../models/app_user.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/app_state.dart';
+import '../../providers/auth_provider.dart';
 
 enum AppNavId {
   dashboard,
+  analytics,
   capture,
   records,
   alerts,
@@ -52,6 +58,14 @@ class AppNavigation {
       selectedIcon: Icons.home,
       permission: Permission.viewDashboard,
       screen: DashboardScreen(),
+    ),
+    AppNavItem(
+      id: AppNavId.analytics,
+      label: 'Gráficas',
+      icon: Icons.analytics_outlined,
+      selectedIcon: Icons.analytics,
+      permission: Permission.viewDashboard,
+      screen: AnalyticsScreen(),
     ),
     AppNavItem(
       id: AppNavId.capture,
@@ -139,5 +153,15 @@ class AppNavigation {
     if (index < 0) return 0;
     if (index >= length) return length - 1;
     return index;
+  }
+
+  /// Navega a una pantalla por id respetando permisos del usuario actual.
+  static void navigateIfAllowed(BuildContext context, AppNavId id) {
+    final auth = context.read<AuthProvider>();
+    final appState = context.read<AppState>();
+    final index = indexOf(auth.profile, id);
+    if (index != null) {
+      appState.setNavigationIndex(index);
+    }
   }
 }

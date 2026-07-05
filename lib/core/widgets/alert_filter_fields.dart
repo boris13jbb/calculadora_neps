@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../layout/responsive_layout.dart';
 import '../theme/app_theme.dart';
 import '../../models/alert_level.dart';
 import '../../models/nep_record.dart';
@@ -27,95 +28,126 @@ class ExtendedRecordFilterFields extends StatelessWidget {
     final operarios = RecordFilterHelper.uniqueOperarios(records);
     final lineas = RecordFilterHelper.uniqueLineas(records);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Divider(height: 20),
-        Text(
-          'Filtros de calidad y producción',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            fontSize: compact ? 11 : 12,
-            color: AppColors.textGreen,
-          ),
-        ),
-        SizedBox(height: compact ? 6 : 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final phone = isPhoneLayout(context);
+        final columns = phone || maxW < 560
+            ? 1
+            : maxW < 900
+                ? 2
+                : 4;
+        const spacing = 8.0;
+        final itemWidth =
+            columns == 1 ? maxW : (maxW - spacing * (columns - 1)) / columns;
+
+        Widget fieldBox(Widget child) {
+          return SizedBox(
+            width: columns == 1 ? double.infinity : itemWidth,
+            child: child,
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _AlertLevelDropdown(
-              value: filters.alertLevel,
-              onChanged: (v) {
-                filters.alertLevel = v;
+            const Divider(height: 20),
+            Text(
+              'Filtros de calidad y producción',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: compact ? 11 : 12,
+                color: AppColors.textGreen,
+              ),
+            ),
+            SizedBox(height: compact ? 6 : 10),
+            Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                fieldBox(
+                  _AlertLevelDropdown(
+                    value: filters.alertLevel,
+                    onChanged: (v) {
+                      filters.alertLevel = v;
+                      onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _StringDropdown(
+                    label: 'Turno',
+                    value: filters.turno,
+                    options: turnos,
+                    onChanged: (v) {
+                      filters.turno = v;
+                      onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _StringDropdown(
+                    label: 'Operario',
+                    value: filters.operario,
+                    options: operarios,
+                    onChanged: (v) {
+                      filters.operario = v;
+                      onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _StringDropdown(
+                    label: 'Línea',
+                    value: filters.lineaProduccion,
+                    options: lineas,
+                    onChanged: (v) {
+                      filters.lineaProduccion = v;
+                      onChanged();
+                    },
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: compact ? 6 : 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: DateQuickRange.values.map((range) {
+                final selected = filters.quickRange == range;
+                return FilterChip(
+                  label: Text(range.label, style: const TextStyle(fontSize: 11)),
+                  selected: selected,
+                  onSelected: (value) {
+                    filters.quickRange = value ? range : null;
+                    if (value) {
+                      filters.dateFrom = null;
+                      filters.dateTo = null;
+                    }
+                    onChanged();
+                  },
+                );
+              }).toList(),
+            ),
+            _ToggleRow(
+              label: 'Solo no revisados',
+              value: filters.soloNoRevisados,
+              onChanged: (value) {
+                filters.soloNoRevisados = value;
                 onChanged();
               },
             ),
-            _StringDropdown(
-              label: 'Turno',
-              value: filters.turno,
-              options: turnos,
-              onChanged: (v) {
-                filters.turno = v;
-                onChanged();
-              },
-            ),
-            _StringDropdown(
-              label: 'Operario',
-              value: filters.operario,
-              options: operarios,
-              onChanged: (v) {
-                filters.operario = v;
-                onChanged();
-              },
-            ),
-            _StringDropdown(
-              label: 'Línea',
-              value: filters.lineaProduccion,
-              options: lineas,
-              onChanged: (v) {
-                filters.lineaProduccion = v;
+            _ToggleRow(
+              label: 'Solo con acción correctiva',
+              value: filters.soloConAccionCorrectiva,
+              onChanged: (value) {
+                filters.soloConAccionCorrectiva = value;
                 onChanged();
               },
             ),
           ],
-        ),
-        SizedBox(height: compact ? 6 : 10),
-        Wrap(
-          spacing: 6,
-          children: DateQuickRange.values.map((range) {
-            final selected = filters.quickRange == range;
-            return FilterChip(
-              label: Text(range.label, style: const TextStyle(fontSize: 11)),
-              selected: selected,
-              onSelected: (value) {
-                filters.quickRange = value ? range : null;
-                if (value) {
-                  filters.dateFrom = null;
-                  filters.dateTo = null;
-                }
-                onChanged();
-              },
-            );
-          }).toList(),
-        ),
-        _ToggleRow(
-          label: 'Solo no revisados',
-          value: filters.soloNoRevisados,
-          onChanged: (value) {
-            filters.soloNoRevisados = value;
-            onChanged();
-          },
-        ),
-        _ToggleRow(
-          label: 'Solo con acción correctiva',
-          value: filters.soloConAccionCorrectiva,
-          onChanged: (value) {
-            filters.soloConAccionCorrectiva = value;
-            onChanged();
-          },
-        ),
-      ],
+        );
+      },
     );
   }
 }
@@ -128,20 +160,21 @@ class _AlertLevelDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 150,
-      child: DropdownButtonFormField<AlertLevel?>(
-        initialValue: value,
-        decoration: recordFilterDecoration('Estado alerta'),
-        items: [
-          const DropdownMenuItem<AlertLevel?>(
-              value: null, child: Text('Todos')),
-          ...AlertLevel.values.map(
-            (l) => DropdownMenuItem(value: l, child: Text(l.label)),
+    return DropdownButtonFormField<AlertLevel?>(
+      initialValue: value,
+      isExpanded: true,
+      isDense: true,
+      decoration: recordFilterDecoration('Estado alerta'),
+      items: [
+        const DropdownMenuItem<AlertLevel?>(value: null, child: Text('Todos')),
+        ...AlertLevel.values.map(
+          (l) => DropdownMenuItem(
+            value: l,
+            child: Text(l.label, overflow: TextOverflow.ellipsis),
           ),
-        ],
-        onChanged: onChanged,
-      ),
+        ),
+      ],
+      onChanged: onChanged,
     );
   }
 }
@@ -161,17 +194,24 @@ class _StringDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 140,
-      child: DropdownButtonFormField<String?>(
-        initialValue: value,
-        decoration: recordFilterDecoration(label),
-        items: [
-          DropdownMenuItem<String?>(value: null, child: Text('Todos — $label')),
-          ...options.map((o) => DropdownMenuItem(value: o, child: Text(o))),
-        ],
-        onChanged: onChanged,
-      ),
+    return DropdownButtonFormField<String?>(
+      initialValue: value,
+      isExpanded: true,
+      isDense: true,
+      decoration: recordFilterDecoration(label),
+      items: [
+        const DropdownMenuItem<String?>(
+          value: null,
+          child: Text('Todos', overflow: TextOverflow.ellipsis),
+        ),
+        ...options.map(
+          (o) => DropdownMenuItem(
+            value: o,
+            child: Text(o, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+      ],
+      onChanged: onChanged,
     );
   }
 }

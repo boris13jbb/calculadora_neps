@@ -391,134 +391,152 @@ class _RecordFiltersPanelState extends State<RecordFiltersPanel>
       );
     }
 
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        SizedBox(
-          width: 180,
-          child: _filterDropdown(
-            context: context,
-            label: 'Tela',
-            value: filters.tela,
-            options: telas,
-            onChanged: (value) {
-              filters.tela = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 180,
-          child: _filterDropdown(
-            context: context,
-            label: 'Lote de trama',
-            value: filters.loteTrama,
-            options: lotes,
-            onChanged: (value) {
-              filters.loteTrama = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 140,
-          child: _filterDropdown(
-            context: context,
-            label: 'Telar',
-            value: filters.telar,
-            options: telares,
-            onChanged: (value) {
-              filters.telar = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 120,
-          child: _numberField(
-            context: context,
-            label: 'Neps min',
-            controller: nepsMinController,
-            onChanged: (value) {
-              filters.nepsMin = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 120,
-          child: _numberField(
-            context: context,
-            label: 'Neps max',
-            controller: nepsMaxController,
-            onChanged: (value) {
-              filters.nepsMax = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 120,
-          child: _numberField(
-            context: context,
-            label: 'Mts min',
-            controller: mtsMinController,
-            onChanged: (value) {
-              filters.mtsMin = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 120,
-          child: _numberField(
-            context: context,
-            label: 'Mts max',
-            controller: mtsMaxController,
-            onChanged: (value) {
-              filters.mtsMax = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 170,
-          child: _dateField(
-            context: context,
-            label: 'Fecha desde',
-            value: filters.dateFrom,
-            onChanged: (value) {
-              filters.dateFrom = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 170,
-          child: _dateField(
-            context: context,
-            label: 'Fecha hasta',
-            value: filters.dateTo,
-            onChanged: (value) {
-              filters.dateTo = value;
-              widget.onChanged();
-            },
-          ),
-        ),
-        SizedBox(
-          width: 220,
-          child: _searchField(context: context, filters: filters),
-        ),
-        SizedBox(
-          width: double.infinity,
-          child: ExtendedRecordFilterFields(
-            records: widget.records,
-            filters: filters,
-            onChanged: widget.onChanged,
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        const spacing = 10.0;
+        final columns = maxW >= 1100
+            ? 4
+            : maxW >= 820
+                ? 3
+                : maxW >= 520
+                    ? 2
+                    : 1;
+        final itemWidth = columns == 1
+            ? maxW
+            : (maxW - spacing * (columns - 1)) / columns;
+
+        Widget fieldBox(Widget child) => SizedBox(
+              width: itemWidth,
+              child: child,
+            );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                fieldBox(
+                  _filterDropdown(
+                    context: context,
+                    label: 'Tela',
+                    value: filters.tela,
+                    options: telas,
+                    onChanged: (value) {
+                      filters.tela = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _filterDropdown(
+                    context: context,
+                    label: 'Lote de trama',
+                    value: filters.loteTrama,
+                    options: lotes,
+                    onChanged: (value) {
+                      filters.loteTrama = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _filterDropdown(
+                    context: context,
+                    label: 'Telar',
+                    value: filters.telar,
+                    options: telares,
+                    onChanged: (value) {
+                      filters.telar = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _numberField(
+                    context: context,
+                    label: 'Neps min',
+                    controller: nepsMinController,
+                    onChanged: (value) {
+                      filters.nepsMin = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _numberField(
+                    context: context,
+                    label: 'Neps max',
+                    controller: nepsMaxController,
+                    onChanged: (value) {
+                      filters.nepsMax = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _numberField(
+                    context: context,
+                    label: 'Mts min',
+                    controller: mtsMinController,
+                    onChanged: (value) {
+                      filters.mtsMin = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _numberField(
+                    context: context,
+                    label: 'Mts max',
+                    controller: mtsMaxController,
+                    onChanged: (value) {
+                      filters.mtsMax = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _dateField(
+                    context: context,
+                    label: 'Fecha desde',
+                    value: filters.dateFrom,
+                    onChanged: (value) {
+                      filters.dateFrom = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                fieldBox(
+                  _dateField(
+                    context: context,
+                    label: 'Fecha hasta',
+                    value: filters.dateTo,
+                    onChanged: (value) {
+                      filters.dateTo = value;
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                if (columns >= 2)
+                  SizedBox(
+                    width: columns >= 3 ? itemWidth * 2 + spacing : maxW,
+                    child: _searchField(context: context, filters: filters),
+                  )
+                else
+                  fieldBox(_searchField(context: context, filters: filters)),
+              ],
+            ),
+            ExtendedRecordFilterFields(
+              records: widget.records,
+              filters: filters,
+              onChanged: widget.onChanged,
+            ),
+          ],
+        );
+      },
     );
   }
 

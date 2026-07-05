@@ -95,6 +95,10 @@ class RecordFilterHelper {
           DateTime(today.year, today.month, 1),
           DateTime(today.year, today.month, today.day, 23, 59, 59),
         ),
+      DateQuickRange.esteAno => (
+          DateTime(today.year, 1, 1),
+          DateTime(today.year, today.month, today.day, 23, 59, 59),
+        ),
     };
   }
 

@@ -12,7 +12,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  Future<AppState> createReadyState({AppUserRole role = AppUserRole.operario}) async {
+  Future<AppState> createReadyState(
+      {AppUserRole role = AppUserRole.operario}) async {
     final state = AppState();
     state.applyAuthProfile(
       AppUser(

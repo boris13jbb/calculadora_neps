@@ -20,6 +20,7 @@ Digitalizar el control de neps en telares VICUNHA: capturar mediciones, clasific
 | **Registros** | Tabla con filtros, importación CSV/Excel con vista previa, acciones correctivas |
 | **Alertas** | Clasificación Normal / Advertencia / Crítico con recomendaciones |
 | **Dashboard** | KPIs y gráficas de tendencia (`fl_chart`) |
+| **Gráficas** | Análisis gráfico completo por día/semana/mes/año con exportación |
 | **Informes** | Guardado y carga de informes con filtros aplicados |
 | **Exportar** | CSV, Excel (.xlsx) y PDF con resumen ejecutivo |
 | **Telas** | Catálogo de telas con importación/exportación |
@@ -106,6 +107,43 @@ flutter run -d windows         # Windows desktop
 flutter build apk --release    # Android APK
 flutter build web --release    # Web estática (build/web)
 ```
+
+---
+
+## Gráficas de informes
+
+La aplicación incluye un apartado **Gráficas** en el menú lateral (visible para roles con acceso al dashboard: supervisor, admin, gerencia, super_admin).
+
+Permite visualizar resultados de informes agrupados por **día**, **semana**, **mes**, **año** o **rango personalizado de fechas**, con filtros adicionales por telar, tela, turno, operario, lote/trama y tipo de alerta.
+
+### Funciones disponibles
+
+- Gráfica de tendencia de neps (línea)
+- Comparación por periodo (barras)
+- Distribución de alertas (circular)
+- Comparación por telar, turno y operario
+- KPIs: total registros, promedio/mín/máx neps, mts calculados, críticos y % normales
+- Exportación de resultados a **PDF** (con imagen de gráficas), **Excel**, **CSV** y **PNG**
+- Persistencia del último periodo y filtros seleccionados entre sesiones
+- Acceso rápido desde el panel principal: **Ver gráficas completas**
+- Atajos URL: `/?pantalla=graficas` (respeta permisos por rol)
+
+### Exportaciones
+
+| Formato | Contenido |
+|---------|-----------|
+| **PDF** | Título, fecha, filtros, KPIs, **imagen de visualizaciones**, tabla de tendencia, distribución de alertas |
+| **Excel** | Hojas: Resumen, Datos agrupados, Por telar/turno/operario, Registros base |
+| **CSV** | Resumen KPI + series agrupadas + registros base |
+| **PNG** | Captura de la sección completa de visualizaciones (Web, Windows, Android) |
+
+### Limitaciones conocidas
+
+- Los datos provienen de los registros sincronizados en Firestore/local; no hay consulta analítica separada en servidor.
+- El rol **operario** no ve el apartado Gráficas (solo captura y registros).
+- La exportación requiere permiso `exportReports`.
+- La captura PNG/PDF de gráficas puede fallar si las visualizaciones aún no terminaron de renderizarse; reintente tras un segundo.
+- En iOS la captura PNG depende del sheet nativo de compartir (`share_plus`).
 
 ---
 

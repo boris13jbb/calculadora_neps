@@ -75,7 +75,8 @@ class DashboardChartsSection extends StatelessWidget {
         final twoColumns = width >= 680;
         final chartHeight = width < 480 ? 210.0 : (twoColumns ? 280.0 : 250.0);
 
-        final topTelars = analyticsService.topTelaresPorNeps(records, limit: 10);
+        final topTelars =
+            analyticsService.topTelaresPorNeps(records, limit: 10);
         final topTelas = analyticsService.topTelasPorNeps(records, limit: 8);
         final topLotes = analyticsService.topLotesPorNeps(records, limit: 8);
         final trend = analyticsService.tendenciaDiaria(records);
@@ -91,7 +92,10 @@ class DashboardChartsSection extends StatelessWidget {
           if (!twoColumns || right == null) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [left, if (right != null) ...[const SizedBox(height: 12), right]],
+              children: [
+                left,
+                if (right != null) ...[const SizedBox(height: 12), right]
+              ],
             );
           }
           return Row(
@@ -319,7 +323,8 @@ class _VerticalBarChart extends StatelessWidget {
 
     final maxY = values.fold<double>(0, (m, v) => v > m ? v : m) * 1.2;
     final safeMax = maxY <= 0 ? 1.0 : maxY;
-    final barWidth = labels.length <= 5 ? 28.0 : (labels.length <= 8 ? 20.0 : 14.0);
+    final barWidth =
+        labels.length <= 5 ? 28.0 : (labels.length <= 8 ? 20.0 : 14.0);
 
     return BarChart(
       BarChartData(
@@ -371,8 +376,10 @@ class _VerticalBarChart extends StatelessWidget {
               ),
             ),
           ),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         gridData: FlGridData(
           show: true,
@@ -392,7 +399,8 @@ class _VerticalBarChart extends StatelessWidget {
               BarChartRodData(
                 toY: values[i],
                 width: barWidth,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(6)),
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
@@ -504,9 +512,10 @@ class _StackedAlertBarChart extends StatelessWidget {
     if (summaries.isEmpty) return _emptyChart();
 
     final maxY = summaries.fold<double>(0, (m, s) {
-      final total = s.recordCount.toDouble();
-      return total > m ? total : m;
-    }) * 1.2;
+          final total = s.recordCount.toDouble();
+          return total > m ? total : m;
+        }) *
+        1.2;
     final safeMax = maxY <= 0 ? 1.0 : maxY;
 
     return BarChart(
@@ -524,7 +533,8 @@ class _StackedAlertBarChart extends StatelessWidget {
                 if (i < 0 || i >= summaries.length) return const SizedBox();
                 return Text(
                   summaries[i].telar,
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                      fontSize: 10, fontWeight: FontWeight.w600),
                 );
               },
             ),
@@ -539,14 +549,17 @@ class _StackedAlertBarChart extends StatelessWidget {
               ),
             ),
           ),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
           horizontalInterval: safeMax / 4,
-          getDrawingHorizontalLine: (_) => FlLine(color: AppColors.border, dashArray: [4, 4]),
+          getDrawingHorizontalLine: (_) =>
+              FlLine(color: AppColors.border, dashArray: [4, 4]),
         ),
         borderData: FlBorderData(show: false),
         barGroups: List.generate(summaries.length, (i) {
@@ -559,10 +572,12 @@ class _StackedAlertBarChart extends StatelessWidget {
               BarChartRodData(
                 toY: s.recordCount.toDouble(),
                 width: 22,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(4)),
                 rodStackItems: [
                   if (normal > 0)
-                    BarChartRodStackItem(0, normal.toDouble(), AppColors.statusNormal),
+                    BarChartRodStackItem(
+                        0, normal.toDouble(), AppColors.statusNormal),
                   if (s.warningCount > 0)
                     BarChartRodStackItem(
                       normal.toDouble(),
@@ -645,9 +660,12 @@ class _CriticalGauge extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: AppColors.muted),
               ),
               const SizedBox(height: 12),
-              _LegendDot(color: AppColors.statusNormal, label: 'Objetivo < 25%'),
-              _LegendDot(color: AppColors.statusWarning, label: 'Atención 25–50%'),
-              _LegendDot(color: AppColors.statusCritical, label: 'Riesgo > 50%'),
+              _LegendDot(
+                  color: AppColors.statusNormal, label: 'Objetivo < 25%'),
+              _LegendDot(
+                  color: AppColors.statusWarning, label: 'Atención 25–50%'),
+              _LegendDot(
+                  color: AppColors.statusCritical, label: 'Riesgo > 50%'),
             ],
           ),
         ),
@@ -675,7 +693,8 @@ class _LegendDot extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(label, style: const TextStyle(fontSize: 10, color: AppColors.muted)),
+            child: Text(label,
+                style: const TextStyle(fontSize: 10, color: AppColors.muted)),
           ),
         ],
       ),
@@ -707,7 +726,9 @@ class _DonutChart extends StatelessWidget {
                     PieChartSectionData(
                       value: distribution.normal.toDouble(),
                       color: AppColors.statusNormal,
-                      title: distribution.normal > 0 ? '${distribution.normal}' : '',
+                      title: distribution.normal > 0
+                          ? '${distribution.normal}'
+                          : '',
                       radius: 52,
                       titleStyle: const TextStyle(
                         fontSize: 11,
@@ -731,7 +752,9 @@ class _DonutChart extends StatelessWidget {
                     PieChartSectionData(
                       value: distribution.critico.toDouble(),
                       color: AppColors.statusCritical,
-                      title: distribution.critico > 0 ? '${distribution.critico}' : '',
+                      title: distribution.critico > 0
+                          ? '${distribution.critico}'
+                          : '',
                       radius: 52,
                       titleStyle: const TextStyle(
                         fontSize: 11,
@@ -915,14 +938,17 @@ class _LineChartWidget extends StatelessWidget {
               ),
             ),
           ),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
           horizontalInterval: safeMax / 4,
-          getDrawingHorizontalLine: (_) => FlLine(color: AppColors.border, dashArray: [4, 4]),
+          getDrawingHorizontalLine: (_) =>
+              FlLine(color: AppColors.border, dashArray: [4, 4]),
         ),
         borderData: FlBorderData(show: false),
         lineBarsData: [
