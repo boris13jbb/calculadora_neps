@@ -14,12 +14,15 @@ jobs:
   deploy:
     name: Build Web y deploy Firebase
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Verificar secret de Firebase
         run: |
           if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
             echo "::error::Falta el secret FIREBASE_SERVICE_ACCOUNT en GitHub (Settings > Secrets and variables > Actions)."
+            echo "Use el JSON de service account del proyecto vicunha-calculadora-neps."
             exit 1
           fi
 
@@ -29,6 +32,7 @@ jobs:
       - name: Configurar Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.44.4"
           channel: stable
           cache: true
 
@@ -39,17 +43,19 @@ jobs:
         run: flutter build web --release
 
       - name: Autenticar en Firebase
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: |
-          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "${RUNNER_TEMP}/firebase-sa.json"
-          echo "GOOGLE_APPLICATION_CREDENTIALS=${RUNNER_TEMP}/firebase-sa.json" >> "$GITHUB_ENV"
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      - name: Desplegar Hosting y reglas Firestore
+      - name: Instalar Firebase CLI
+        run: npm install -g firebase-tools@15.22.2
+
+      - name: Desplegar Hosting (Web)
+        id: deploy_hosting
         run: |
           set +e
-          OUTPUT=$(npx firebase-tools@15.22.2 deploy \
-            --only firestore:rules,hosting \
+          OUTPUT=$(firebase deploy \
+            --only hosting \
             --project vicunha-calculadora-neps \
             --non-interactive 2>&1)
           CODE=$?
@@ -59,6 +65,33 @@ jobs:
               echo "Hosting ya tenia esta version activa; despliegue considerado exitoso."
               exit 0
             fi
+            echo "::error::Fallo el despliegue de Hosting."
+            exit "$CODE"
+          fi
+
+      - name: Desplegar reglas Firestore
+        id: deploy_rules
+        continue-on-error: true
+        run: |
+          set +e
+          OUTPUT=$(firebase deploy \
+            --only firestore:rules \
+            --project vicunha-calculadora-neps \
+            --non-interactive 2>&1)
+          CODE=$?
+          echo "$OUTPUT"
+          if [ "$CODE" -ne 0 ]; then
+            if echo "$OUTPUT" | grep -q "Permission denied to get service"; then
+              echo "::warning::La service account no tiene rol Service Usage Consumer."
+              echo "Agregue roles/serviceusage.serviceUsageConsumer a firebase-adminsdk-fbsvc@vicunha-calculadora-neps.iam.gserviceaccount.com"
+              echo "Ver docs/CI_FIREBASE_DEPLOY.md"
+              exit 0
+            fi
+            if echo "$OUTPUT" | grep -q "already up to date"; then
+              echo "Reglas Firestore sin cambios."
+              exit 0
+            fi
+            echo "::warning::No se pudieron publicar reglas Firestore desde CI."
             exit "$CODE"
           fi
 
@@ -68,4 +101,6 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Web:** https://vicunha-calculadora-neps.web.app" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Proyecto:** vicunha-calculadora-neps" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Commit:** ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit:** \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Hosting:** ${{ steps.deploy_hosting.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Firestore rules:** ${{ steps.deploy_rules.outcome }}" >> "$GITHUB_STEP_SUMMARY"

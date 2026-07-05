@@ -17,6 +17,8 @@ deploy-functions-log.txt
 **/serviceAccount*.json
 **/service-account*.json
 **/firebase-adminsdk*.json
+*firebase-adminsdk*.json
+*-firebase-adminsdk-*.json
 **/credentials.json
 **/secrets/
 .atom/
