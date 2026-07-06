@@ -6,9 +6,9 @@ import '../../core/navigation/app_navigation.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/capture_session_actions.dart';
-import '../../core/widgets/dashboard_charts.dart';
 import '../../core/widgets/formula_box.dart';
 import '../../core/widgets/kpi_card.dart';
+import '../../core/widgets/quality_charts.dart';
 import '../../core/widgets/section_header.dart';
 import '../../providers/app_state.dart';
 import '../../services/alert_service.dart';
@@ -66,29 +66,41 @@ class DashboardScreen extends StatelessWidget {
             SizedBox(height: spacing + 8),
             AppSectionHeader(
               icon: Icons.bar_chart_outlined,
-              title: 'Gráficas de análisis',
-              subtitle: phone
-                  ? '8 visualizaciones · desliza para ver todas'
-                  : 'Telares, telas, lotes, tendencias y criticidad',
-              trailing: TextButton.icon(
-                onPressed: () => AppNavigation.navigateIfAllowed(
-                    context, AppNavId.analytics),
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: Text(
-                  phone ? 'Ver más' : 'Ver gráficas completas',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
+              title: 'Análisis gráfico',
+              subtitle:
+                  phone ? null : 'Resumen rápido · el detalle está en Gráficas',
             ),
             SizedBox(height: phone ? 10 : 14),
-            DashboardChartsSection(
+            QualityChartsSection(
               records: records,
               formatDecimal: appState.formatDecimal,
+              include: QualityChartsCatalog.dashboardSummary,
               compact: phone,
-              onGoToCapture: () =>
-                  AppNavigation.navigateIfAllowed(context, AppNavId.capture),
+              onGoToCapture: () => goToNewCaptureSession(context, appState),
               onGoToRecords: () =>
                   AppNavigation.navigateIfAllowed(context, AppNavId.records),
+            ),
+            SizedBox(height: phone ? 12 : 16),
+            SizedBox(
+              width: phone ? double.infinity : null,
+              child: FilledButton.icon(
+                onPressed: () => AppNavigation.navigateIfAllowed(
+                    context, AppNavId.analytics),
+                icon: const Icon(Icons.open_in_new, size: 18),
+                label: Text(
+                  phone ? 'Ver gráficas completas' : 'Ver análisis completo',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: phone ? 14 : 20,
+                    vertical: phone ? 12 : 14,
+                  ),
+                ),
+              ),
             ),
             SizedBox(height: spacing + 8),
             const AppSectionHeader(

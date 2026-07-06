@@ -3,17 +3,15 @@ import 'package:provider/provider.dart';
 
 import '../../core/layout/responsive_layout.dart';
 import '../../core/navigation/app_navigation.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_loading_view.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/formula_box.dart';
+import '../../core/widgets/quality_charts.dart';
 import '../../core/widgets/section_header.dart';
 import '../../core/widgets/status_banner.dart';
 import '../../models/analytics_period.dart';
 import '../../models/analytics_summary.dart';
-import '../../models/alert_level.dart';
-import '../../models/time_series_point.dart';
 import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
 import '../../providers/app_state.dart';
@@ -21,9 +19,11 @@ import '../../services/analytics_preferences_service.dart';
 import '../../services/analytics_service.dart';
 import '../../utils/analytics_filter_description.dart';
 import '../../utils/record_filter_helper.dart';
+import 'models/chart_config.dart';
 import 'widgets/analytics_charts.dart';
 import 'widgets/analytics_export_actions.dart';
 import 'widgets/analytics_filter_panel.dart';
+import 'widgets/custom_chart_builder.dart';
 
 /// Pantalla de gráficas e informes analíticos con filtros temporales.
 class AnalyticsScreen extends StatefulWidget {
@@ -41,6 +41,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final GlobalKey _chartsCaptureKey = GlobalKey();
   final AnalyticsPreferencesService _prefsService = analyticsPreferencesService;
   bool _prefsLoaded = false;
+  ChartConfig _chartConfig = const ChartConfig();
 
   @override
   void initState() {
@@ -57,6 +58,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     setState(() {
       _period = snapshot.period;
       _applyFilters(snapshot.filters);
+      if (snapshot.chartConfig != null) {
+        _chartConfig = snapshot.chartConfig!;
+      }
       if (_period == AnalyticsPeriod.custom) {
         ensureAnalyticsCustomDateDefaults(_filters);
       }
@@ -87,7 +91,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
   Future<void> _persistPreferences() async {
     if (!_prefsLoaded) return;
-    await _prefsService.save(period: _period, filters: _filters);
+    await _prefsService.save(
+      period: _period,
+      filters: _filters,
+      chartConfig: _chartConfig,
+    );
   }
 
   void _onPeriodChanged(AnalyticsPeriod period) {
@@ -131,7 +139,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final summary = analyticsService.buildSummary(records, _period);
 
     return AppPage(
-      title: 'Gráficas',
+      title: 'Análisis gráfico',
       subtitle:
           phone ? null : 'Visualización de informes por día, semana, mes y año',
       breadcrumb: const ['Inicio', 'Gráficas'],
@@ -254,7 +262,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             SizedBox(height: spacing + 4),
             AppSectionHeader(
               icon: Icons.show_chart,
-              title: 'Visualizaciones',
+              title: 'Catálogo de gráficas',
               subtitle: AnalyticsFilterDescription.describe(
                 period: _period,
                 filters: _filters,
@@ -263,11 +271,30 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             SizedBox(height: phone ? 10 : 14),
             RepaintBoundary(
               key: _chartsCaptureKey,
-              child: _ChartsGrid(
-                phone: phone,
-                summary: summary,
+              child: QualityChartsSection(
+                records: records,
                 formatDecimal: appState.formatDecimal,
+                include: QualityChartsCatalog.full,
+                compact: phone,
               ),
+            ),
+            SizedBox(height: spacing + 4),
+            const AppSectionHeader(
+              icon: Icons.tune_outlined,
+              title: 'Constructor de gráfica',
+              subtitle: 'Combine métrica, agrupación y tipo visual',
+            ),
+            SizedBox(height: phone ? 10 : 14),
+            CustomChartBuilder(
+              records: records,
+              formatDecimal: appState.formatDecimal,
+              period: _period,
+              compact: phone,
+              initialConfig: _chartConfig,
+              onConfigChanged: (config) {
+                _chartConfig = config;
+                _persistPreferences();
+              },
             ),
             SizedBox(height: spacing + 4),
             const AppSectionHeader(
@@ -290,109 +317,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ],
         ],
       ),
-    );
-  }
-}
-
-class _ChartsGrid extends StatelessWidget {
-  const _ChartsGrid({
-    required this.phone,
-    required this.summary,
-    required this.formatDecimal,
-  });
-
-  final bool phone;
-  final AnalyticsSummary summary;
-  final String Function(double) formatDecimal;
-
-  @override
-  Widget build(BuildContext context) {
-    final chartHeight = phone ? 220.0 : 260.0;
-
-    final charts = [
-      AnalyticsLineChart(
-        points: summary.timeSeries,
-        formatDecimal: formatDecimal,
-        height: chartHeight,
-      ),
-      AnalyticsBarChart(
-        title: 'Comparación por periodo (total neps)',
-        items: summary.timeSeries,
-        labelFor: (item) => (item as TimeSeriesPoint).label,
-        valueFor: (item) => (item as TimeSeriesPoint).totalNeps,
-        height: chartHeight,
-        barColor: AppColors.primaryBlue,
-      ),
-      AnalyticsAlertPieChart(
-        distribution: summary.alertDistribution,
-        height: chartHeight,
-      ),
-      AnalyticsBarChart(
-        title: 'Promedio neps por telar',
-        items: summary.byTelar,
-        labelFor: (item) => 'T${(item as GroupNepsSummary).key}',
-        valueFor: (item) => (item as GroupNepsSummary).averageNeps,
-        height: chartHeight,
-        barColor: AppColors.primaryGreen,
-        emptyMessage: 'Sin telares en el filtro.',
-      ),
-      if (summary.byTurno.isNotEmpty)
-        AnalyticsBarChart(
-          title: 'Total neps por turno',
-          items: summary.byTurno,
-          labelFor: (item) => (item as GroupNepsSummary).key,
-          valueFor: (item) => (item as GroupNepsSummary).totalNeps,
-          height: chartHeight,
-          barColor: AppColors.accentDark,
-        ),
-      if (summary.byOperario.isNotEmpty)
-        AnalyticsBarChart(
-          title: 'Total neps por operario',
-          items: summary.byOperario.take(8).toList(),
-          labelFor: (item) => (item as GroupNepsSummary).key,
-          valueFor: (item) => (item as GroupNepsSummary).totalNeps,
-          height: chartHeight,
-          barColor: AppColors.primaryBlue,
-        ),
-    ];
-
-    if (phone) {
-      return Column(
-        children: [
-          for (var i = 0; i < charts.length; i++) ...[
-            if (i > 0) const SizedBox(height: 12),
-            charts[i],
-          ],
-        ],
-      );
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final twoCols = constraints.maxWidth >= 720;
-        if (!twoCols) {
-          return Column(
-            children: [
-              for (var i = 0; i < charts.length; i++) ...[
-                if (i > 0) const SizedBox(height: 12),
-                charts[i],
-              ],
-            ],
-          );
-        }
-
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final chart in charts)
-              SizedBox(
-                width: (constraints.maxWidth - 12) / 2,
-                child: chart,
-              ),
-          ],
-        );
-      },
     );
   }
 }

@@ -60,44 +60,64 @@ class AnalyticsExportActions extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _ExportButton(
-          compact: compact,
-          icon: Icons.picture_as_pdf_outlined,
-          label: 'Exportar PDF',
-          onPressed:
-              isExporting ? null : () => _runExport(context, _ExportKind.pdf),
-        ),
-        _ExportButton(
-          compact: compact,
-          icon: Icons.table_view_outlined,
-          label: 'Exportar Excel',
-          onPressed:
-              isExporting ? null : () => _runExport(context, _ExportKind.excel),
-        ),
-        _ExportButton(
-          compact: compact,
-          icon: Icons.description_outlined,
-          label: 'Exportar CSV',
-          onPressed:
-              isExporting ? null : () => _runExport(context, _ExportKind.csv),
-        ),
-        _ExportButton(
-          compact: compact,
-          icon: Icons.image_outlined,
-          label: 'Descargar gráfico',
-          filled: false,
-          onPressed: isExporting || chartsCaptureKey == null
-              ? null
-              : () => _runExport(context, _ExportKind.png),
-          tooltip: chartsCaptureKey == null
-              ? 'Las gráficas aún no están listas para capturar.'
-              : 'Guarda la sección de visualizaciones como imagen PNG.',
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 520;
+        final buttons = [
+          _ExportButton(
+            compact: compact,
+            icon: Icons.picture_as_pdf_outlined,
+            label: 'Exportar PDF',
+            onPressed:
+                isExporting ? null : () => _runExport(context, _ExportKind.pdf),
+          ),
+          _ExportButton(
+            compact: compact,
+            icon: Icons.table_view_outlined,
+            label: 'Exportar Excel',
+            onPressed: isExporting
+                ? null
+                : () => _runExport(context, _ExportKind.excel),
+          ),
+          _ExportButton(
+            compact: compact,
+            icon: Icons.description_outlined,
+            label: 'Exportar CSV',
+            onPressed:
+                isExporting ? null : () => _runExport(context, _ExportKind.csv),
+          ),
+          _ExportButton(
+            compact: compact,
+            icon: Icons.image_outlined,
+            label: 'Descargar gráfico',
+            filled: false,
+            onPressed: isExporting || chartsCaptureKey == null
+                ? null
+                : () => _runExport(context, _ExportKind.png),
+            tooltip: chartsCaptureKey == null
+                ? 'Las gráficas aún no están listas para capturar.'
+                : 'Guarda la sección de visualizaciones como imagen PNG.',
+          ),
+        ];
+
+        if (narrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < buttons.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                buttons[i],
+              ],
+            ],
+          );
+        }
+
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: buttons,
+        );
+      },
     );
   }
 
@@ -207,11 +227,11 @@ class _ExportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final labelStyle = TextStyle(fontSize: compact ? 12 : 14);
+
     final button = filled
-        ? FilledButton.icon(
+        ? FilledButton(
             onPressed: onPressed,
-            icon: Icon(icon, size: compact ? 16 : 18),
-            label: Text(label),
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.primaryBlue,
               foregroundColor: Colors.white,
@@ -220,11 +240,16 @@ class _ExportButton extends StatelessWidget {
                 vertical: compact ? 10 : 12,
               ),
             ),
+            child: _ExportButtonContent(
+              icon: icon,
+              label: label,
+              compact: compact,
+              labelStyle: labelStyle,
+              foreground: Colors.white,
+            ),
           )
-        : OutlinedButton.icon(
+        : OutlinedButton(
             onPressed: onPressed,
-            icon: Icon(icon, size: compact ? 16 : 18),
-            label: Text(label),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.muted,
               padding: EdgeInsets.symmetric(
@@ -232,11 +257,54 @@ class _ExportButton extends StatelessWidget {
                 vertical: compact ? 10 : 12,
               ),
             ),
+            child: _ExportButtonContent(
+              icon: icon,
+              label: label,
+              compact: compact,
+              labelStyle: labelStyle,
+              foreground: AppColors.muted,
+            ),
           );
 
     if (tooltip != null) {
       return Tooltip(message: tooltip!, child: button);
     }
     return button;
+  }
+}
+
+class _ExportButtonContent extends StatelessWidget {
+  const _ExportButtonContent({
+    required this.icon,
+    required this.label,
+    required this.compact,
+    required this.labelStyle,
+    required this.foreground,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool compact;
+  final TextStyle labelStyle;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.max,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: compact ? 16 : 18, color: foreground),
+        SizedBox(width: compact ? 6 : 8),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: labelStyle.copyWith(color: foreground),
+          ),
+        ),
+      ],
+    );
   }
 }

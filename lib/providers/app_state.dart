@@ -26,6 +26,7 @@ import '../services/alert_service.dart';
 import '../services/cloud_sync_coordinator.dart';
 import '../services/cloud_sync_port.dart';
 import '../services/cloud_sync_service.dart';
+import '../utils/firebase_session_helper.dart';
 import '../services/fabric_catalog_service.dart';
 import '../services/import_template_service.dart';
 import '../services/lote_trama_catalog_service.dart';
@@ -189,6 +190,21 @@ class AppState extends ChangeNotifier {
     _authUsername =
         user.username.isNotEmpty ? user.username : user.effectiveDisplayName;
     _authAppRole = user.role;
+    notifyListeners();
+  }
+
+  /// Cierra suscripciones y estado de nube al cerrar sesión.
+  void resetCloudSession() {
+    cloudSyncCoordinator?.dispose();
+    final service = cloudSyncService;
+    if (service is CloudSyncService) {
+      service.resetSession();
+    }
+    cloudSyncEnabled = false;
+    cloudSyncError = null;
+    _authUid = null;
+    _authUsername = null;
+    _authAppRole = null;
     notifyListeners();
   }
 
@@ -360,15 +376,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (cloudSyncService != null) {
-      unawaited(_connectCloudInBackground());
+      unawaited(_connectCloudWhenAuthenticated());
     }
+  }
+
+  Future<void> _connectCloudWhenAuthenticated() async {
+    final hasSession = await waitForFirebaseSession();
+    if (!hasSession) return;
+    await _connectCloudInBackground();
   }
 
   Future<void> reloadData() => loadData();
 
   Future<List<SavedReport>> refreshReports() async {
     final cloud = cloudSyncService;
-    if (cloud != null) {
+    if (cloud != null && isFirebaseSessionActive) {
       try {
         await cloud.bootstrap();
         cloudSyncEnabled = true;
@@ -670,6 +692,10 @@ class AppState extends ChangeNotifier {
 
   void _markCloudUnavailable(Object error, StackTrace stackTrace) {
     cloudSyncEnabled = false;
+    if (isCloudAuthSkipError(error)) {
+      cloudSyncError = null;
+      return;
+    }
     cloudSyncError = ErrorHandler.userMessage(error);
     ErrorHandler.log(error, stackTrace, 'cloudSync');
     notifyListeners();
@@ -690,6 +716,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> reconnectCloudIfNeeded() async {
     if (cloudSyncService == null || cloudSyncEnabled) return;
+    if (!isFirebaseSessionActive) return;
 
     try {
       await _connectCloudInBackground();

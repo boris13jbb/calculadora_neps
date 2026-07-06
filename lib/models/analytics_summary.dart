@@ -39,4 +39,18 @@ class AnalyticsSummary {
 
   double get criticalPercentage =>
       alertDistribution.percentage(AlertLevel.critico);
+
+  /// Promedio simple de los promedios por telar (un telar = un valor).
+  double? get averageNepsPerTelar {
+    if (byTelar.isEmpty) return null;
+    final sum = byTelar.fold<double>(0, (s, g) => s + g.averageNeps);
+    return sum / byTelar.length;
+  }
+
+  /// Promedio simple de los promedios por turno.
+  double? get averageNepsPerTurno {
+    if (byTurno.isEmpty) return null;
+    final sum = byTurno.fold<double>(0, (s, g) => s + g.averageNeps);
+    return sum / byTurno.length;
+  }
 }

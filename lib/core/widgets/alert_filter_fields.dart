@@ -116,7 +116,8 @@ class ExtendedRecordFilterFields extends StatelessWidget {
               children: DateQuickRange.values.map((range) {
                 final selected = filters.quickRange == range;
                 return FilterChip(
-                  label: Text(range.label, style: const TextStyle(fontSize: 11)),
+                  label:
+                      Text(range.label, style: const TextStyle(fontSize: 11)),
                   selected: selected,
                   onSelected: (value) {
                     filters.quickRange = value ? range : null;

@@ -11,6 +11,7 @@ import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
 import '../models/record_filters.dart';
 import '../models/saved_report.dart';
+import '../utils/firebase_session_helper.dart';
 import 'cloud_sync_port.dart';
 import 'report_export_service.dart';
 
@@ -31,7 +32,7 @@ class ReportStorageService {
   Future<List<SavedReport>> loadReports() async {
     final local = await _loadReportsLocally();
     final cloudSync = _cloudSync;
-    if (cloudSync == null) return local;
+    if (cloudSync == null || !isFirebaseSessionActive) return local;
 
     try {
       await cloudSync.bootstrap();
@@ -41,7 +42,9 @@ class ReportStorageService {
       await _persistReportsLocally(merged);
       return merged;
     } catch (error, stackTrace) {
-      ErrorHandler.log(error, stackTrace, 'loadReportsFirebase');
+      if (!isCloudAuthSkipError(error)) {
+        ErrorHandler.log(error, stackTrace, 'loadReportsFirebase');
+      }
       if (local.isEmpty) rethrow;
     }
 

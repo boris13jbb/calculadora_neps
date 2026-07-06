@@ -402,9 +402,8 @@ class _RecordFiltersPanelState extends State<RecordFiltersPanel>
                 : maxW >= 520
                     ? 2
                     : 1;
-        final itemWidth = columns == 1
-            ? maxW
-            : (maxW - spacing * (columns - 1)) / columns;
+        final itemWidth =
+            columns == 1 ? maxW : (maxW - spacing * (columns - 1)) / columns;
 
         Widget fieldBox(Widget child) => SizedBox(
               width: itemWidth,

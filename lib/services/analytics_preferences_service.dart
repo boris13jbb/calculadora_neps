@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/alert_level.dart';
 import '../models/analytics_period.dart';
 import '../models/record_filters.dart';
+import '../features/analytics/models/chart_config.dart';
 
 /// Persiste periodo y filtros de la pantalla Gráficas entre sesiones.
 class AnalyticsPreferencesService {
@@ -21,11 +22,13 @@ class AnalyticsPreferencesService {
   Future<void> save({
     required AnalyticsPeriod period,
     required RecordFilters filters,
+    ChartConfig? chartConfig,
   }) async {
     final prefs = await _ensurePrefs();
     final payload = jsonEncode({
       'period': period.name,
       'filters': _filtersToMap(filters),
+      if (chartConfig != null) 'chartConfig': chartConfig.toJson(),
     });
     await prefs.setString(storageKey, payload);
   }
@@ -50,9 +53,16 @@ class AnalyticsPreferencesService {
       }
       if (period == null) return null;
 
+      ChartConfig? chartConfig;
+      final chartMap = map['chartConfig'];
+      if (chartMap is Map<String, dynamic>) {
+        chartConfig = ChartConfig.fromJson(chartMap);
+      }
+
       return AnalyticsPreferencesSnapshot(
         period: period,
         filters: _filtersFromMap(filtersMap),
+        chartConfig: chartConfig,
       );
     } catch (_) {
       return null;
@@ -134,10 +144,12 @@ class AnalyticsPreferencesSnapshot {
   const AnalyticsPreferencesSnapshot({
     required this.period,
     required this.filters,
+    this.chartConfig,
   });
 
   final AnalyticsPeriod period;
   final RecordFilters filters;
+  final ChartConfig? chartConfig;
 }
 
 final AnalyticsPreferencesService analyticsPreferencesService =

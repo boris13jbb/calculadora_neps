@@ -80,6 +80,19 @@ void main() {
       expect(summary.maxNeps, 50);
       expect(summary.alertDistribution.total, 5);
       expect(summary.byTurno, isNotEmpty);
+      expect(summary.warningCount, greaterThanOrEqualTo(0));
+      expect(summary.criticalPercentage, greaterThanOrEqualTo(0));
+    });
+
+    test('calcula promedios por telar y turno', () {
+      final mixed = [
+        _record(neps: 10, telar: '1', turno: 'A'),
+        _record(neps: 30, telar: '1', turno: 'A'),
+        _record(neps: 20, telar: '2', turno: 'B'),
+      ];
+      final summary = analytics.buildSummary(mixed, AnalyticsPeriod.day);
+      expect(summary.averageNepsPerTelar, closeTo(20, 0.01));
+      expect(summary.averageNepsPerTurno, closeTo(20, 0.01));
     });
 
     test('resumen por turno y operario', () {

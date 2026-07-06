@@ -74,10 +74,19 @@ class AnalyticsKpiSection extends StatelessWidget {
         ),
         KpiCard(
           compact: compact,
+          label: 'Advertencias',
+          value: '${summary.warningCount}',
+          icon: Icons.warning_amber_outlined,
+          color: AppColors.statusWarning,
+        ),
+        KpiCard(
+          compact: compact,
           label: 'Críticos',
           value: '${summary.criticalCount}',
           icon: Icons.error_outline,
           color: AppColors.statusCritical,
+          subtitle:
+              '${summary.criticalPercentage.toStringAsFixed(1)}% del total',
         ),
         KpiCard(
           compact: compact,
@@ -87,6 +96,24 @@ class AnalyticsKpiSection extends StatelessWidget {
           color: AppColors.statusNormal,
           subtitle: '${summary.normalCount} registros',
         ),
+        if (summary.averageNepsPerTelar != null)
+          KpiCard(
+            compact: compact,
+            label: 'Prom. por telar',
+            value: formatNumber(summary.averageNepsPerTelar!),
+            icon: Icons.precision_manufacturing_outlined,
+            color: AppColors.primaryBlue,
+            subtitle: '${summary.byTelar.length} telares',
+          ),
+        if (summary.averageNepsPerTurno != null)
+          KpiCard(
+            compact: compact,
+            label: 'Prom. por turno',
+            value: formatNumber(summary.averageNepsPerTurno!),
+            icon: Icons.schedule_outlined,
+            color: AppColors.accentDark,
+            subtitle: '${summary.byTurno.length} turnos',
+          ),
       ],
     );
   }

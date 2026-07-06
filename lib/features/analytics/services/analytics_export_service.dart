@@ -66,6 +66,19 @@ class AnalyticsExportService {
     buffer.writeln(
       'Porcentaje normales,${summary.normalPercentage.toStringAsFixed(1)}%',
     );
+    buffer.writeln(
+      'Porcentaje criticos,${summary.criticalPercentage.toStringAsFixed(1)}%',
+    );
+    if (summary.averageNepsPerTelar != null) {
+      buffer.writeln(
+        'Promedio neps por telar,${_reportExport.formatNumber(summary.averageNepsPerTelar!)}',
+      );
+    }
+    if (summary.averageNepsPerTurno != null) {
+      buffer.writeln(
+        'Promedio neps por turno,${_reportExport.formatNumber(summary.averageNepsPerTurno!)}',
+      );
+    }
     buffer.writeln();
 
     _writeSeriesCsv(buffer, 'TENDENCIA (${period.label})', summary.timeSeries);
@@ -180,6 +193,20 @@ class AnalyticsExportService {
         'Porcentaje normales',
         '${summary.normalPercentage.toStringAsFixed(1)}%',
       ],
+      [
+        'Porcentaje criticos',
+        '${summary.criticalPercentage.toStringAsFixed(1)}%',
+      ],
+      if (summary.averageNepsPerTelar != null)
+        [
+          'Promedio neps por telar',
+          _reportExport.formatNumber(summary.averageNepsPerTelar!),
+        ],
+      if (summary.averageNepsPerTurno != null)
+        [
+          'Promedio neps por turno',
+          _reportExport.formatNumber(summary.averageNepsPerTurno!),
+        ],
     ];
 
     for (var r = 0; r < rows.length; r++) {
@@ -392,6 +419,20 @@ class AnalyticsExportService {
                 'Porcentaje normales',
                 '${summary.normalPercentage.toStringAsFixed(1)}%',
               ],
+              [
+                'Porcentaje criticos',
+                '${summary.criticalPercentage.toStringAsFixed(1)}%',
+              ],
+              if (summary.averageNepsPerTelar != null)
+                [
+                  'Promedio neps por telar',
+                  _reportExport.formatNumber(summary.averageNepsPerTelar!),
+                ],
+              if (summary.averageNepsPerTurno != null)
+                [
+                  'Promedio neps por turno',
+                  _reportExport.formatNumber(summary.averageNepsPerTurno!),
+                ],
             ],
           ),
           pw.SizedBox(height: 16),

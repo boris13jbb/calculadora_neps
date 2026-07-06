@@ -31,6 +31,13 @@ class CloudSyncService implements CloudSyncPort {
   DocumentReference<Map<String, dynamic>> get _configDoc =>
       _workspace.collection('meta').doc('config');
 
+  /// Limpia el estado de bootstrap tras cerrar sesión.
+  void resetSession() {
+    _bootstrapped = false;
+    _bootstrapFuture = null;
+    _userId = null;
+  }
+
   @override
   Future<void> bootstrap() async {
     if (_bootstrapped) return;

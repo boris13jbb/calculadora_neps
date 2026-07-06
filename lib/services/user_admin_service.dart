@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import '../models/app_user.dart';
 import '../models/app_user_role.dart';
 import '../utils/callable_http_client.dart';
+import '../utils/firebase_session_helper.dart';
 import '../utils/firestore_json_helper.dart';
 import '../utils/username_auth_helper.dart';
 
@@ -154,12 +155,17 @@ class UserAdminService {
     bool includeDeleted = false,
   }) async {
     try {
-      final result = await _call('listAppUsers', {
-        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
-        if (roleFilter != null && roleFilter.isNotEmpty) 'role': roleFilter,
-        if (activeOnly != null) 'activeOnly': activeOnly,
-        if (includeDeleted) 'includeDeleted': true,
-      });
+      final result = await _call(
+        'listAppUsers',
+        {
+          if (search != null && search.trim().isNotEmpty)
+            'search': search.trim(),
+          if (roleFilter != null && roleFilter.isNotEmpty) 'role': roleFilter,
+          if (activeOnly != null) 'activeOnly': activeOnly,
+          if (includeDeleted) 'includeDeleted': true,
+        },
+        recoverableRead: true,
+      );
 
       return _usersFromResult(result);
     } catch (error) {
@@ -295,7 +301,11 @@ class UserAdminService {
 
   Future<AppUser> getCurrentUserProfile() async {
     try {
-      final result = await _call('getCurrentUserProfile', {});
+      final result = await _call(
+        'getCurrentUserProfile',
+        {},
+        recoverableRead: true,
+      );
       return _userFromResult(result);
     } catch (error) {
       if (!_canFallbackToFirestoreRead(error)) rethrow;
@@ -308,32 +318,51 @@ class UserAdminService {
   }
 
   Future<void> _refreshAuthToken() async {
+    if (!isFirebaseSessionActive) {
+      throw FirebaseFunctionsException(
+        code: 'unauthenticated',
+        message: 'Debe iniciar sesión nuevamente.',
+      );
+    }
+
     var user = _auth.currentUser;
-    user ??= await _auth
-        .authStateChanges()
-        .where((candidate) => candidate != null)
-        .cast<User>()
-        .first
-        .timeout(
-          const Duration(seconds: 3),
-          onTimeout: () => throw FirebaseFunctionsException(
-            code: 'unauthenticated',
-            message: 'Debe iniciar sesión nuevamente.',
-          ),
+    if (user == null) {
+      final restored = await waitForFirebaseSession();
+      if (!restored) {
+        throw FirebaseFunctionsException(
+          code: 'unauthenticated',
+          message: 'Debe iniciar sesión nuevamente.',
         );
+      }
+      user = _auth.currentUser;
+    }
+
+    if (user == null) {
+      throw FirebaseFunctionsException(
+        code: 'unauthenticated',
+        message: 'Debe iniciar sesión nuevamente.',
+      );
+    }
+
     await user.getIdToken(true);
     await user.getIdTokenResult(true);
   }
 
   Future<Map<String, dynamic>> _call(
     String name,
-    Map<String, dynamic> data,
-  ) async {
+    Map<String, dynamic> data, {
+    bool recoverableRead = false,
+  }) async {
     await _refreshAuthToken();
 
     // Web: solo SDK (el fetch HTTP directo a cloudfunctions.net falla por CORS).
     if (kIsWeb) {
-      return _callWithSdk(name, data, retryAfterUnauthenticated: true);
+      return _callWithSdk(
+        name,
+        data,
+        retryAfterUnauthenticated: true,
+        quietRecoverable: recoverableRead,
+      );
     }
 
     // Android/iOS: HTTP con Bearer explícito; fallback al SDK si falla.
@@ -348,13 +377,19 @@ class UserAdminService {
       debugPrint('Callable HTTP $name fallback al SDK: $error');
     }
 
-    return _callWithSdk(name, data, retryAfterUnauthenticated: true);
+    return _callWithSdk(
+      name,
+      data,
+      retryAfterUnauthenticated: true,
+      quietRecoverable: recoverableRead,
+    );
   }
 
   Future<Map<String, dynamic>> _callWithSdk(
     String name,
     Map<String, dynamic> data, {
     required bool retryAfterUnauthenticated,
+    bool quietRecoverable = false,
   }) async {
     try {
       final callable = _functions.httpsCallable(name);
@@ -367,10 +402,23 @@ class UserAdminService {
         debugPrint('Cloud Function $name sin auth; renovando token.');
         await Future<void>.delayed(const Duration(milliseconds: 400));
         await _refreshAuthToken();
-        return _callWithSdk(name, data, retryAfterUnauthenticated: false);
+        return _callWithSdk(
+          name,
+          data,
+          retryAfterUnauthenticated: false,
+          quietRecoverable: quietRecoverable,
+        );
       }
 
-      debugPrint('Cloud Function $name error: ${error.code} ${error.message}');
+      if (quietRecoverable && _isRecoverableCallError(error)) {
+        debugPrint(
+          '[userAdmin] Callable $name no disponible (${error.code}); '
+          'leyendo desde Firestore.',
+        );
+      } else {
+        debugPrint(
+            'Cloud Function $name error: ${error.code} ${error.message}');
+      }
       throw FirebaseFunctionsException(
         code: error.code,
         message: _friendlyErrorMessage(error),

@@ -112,7 +112,9 @@ flutter build web --release    # Web estática (build/web)
 
 ## Gráficas de informes
 
-La aplicación incluye un apartado **Gráficas** en el menú lateral (visible para roles con acceso al dashboard: supervisor, admin, gerencia, super_admin).
+La aplicación incluye una pantalla de análisis gráfico donde se pueden visualizar todos los informes agrupados por día, semana, mes, año o rango personalizado.
+
+El apartado **Inicio** conserva solo un resumen rápido (KPIs ejecutivos y vista previa del análisis). El análisis completo se encuentra en la pantalla **Gráficas** del menú lateral (visible para roles con acceso al dashboard: supervisor, admin, gerencia, super_admin).
 
 Permite visualizar resultados de informes agrupados por **día**, **semana**, **mes**, **año** o **rango personalizado de fechas**, con filtros adicionales por telar, tela, turno, operario, lote/trama y tipo de alerta.
 
@@ -122,10 +124,10 @@ Permite visualizar resultados de informes agrupados por **día**, **semana**, **
 - Comparación por periodo (barras)
 - Distribución de alertas (circular)
 - Comparación por telar, turno y operario
-- KPIs: total registros, promedio/mín/máx neps, mts calculados, críticos y % normales
+- KPIs: total registros, promedio/mín/máx neps, mts calculados, advertencias, críticos, % normales/críticos, promedio por telar y turno
 - Exportación de resultados a **PDF** (con imagen de gráficas), **Excel**, **CSV** y **PNG**
 - Persistencia del último periodo y filtros seleccionados entre sesiones
-- Acceso rápido desde el panel principal: **Ver gráficas completas**
+- Acceso rápido desde el panel principal: **Ver análisis completo**
 - Atajos URL: `/?pantalla=graficas` (respeta permisos por rol)
 
 ### Exportaciones

@@ -1,4 +1,3 @@
-import 'package:calculadora_neps/core/navigation/app_navigation.dart';
 import 'package:calculadora_neps/core/theme/app_theme.dart';
 import 'package:calculadora_neps/features/analytics/analytics_screen.dart';
 import 'package:calculadora_neps/models/app_user.dart';

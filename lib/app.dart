@@ -52,10 +52,14 @@ class _NepsAppState extends State<NepsApp> {
   }
 
   void _onAuthChanged() {
-    final profile = _authProvider.profile;
-    if (profile != null && _authProvider.isAuthenticated) {
-      _appState.applyAuthProfile(profile);
+    if (_authProvider.isAuthenticated && _authProvider.profile != null) {
+      _appState.applyAuthProfile(_authProvider.profile!);
       unawaited(_connectCloudAfterAuth());
+      return;
+    }
+
+    if (_authProvider.status == AuthStatus.unauthenticated) {
+      _appState.resetCloudSession();
     }
   }
 
