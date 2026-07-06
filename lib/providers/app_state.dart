@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
@@ -26,7 +25,6 @@ import '../services/alert_service.dart';
 import '../services/cloud_sync_coordinator.dart';
 import '../services/cloud_sync_port.dart';
 import '../services/cloud_sync_service.dart';
-import '../utils/firebase_session_helper.dart';
 import '../services/fabric_catalog_service.dart';
 import '../services/import_template_service.dart';
 import '../services/lote_trama_catalog_service.dart';
@@ -43,7 +41,9 @@ import '../services/siri_shortcut_service.dart';
 import '../utils/file_share_helper.dart';
 import '../utils/filter_description_helper.dart';
 import '../utils/lote_trama_helper.dart';
-import '../utils/record_filter_helper.dart';
+import 'domain/capture_form_scope.dart';
+import 'domain/cloud_sync_scope.dart';
+import 'domain/records_scope.dart';
 
 class AppState extends ChangeNotifier {
   static final GlobalKey<ScaffoldMessengerState> messengerKey =
@@ -74,9 +74,7 @@ class AppState extends ChangeNotifier {
         cloudSyncService ?? (_supportsCloudSync() ? CloudSyncService() : null);
 
     return AppState._(
-      cloudSyncService: syncService,
-      cloudSyncCoordinator:
-          syncService != null ? CloudSyncCoordinator(syncService) : null,
+      initialCloudService: syncService,
       fabricCatalogService: fabricCatalogService ?? FabricCatalogService(),
       loteTramaCatalogService:
           loteTramaCatalogService ?? LoteTramaCatalogService(),
@@ -88,8 +86,7 @@ class AppState extends ChangeNotifier {
   }
 
   AppState._({
-    this.cloudSyncService,
-    this.cloudSyncCoordinator,
+    CloudSyncPort? initialCloudService,
     required this.fabricCatalogService,
     required this.loteTramaCatalogService,
     required this.recordImportService,
@@ -97,43 +94,80 @@ class AppState extends ChangeNotifier {
     required this.reportExportService,
     RecordExportCoordinator? recordExportCoordinator,
   }) : recordExportCoordinator = recordExportCoordinator ??
-            RecordExportCoordinator(exportService: reportExportService);
+            RecordExportCoordinator(exportService: reportExportService) {
+    _cloud = CloudSyncScope(
+      service: initialCloudService,
+      host: CloudSyncHost(
+        getAuthRole: () => authRole,
+        loadLocalRecords: () => recordsScope.loadFromPreferences(),
+        loadLocalFabrics: () => fabricCatalogService.loadFabrics(),
+        applyRecords: (data) => records = data,
+        applyFabrics: (data) => fabrics = data,
+        syncFabricSelection: _syncFabricSelection,
+        cacheRecords: _cacheRecordsLocally,
+        cacheFabrics: _cacheFabricsLocally,
+        migrateReports: () => reportStorageService.migrateLocalReportsIfNeeded(),
+        refreshUserRoleAndConfig: _refreshUserRoleAndConfig,
+        onStateChanged: notifyListeners,
+        reportStorageService: reportStorageService,
+      ),
+    );
+  }
 
-  CloudSyncPort? cloudSyncService;
-  CloudSyncCoordinator? cloudSyncCoordinator;
-  final FabricCatalogService fabricCatalogService;
+  late final CloudSyncScope _cloud;
+
+  CloudSyncPort? get cloudSyncService => _cloud.service;
+  CloudSyncCoordinator? get cloudSyncCoordinator => _cloud.coordinator;
+  bool get cloudSyncEnabled => _cloud.enabled;
+  set cloudSyncEnabled(bool value) => _cloud.enabled = value;
+  String? get cloudSyncError => _cloud.error;
+  set cloudSyncError(String? value) => _cloud.error = value;
   final LoteTramaCatalogService loteTramaCatalogService;
   final RecordImportService recordImportService;
   final ReportStorageService reportStorageService;
+  final FabricCatalogService fabricCatalogService;
   final ReportExportService reportExportService;
   final RecordExportCoordinator recordExportCoordinator;
-
-  bool cloudSyncEnabled = false;
-  String? cloudSyncError;
   String? _authUid;
   String? _authUsername;
   AppUserRole? _authAppRole;
 
   String? get authUsername => _authUsername;
 
-  final RecordFilters filters = RecordFilters();
-  final TextEditingController telarController = TextEditingController();
-  final TextEditingController nepsController = TextEditingController();
-  final TextEditingController lotePrefixController =
-      TextEditingController(text: loteTramaPrefix);
-  final TextEditingController loteSuffixController = TextEditingController();
-  final TextEditingController loteFullController = TextEditingController();
-  final TextEditingController manualTelaController = TextEditingController();
-  final TextEditingController turnoController = TextEditingController();
-  final TextEditingController operarioController = TextEditingController();
-  final TextEditingController lineaProduccionController =
-      TextEditingController();
-  final TextEditingController observacionController = TextEditingController();
-  final TextEditingController accionInmediataController =
-      TextEditingController();
-  bool loteFullEntryMode = false;
+  final CaptureFormScope capture = CaptureFormScope();
+  final RecordsScope recordsScope = RecordsScope();
 
-  List<NepRecord> records = [];
+  TextEditingController get telarController => capture.telarController;
+  TextEditingController get nepsController => capture.nepsController;
+  TextEditingController get lotePrefixController =>
+      capture.lotePrefixController;
+  TextEditingController get loteSuffixController =>
+      capture.loteSuffixController;
+  TextEditingController get loteFullController => capture.loteFullController;
+  TextEditingController get manualTelaController =>
+      capture.manualTelaController;
+  TextEditingController get turnoController => capture.turnoController;
+  TextEditingController get operarioController => capture.operarioController;
+  TextEditingController get lineaProduccionController =>
+      capture.lineaProduccionController;
+  TextEditingController get observacionController =>
+      capture.observacionController;
+  TextEditingController get accionInmediataController =>
+      capture.accionInmediataController;
+
+  bool get loteFullEntryMode => capture.loteFullEntryMode;
+  set loteFullEntryMode(bool value) => capture.loteFullEntryMode = value;
+
+  RecordFilters get filters => recordsScope.filters;
+  int get filterPanelKey => recordsScope.filterPanelKey;
+  set filterPanelKey(int value) => recordsScope.filterPanelKey = value;
+
+  List<NepRecord> get records => recordsScope.items;
+  set records(List<NepRecord> value) {
+    recordsScope.items = value;
+    recordsScope.notifyListeners();
+  }
+
   List<String> fabrics = [];
   List<String> loteCatalog = [];
   String? selectedFabric;
@@ -141,14 +175,12 @@ class AppState extends ChangeNotifier {
   bool isLoading = true;
   bool isExporting = false;
   String? bootstrapError;
-  int filterPanelKey = 0;
   int navigationIndex = 0;
   AppNavId? pendingNavTarget;
   Set<ExportColumn> exportColumns = ExportColumn.defaultSelection();
   PdfReportStyle pdfReportStyle = PdfReportStyle.completo;
 
-  List<NepRecord> get visibleRecords =>
-      RecordFilterHelper.apply(records, filters);
+  List<NepRecord> get visibleRecords => recordsScope.visible;
 
   int get criticalAlertsCount =>
       alertService.detectCriticalRecords(records).length;
@@ -195,13 +227,7 @@ class AppState extends ChangeNotifier {
 
   /// Cierra suscripciones y estado de nube al cerrar sesión.
   void resetCloudSession() {
-    cloudSyncCoordinator?.dispose();
-    final service = cloudSyncService;
-    if (service is CloudSyncService) {
-      service.resetSession();
-    }
-    cloudSyncEnabled = false;
-    cloudSyncError = null;
+    _cloud.resetSession();
     _authUid = null;
     _authUsername = null;
     _authAppRole = null;
@@ -237,10 +263,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> initialize({Uri? launchUri}) async {
-    nepsController.addListener(notifyListeners);
-    loteSuffixController.addListener(notifyListeners);
-    loteFullController.addListener(_handleLoteFullChanged);
-    lotePrefixController.addListener(notifyListeners);
+    capture.onLoteFullPersist = () {
+      if (_suppressLotePersist) return;
+      unawaited(_saveLoteFull());
+    };
+    capture.attachListeners(notifyListeners);
+    recordsScope.addListener(notifyListeners);
+    capture.addListener(notifyListeners);
     await alertConfigService.load();
     alertService.updateConfig(alertConfigService.config);
     await notificationPreferencesService.load();
@@ -302,22 +331,11 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
-    cloudSyncCoordinator?.dispose();
-    nepsController.removeListener(notifyListeners);
-    loteSuffixController.removeListener(notifyListeners);
-    loteFullController.removeListener(_handleLoteFullChanged);
-    lotePrefixController.removeListener(notifyListeners);
-    telarController.dispose();
-    nepsController.dispose();
-    lotePrefixController.dispose();
-    loteSuffixController.dispose();
-    loteFullController.dispose();
-    manualTelaController.dispose();
-    turnoController.dispose();
-    operarioController.dispose();
-    lineaProduccionController.dispose();
-    observacionController.dispose();
-    accionInmediataController.dispose();
+    _cloud.dispose();
+    capture.detachListeners(notifyListeners);
+    recordsScope.removeListener(notifyListeners);
+    capture.removeListener(notifyListeners);
+    capture.dispose();
     super.dispose();
   }
 
@@ -351,11 +369,11 @@ class AppState extends ChangeNotifier {
     String? tela,
     String? loteTrama,
   }) {
-    filters.clear();
-    filters.telar = telar;
-    filters.tela = tela;
-    filters.loteTrama = loteTrama;
-    filterPanelKey++;
+    recordsScope.applyNavigationFilters(
+      telar: telar,
+      tela: tela,
+      loteTrama: loteTrama,
+    );
     requestNavigation(AppNavId.records);
   }
 
@@ -376,62 +394,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     if (cloudSyncService != null) {
-      unawaited(_connectCloudWhenAuthenticated());
+      unawaited(_cloud.connectWhenAuthenticated());
     }
-  }
-
-  Future<void> _connectCloudWhenAuthenticated() async {
-    final hasSession = await waitForFirebaseSession();
-    if (!hasSession) return;
-    await _connectCloudInBackground();
   }
 
   Future<void> reloadData() => loadData();
 
   Future<List<SavedReport>> refreshReports() async {
-    final cloud = cloudSyncService;
-    if (cloud != null && isFirebaseSessionActive) {
-      try {
-        await cloud.bootstrap();
-        cloudSyncEnabled = true;
-        cloudSyncError = null;
-        await reportStorageService.migrateLocalReportsIfNeeded();
-        notifyListeners();
-      } catch (error, stackTrace) {
-        ErrorHandler.log(error, stackTrace, 'prepareReportSync');
-      }
-    }
+    await _cloud.bootstrapReportsIfNeeded();
     return reportStorageService.loadReports();
   }
 
-  Future<void> enableCloudSyncIfAvailable() async {
-    if (cloudSyncService != null) return;
-
-    try {
-      cloudSyncService = CloudSyncService();
-      cloudSyncCoordinator = CloudSyncCoordinator(cloudSyncService!);
-      reportStorageService.attachCloudSync(cloudSyncService);
-      await _connectCloudInBackground();
-    } catch (error, stackTrace) {
-      cloudSyncService = null;
-      cloudSyncCoordinator?.dispose();
-      cloudSyncCoordinator = null;
-      reportStorageService.attachCloudSync(null);
-      cloudSyncEnabled = false;
-      ErrorHandler.log(error, stackTrace, 'enableCloudSync');
-    }
-  }
-
-  Future<void> _connectCloudInBackground() async {
-    try {
-      await _loadCloudData();
-    } catch (error, stackTrace) {
-      _markCloudUnavailable(error, stackTrace);
-    }
-  }
+  Future<void> enableCloudSyncIfAvailable() => _cloud.enableIfAvailable();
 
   Future<void> _loadLocalData() async {
-    records = await _loadLocalRecords();
+    records = await recordsScope.loadFromPreferences();
     fabrics = await fabricCatalogService.loadFabrics();
     loteCatalog = await loteTramaCatalogService.loadCatalog();
     _suppressLotePersist = true;
@@ -490,14 +467,6 @@ class AppState extends ChangeNotifier {
   /// Evita persistir el lote mientras se restauran/derivan valores en la carga.
   bool _suppressLotePersist = false;
 
-  /// Notifica cambios y persiste el último lote de trama escrito, de modo que
-  /// la captura recuerde el valor entre sesiones.
-  void _handleLoteFullChanged() {
-    notifyListeners();
-    if (_suppressLotePersist) return;
-    unawaited(_saveLoteFull());
-  }
-
   Future<void> _saveLoteFull() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -549,80 +518,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<List<NepRecord>> _loadLocalRecords() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedData = prefs.getString(storageKey);
-    if (savedData == null || savedData.isEmpty) return [];
-
-    try {
-      final List decoded = jsonDecode(savedData);
-      return decoded
-          .map((item) => NepRecord.fromJson(Map<String, dynamic>.from(item)))
-          .toList();
-    } catch (error) {
-      throw FormatException('Datos locales corruptos: $error');
-    }
-  }
-
-  Future<void> _loadCloudData() async {
-    final coordinator = cloudSyncCoordinator;
-    if (coordinator == null) return;
-
-    try {
-      await coordinator.bootstrap();
-      cloudSyncEnabled = true;
-      cloudSyncError = null;
-    } catch (error, stackTrace) {
-      _markCloudUnavailable(error, stackTrace);
-      return;
-    }
-
-    final localRecords = await _loadLocalRecords();
-    final localFabrics = await fabricCatalogService.loadFabrics();
-
-    try {
-      await coordinator.migrateLocalData(
-        localRecords: localRecords,
-        localFabrics: localFabrics,
-      );
-    } catch (error, stackTrace) {
-      ErrorHandler.log(error, stackTrace, 'migrateLocalData');
-    }
-
-    try {
-      await reportStorageService.migrateLocalReportsIfNeeded();
-    } catch (error, stackTrace) {
-      ErrorHandler.log(error, stackTrace, 'migrateReports');
-    }
-
-    try {
-      await coordinator.syncFabricsWithLocal(localFabrics);
-    } catch (error, stackTrace) {
-      ErrorHandler.log(error, stackTrace, 'syncFabrics');
-    }
-
-    await _refreshUserRoleAndConfig();
-
-    try {
-      await coordinator.bindSubscriptions(
-        waitForFirstSnapshot: true,
-        onRecords: (data) {
-          records = data;
-          unawaited(_cacheRecordsLocally(data));
-          notifyListeners();
-        },
-        onFabrics: (data) {
-          fabrics = data;
-          _syncFabricSelection();
-          unawaited(_cacheFabricsLocally(data));
-          notifyListeners();
-        },
-      );
-    } catch (error, stackTrace) {
-      ErrorHandler.log(error, stackTrace, 'cloudSubscriptions');
-    }
-
-    notifyListeners();
+  Future<void> _cacheRecordsLocally(List<NepRecord> data) async {
+    records = data;
+    await recordsScope.persistLocally();
   }
 
   Future<void> _refreshUserRoleAndConfig() async {
@@ -645,61 +543,14 @@ class AppState extends ChangeNotifier {
   Future<void> initializeNotifications() async {
     await notificationService.initialize(
       onTokenRegistered: (token) async {
-        if (cloudSyncService == null || !cloudSyncEnabled) return;
-        try {
-          await cloudSyncCoordinator!.registerFcmToken(token);
-        } catch (error, stack) {
-          ErrorHandler.log(error, stack, 'registerFcmToken');
-        }
+        await _cloud.registerFcmToken(token);
       },
     );
   }
 
-  Future<void> _ensureCloudSubscriptions() async {
-    final coordinator = cloudSyncCoordinator;
-    if (coordinator == null) return;
+  Future<bool> _ensureCloudReady() => _cloud.ensureReady();
 
-    await coordinator.bindSubscriptions(
-      onRecords: (data) {
-        records = data;
-        unawaited(_cacheRecordsLocally(data));
-        notifyListeners();
-      },
-      onFabrics: (data) {
-        fabrics = data;
-        _syncFabricSelection();
-        unawaited(_cacheFabricsLocally(data));
-        notifyListeners();
-      },
-    );
-  }
-
-  Future<bool> _ensureCloudReady() async {
-    final coordinator = cloudSyncCoordinator;
-    if (coordinator == null) return false;
-
-    try {
-      await coordinator.bootstrap();
-      cloudSyncEnabled = true;
-      cloudSyncError = null;
-      await _ensureCloudSubscriptions();
-      return true;
-    } catch (error, stackTrace) {
-      _markCloudUnavailable(error, stackTrace);
-      return false;
-    }
-  }
-
-  void _markCloudUnavailable(Object error, StackTrace stackTrace) {
-    cloudSyncEnabled = false;
-    if (isCloudAuthSkipError(error)) {
-      cloudSyncError = null;
-      return;
-    }
-    cloudSyncError = ErrorHandler.userMessage(error);
-    ErrorHandler.log(error, stackTrace, 'cloudSync');
-    notifyListeners();
-  }
+  Future<void> reconnectCloudIfNeeded() => _cloud.reconnectIfNeeded();
 
   void _syncFabricSelection() {
     if (fabrics.isEmpty) {
@@ -712,25 +563,6 @@ class AppState extends ChangeNotifier {
     if (selectedFabric == null || !fabrics.contains(selectedFabric)) {
       selectedFabric = fabrics.first;
     }
-  }
-
-  Future<void> reconnectCloudIfNeeded() async {
-    if (cloudSyncService == null || cloudSyncEnabled) return;
-    if (!isFirebaseSessionActive) return;
-
-    try {
-      await _connectCloudInBackground();
-      cloudSyncError = null;
-      notifyListeners();
-    } catch (error, stackTrace) {
-      _markCloudUnavailable(error, stackTrace);
-    }
-  }
-
-  Future<void> _cacheRecordsLocally(List<NepRecord> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    final encoded = jsonEncode(data.map((record) => record.toJson()).toList());
-    await prefs.setString(storageKey, encoded);
   }
 
   Future<void> _cacheFabricsLocally(List<String> data) async {
@@ -842,9 +674,15 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _removeRecord(String recordId) async {
+    final index = records.indexWhere((record) => record.id == recordId);
+    final ownerUid = index >= 0 ? records[index].createdByUid : null;
+
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
-        await cloudSyncCoordinator!.deleteRecord(recordId);
+        await cloudSyncCoordinator!.deleteRecord(
+          recordId,
+          ownerUid: ownerUid,
+        );
         return;
       } catch (_) {
         cloudSyncEnabled = false;

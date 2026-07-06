@@ -6,7 +6,9 @@ import '../models/saved_report.dart';
 abstract class CloudSyncPort {
   Future<void> bootstrap();
 
-  Stream<List<NepRecord>> watchRecords();
+  Stream<List<NepRecord>> watchRecords({
+    AppUserRole viewerRole = AppUserRole.operario,
+  });
 
   Stream<List<String>> watchFabrics();
 
@@ -23,7 +25,7 @@ abstract class CloudSyncPort {
 
   Future<void> upsertRecords(List<NepRecord> records);
 
-  Future<void> deleteRecord(String recordId);
+  Future<void> deleteRecord(String recordId, {String? ownerUid});
 
   Future<void> clearRecords();
 

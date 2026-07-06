@@ -56,7 +56,8 @@ service cloud.firestore {
 
     match /workspaces/{workspaceId} {
       allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
-      allow create, update: if isAuthenticated() && workspaceIdOk(workspaceId);
+      allow create: if isAuthenticated() && workspaceIdOk(workspaceId);
+      allow update: if isSupervisorOrAbove() && workspaceIdOk(workspaceId);
       allow delete: if isAdminRole() && workspaceIdOk(workspaceId);
 
       match /users/{userId} {
@@ -147,15 +148,34 @@ service cloud.firestore {
           && request.resource.data.status == 'pending'
           && request.resource.data.requestedByUid == request.auth.uid
           && request.resource.data.username is string
-          && request.resource.data.password is string
-          && request.resource.data.password.size() >= 8
-          && request.resource.data.role is string;
+          && request.resource.data.role is string
+          && !request.resource.data.keys().hasAny(['password', 'newPassword']);
 
         allow read: if isSuperAdmin()
           && workspaceIdOk(workspaceId)
           && resource.data.requestedByUid == request.auth.uid;
 
         allow update, delete: if false;
+      }
+
+      match /user_creation_secrets/{requestId} {
+        allow create: if isSuperAdmin()
+          && workspaceIdOk(workspaceId)
+          && request.resource.data.password is string
+          && request.resource.data.password.size() >= 8
+          && request.resource.data.requestedByUid == request.auth.uid;
+
+        allow read, update, delete: if false;
+      }
+
+      match /user_admin_secrets/{requestId} {
+        allow create: if isSuperAdmin()
+          && workspaceIdOk(workspaceId)
+          && request.resource.data.newPassword is string
+          && request.resource.data.newPassword.size() >= 8
+          && request.resource.data.requestedByUid == request.auth.uid;
+
+        allow read, update, delete: if false;
       }
 
       match /user_admin_requests/{requestId} {
@@ -167,12 +187,7 @@ service cloud.firestore {
             'update', 'disable', 'enable', 'delete', 'resetPassword'
           ]
           && request.resource.data.uid is string
-          && (
-            request.resource.data.type != 'resetPassword' || (
-              request.resource.data.newPassword is string
-              && request.resource.data.newPassword.size() >= 8
-            )
-          );
+          && !request.resource.data.keys().hasAny(['password', 'newPassword']);
 
         allow read: if isSuperAdmin()
           && workspaceIdOk(workspaceId)

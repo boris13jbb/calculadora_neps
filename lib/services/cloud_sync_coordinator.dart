@@ -50,7 +50,8 @@ class CloudSyncCoordinator {
   Future<void> upsertRecords(List<NepRecord> records) =>
       _cloud.upsertRecords(records);
 
-  Future<void> deleteRecord(String recordId) => _cloud.deleteRecord(recordId);
+  Future<void> deleteRecord(String recordId, {String? ownerUid}) =>
+      _cloud.deleteRecord(recordId, ownerUid: ownerUid);
 
   Future<void> clearRecords() => _cloud.clearRecords();
 
@@ -68,6 +69,7 @@ class CloudSyncCoordinator {
   Future<void> bindSubscriptions({
     required void Function(List<NepRecord> records) onRecords,
     required void Function(List<String> fabrics) onFabrics,
+    AppUserRole viewerRole = AppUserRole.operario,
     bool waitForFirstSnapshot = false,
     Duration timeout = const Duration(seconds: 15),
   }) async {
@@ -77,7 +79,7 @@ class CloudSyncCoordinator {
     final recordsReady = Completer<void>();
     final fabricsReady = Completer<void>();
 
-    _recordsSubscription = _cloud.watchRecords().listen(
+    _recordsSubscription = _cloud.watchRecords(viewerRole: viewerRole).listen(
       (data) {
         onRecords(data);
         if (!recordsReady.isCompleted) recordsReady.complete();

@@ -20,4 +20,11 @@ const String loteTramaCatalogStorageKey = 'vicunha_lote_trama_catalog_v1';
 const String alertConfigStorageKey = 'vicunha_alert_config_v1';
 const String notificationPrefsKey = 'vicunha_notification_prefs_v1';
 
+/// Site key reCAPTCHA v3 para Firebase App Check (web).
+/// Definir con: `--dart-define=APP_CHECK_RECAPTCHA_SITE_KEY=...`
+const String appCheckRecaptchaSiteKey = String.fromEnvironment(
+  'APP_CHECK_RECAPTCHA_SITE_KEY',
+  defaultValue: '',
+);
+
 const String manualFabricOption = '__manual_fabric__';

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -26,15 +27,20 @@ class _NepsAppState extends State<NepsApp> {
   @override
   void initState() {
     super.initState();
-    _authProvider = AuthProvider()..initialize();
+    _authProvider = AuthProvider();
     _appState = AppState()..initialize(launchUri: _launchUri);
     _authProvider.addListener(_onAuthChanged);
 
     if (DefaultFirebaseOptions.isSupported) {
+      // Tests y arranque en frío: evitar AuthStatus.unknown perpetuo sin Firebase.
+      if (Firebase.apps.isEmpty) {
+        _authProvider.initialize();
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_bootstrapFirebase());
       });
     } else {
+      _authProvider.initialize();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_appState.initializeNotifications());
       });
@@ -48,6 +54,7 @@ class _NepsAppState extends State<NepsApp> {
     } catch (error, stackTrace) {
       debugPrint('Firebase no disponible al iniciar: $error');
       debugPrint('$stackTrace');
+      _authProvider.initialize();
     }
   }
 

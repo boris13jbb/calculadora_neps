@@ -19,6 +19,8 @@ deploy-functions-log.txt
 **/firebase-adminsdk*.json
 *firebase-adminsdk*.json
 *-firebase-adminsdk-*.json
+**/secrets/*.json
+!secrets/README.md
 **/credentials.json
 **/secrets/
 .atom/
@@ -68,6 +70,8 @@ app.*.map.json
 # Functions secrets (never commit)
 functions/.env
 functions/call_bootstrap.js
+scripts/.env
+scripts/.env.local
 
 # Auth exports (sensitive)
 auth_users.json

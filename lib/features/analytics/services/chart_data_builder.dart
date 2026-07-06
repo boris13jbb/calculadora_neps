@@ -32,7 +32,8 @@ class ChartConfigRules {
         ChartVisualType.table,
       ];
     }
-    if (metric == ChartMetric.criticalityPercent && groupBy == ChartGroupBy.none) {
+    if (metric == ChartMetric.criticalityPercent &&
+        groupBy == ChartGroupBy.none) {
       return const [ChartVisualType.gauge, ChartVisualType.kpi];
     }
     if (groupBy.isTemporal ||
@@ -189,9 +190,21 @@ class ChartDataBuilder {
         'Crítico': dist.critico.toDouble(),
       },
       tableRows: [
-        ['Normal', '${dist.normal}', '${dist.percentage(AlertLevel.normal).toStringAsFixed(1)}%'],
-        ['Advertencia', '${dist.advertencia}', '${dist.percentage(AlertLevel.advertencia).toStringAsFixed(1)}%'],
-        ['Crítico', '${dist.critico}', '${dist.percentage(AlertLevel.critico).toStringAsFixed(1)}%'],
+        [
+          'Normal',
+          '${dist.normal}',
+          '${dist.percentage(AlertLevel.normal).toStringAsFixed(1)}%'
+        ],
+        [
+          'Advertencia',
+          '${dist.advertencia}',
+          '${dist.percentage(AlertLevel.advertencia).toStringAsFixed(1)}%'
+        ],
+        [
+          'Crítico',
+          '${dist.critico}',
+          '${dist.percentage(AlertLevel.critico).toStringAsFixed(1)}%'
+        ],
       ],
     );
   }
@@ -244,10 +257,10 @@ class ChartDataBuilder {
 
     final temporalPeriod = config.groupBy.asAnalyticsPeriod ?? periodOverride;
     if (temporalPeriod != null) {
-      final series =
-          _analytics.tendenciaPorPeriodo(records, temporalPeriod);
+      final series = _analytics.tendenciaPorPeriodo(records, temporalPeriod);
       return series
-          .map((p) => _GroupedValue(p.label, _seriesMetric(p, config.metric, records)))
+          .map((p) =>
+              _GroupedValue(p.label, _seriesMetric(p, config.metric, records)))
           .toList();
     }
 
@@ -265,8 +278,7 @@ class ChartDataBuilder {
           ChartGroupBy.lot => r.loteTrama,
           ChartGroupBy.shift => r.turno,
           ChartGroupBy.operator => r.operario,
-          ChartGroupBy.alertStatus =>
-            _alerts.getAlertLevel(r.neps).label,
+          ChartGroupBy.alertStatus => _alerts.getAlertLevel(r.neps).label,
           _ => '',
         };
 
@@ -298,7 +310,8 @@ class ChartDataBuilder {
       ChartMetric.mtsCalculados => point.totalMts as double,
       ChartMetric.recordCount => (point.recordCount as int).toDouble(),
       ChartMetric.averageNeps => point.averageNeps as double,
-      ChartMetric.criticalityPercent => _bucketCriticalPercent(point, allRecords),
+      ChartMetric.criticalityPercent =>
+        _bucketCriticalPercent(point, allRecords),
       _ => point.totalNeps as double,
     };
   }

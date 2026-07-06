@@ -17,7 +17,7 @@ class WidgetCaptureHelper {
     await WidgetsBinding.instance.endOfFrame;
 
     final context = boundaryKey.currentContext;
-    if (context == null) return null;
+    if (context == null || !context.mounted) return null;
 
     final renderObject = context.findRenderObject();
     if (renderObject is! RenderRepaintBoundary) return null;

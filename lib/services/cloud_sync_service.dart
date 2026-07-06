@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/errors/error_handler.dart';
 import '../core/constants.dart';
+import '../core/permissions/record_visibility.dart';
 import '../firebase_options.dart';
 import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
@@ -93,18 +95,54 @@ class CloudSyncService implements CloudSyncPort {
       '$cloudUserMigrationKeyPrefix$userId';
 
   @override
-  Stream<List<NepRecord>> watchRecords() {
+  Stream<List<NepRecord>> watchRecords({
+    AppUserRole viewerRole = AppUserRole.operario,
+  }) {
     return Stream.fromFuture(_requireUserId()).asyncExpand((userId) {
-      return _userRecords(userId).orderBy('createdAt').snapshots().map(
-        (snapshot) {
-          return snapshot.docs.map((doc) {
-            final data = Map<String, dynamic>.from(doc.data());
-            data['id'] ??= doc.id;
-            return NepRecord.fromJson(data);
-          }).toList();
-        },
-      );
+      if (canViewWorkspaceRecords(viewerRole)) {
+        return _watchWorkspaceRecords();
+      }
+      return _watchUserRecords(userId);
     });
+  }
+
+  Stream<List<NepRecord>> _watchUserRecords(String userId) {
+    return _userRecords(userId).orderBy('createdAt').snapshots().map(
+          (snapshot) => snapshot.docs.map(_recordFromDoc).toList(),
+        );
+  }
+
+  Stream<List<NepRecord>> _watchWorkspaceRecords() {
+    return _firestore
+        .collectionGroup('records')
+        .orderBy('createdAt')
+        .snapshots()
+        .map((snapshot) {
+      final records = <NepRecord>[];
+      for (final doc in snapshot.docs) {
+        if (!_isVicunhaRecordPath(doc.reference.path)) continue;
+        records.add(_recordFromDoc(doc));
+      }
+      if (kDebugMode) {
+        debugPrint(
+          '[cloudSync] workspace records snapshot: ${records.length} items',
+        );
+      }
+      return records;
+    });
+  }
+
+  bool _isVicunhaRecordPath(String path) {
+    return path.startsWith('workspaces/$cloudWorkspaceId/users/') &&
+        path.endsWith('/records') == false &&
+        path.contains('/records/');
+  }
+
+  NepRecord _recordFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = Map<String, dynamic>.from(doc.data());
+    data['id'] ??= doc.id;
+    data['createdByUid'] ??= doc.reference.parent.parent?.id;
+    return NepRecord.fromJson(data);
   }
 
   @override
@@ -177,23 +215,25 @@ class CloudSyncService implements CloudSyncPort {
 
   @override
   Future<void> upsertRecord(NepRecord record) async {
-    final userId = await _requireUserId();
-    await _userRecords(userId)
+    final currentUid = await _requireUserId();
+    final ownerUid = recordOwnerUid(record, currentUid);
+    await _userRecords(ownerUid)
         .doc(record.id)
         .set(_recordData(record), SetOptions(merge: true));
   }
 
   @override
   Future<void> upsertRecords(List<NepRecord> records) async {
-    final userId = await _requireUserId();
+    final currentUid = await _requireUserId();
 
     for (var start = 0; start < records.length; start += 450) {
       final batch = _firestore.batch();
       final chunk = records.skip(start).take(450);
 
       for (final record in chunk) {
+        final ownerUid = recordOwnerUid(record, currentUid);
         batch.set(
-          _userRecords(userId).doc(record.id),
+          _userRecords(ownerUid).doc(record.id),
           _recordData(record),
           SetOptions(merge: true),
         );
@@ -204,9 +244,11 @@ class CloudSyncService implements CloudSyncPort {
   }
 
   @override
-  Future<void> deleteRecord(String recordId) async {
-    final userId = await _requireUserId();
-    await _userRecords(userId).doc(recordId).delete();
+  Future<void> deleteRecord(String recordId, {String? ownerUid}) async {
+    final currentUid = await _requireUserId();
+    final targetUid =
+        ownerUid?.trim().isNotEmpty == true ? ownerUid! : currentUid;
+    await _userRecords(targetUid).doc(recordId).delete();
   }
 
   @override

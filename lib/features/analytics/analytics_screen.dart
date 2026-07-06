@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/layout/responsive_layout.dart';
 import '../../core/navigation/app_navigation.dart';
+import '../../core/widgets/nav_permission_gate.dart';
 import '../../core/widgets/app_loading_view.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/empty_state.dart';
@@ -138,7 +139,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final records = _filteredRecords(appState);
     final summary = analyticsService.buildSummary(records, _period);
 
-    return AppPage(
+    return NavPermissionGate(
+      navId: AppNavId.analytics,
+      child: AppPage(
       title: 'Análisis gráfico',
       subtitle:
           phone ? null : 'Visualización de informes por día, semana, mes y año',
@@ -164,6 +167,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         summary: summary,
         dateError: dateError,
       ),
+    ),
     );
   }
 

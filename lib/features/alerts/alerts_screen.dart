@@ -4,6 +4,8 @@ import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/alert_status_badge.dart';
 import '../../core/widgets/app_material_list_tile.dart';
+import '../../core/navigation/app_navigation.dart';
+import '../../core/widgets/nav_permission_gate.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/kpi_card.dart';
@@ -171,90 +173,93 @@ class _AlertsScreenState extends State<AlertsScreen> {
       worstLote: worstLote?.key,
     );
 
-    return AppPage(
-      title: 'Alertas',
-      subtitle: phone
-          ? 'Control de calidad'
-          : 'Detección de telares y lotes con neps elevados',
-      fillViewport: true,
-      compactPadding: true,
-      denseOnPhone: true,
-      child: scrollableChrome
-          ? ListView(
-              children: [
-                filtersBar,
-                SizedBox(height: spacing),
-                summaryCards,
-                SizedBox(height: spacing),
-                _AlertSection(
-                  title: 'Alertas críticas',
-                  emptyMessage: 'No hay alertas críticas.',
-                  records: critical,
-                  appState: appState,
-                  compact: true,
-                ),
-                SizedBox(height: spacing),
-                _AlertSection(
-                  title: 'Advertencias',
-                  emptyMessage: 'No hay advertencias activas.',
-                  records: warnings,
-                  appState: appState,
-                  compact: true,
-                ),
-                SizedBox(height: spacing),
-                _TopTelarsSection(
-                  summaries: topTelars,
-                  appState: appState,
-                  compact: true,
-                ),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                filtersBar,
-                SizedBox(height: spacing),
-                summaryCards,
-                SizedBox(height: spacing),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: SingleChildScrollView(
-                          child: Column(
-                            children: [
-                              _AlertSection(
-                                title: 'Alertas críticas',
-                                emptyMessage: 'No hay alertas críticas.',
-                                records: critical,
-                                appState: appState,
-                              ),
-                              SizedBox(height: spacing),
-                              _AlertSection(
-                                title: 'Advertencias',
-                                emptyMessage: 'No hay advertencias activas.',
-                                records: warnings,
-                                appState: appState,
-                              ),
-                            ],
+    return NavPermissionGate(
+      navId: AppNavId.alerts,
+      child: AppPage(
+        title: 'Alertas',
+        subtitle: phone
+            ? 'Control de calidad'
+            : 'Detección de telares y lotes con neps elevados',
+        fillViewport: true,
+        compactPadding: true,
+        denseOnPhone: true,
+        child: scrollableChrome
+            ? ListView(
+                children: [
+                  filtersBar,
+                  SizedBox(height: spacing),
+                  summaryCards,
+                  SizedBox(height: spacing),
+                  _AlertSection(
+                    title: 'Alertas críticas',
+                    emptyMessage: 'No hay alertas críticas.',
+                    records: critical,
+                    appState: appState,
+                    compact: true,
+                  ),
+                  SizedBox(height: spacing),
+                  _AlertSection(
+                    title: 'Advertencias',
+                    emptyMessage: 'No hay advertencias activas.',
+                    records: warnings,
+                    appState: appState,
+                    compact: true,
+                  ),
+                  SizedBox(height: spacing),
+                  _TopTelarsSection(
+                    summaries: topTelars,
+                    appState: appState,
+                    compact: true,
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  filtersBar,
+                  SizedBox(height: spacing),
+                  summaryCards,
+                  SizedBox(height: spacing),
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: SingleChildScrollView(
+                            child: Column(
+                              children: [
+                                _AlertSection(
+                                  title: 'Alertas críticas',
+                                  emptyMessage: 'No hay alertas críticas.',
+                                  records: critical,
+                                  appState: appState,
+                                ),
+                                SizedBox(height: spacing),
+                                _AlertSection(
+                                  title: 'Advertencias',
+                                  emptyMessage: 'No hay advertencias activas.',
+                                  records: warnings,
+                                  appState: appState,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      SizedBox(width: spacing),
-                      Expanded(
-                        flex: 2,
-                        child: _TopTelarsSection(
-                          summaries: topTelars,
-                          appState: appState,
+                        SizedBox(width: spacing),
+                        Expanded(
+                          flex: 2,
+                          child: _TopTelarsSection(
+                            summaries: topTelars,
+                            appState: appState,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+      ),
     );
   }
 }

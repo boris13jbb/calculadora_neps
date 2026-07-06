@@ -6,6 +6,8 @@ import '../../core/errors/error_handler.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_material_list_tile.dart';
+import '../../core/navigation/app_navigation.dart';
+import '../../core/widgets/nav_permission_gate.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/export_column_selector.dart';
@@ -735,118 +737,124 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final spacing = screenSpacing(context);
 
     if (isLoading) {
-      return AppPage(
-        title: 'Informes guardados',
-        subtitle: phone
-            ? 'Gestiona y comparte informes'
-            : 'Gestiona y comparte tus informes de produccion',
-        breadcrumb: const ['Inicio', 'Informes guardados'],
-        denseOnPhone: true,
-        compactPadding: true,
-        child: const Center(child: CircularProgressIndicator()),
+      return NavPermissionGate(
+        navId: AppNavId.reports,
+        child: AppPage(
+          title: 'Informes guardados',
+          subtitle: phone
+              ? 'Gestiona y comparte informes'
+              : 'Gestiona y comparte tus informes de produccion',
+          breadcrumb: const ['Inicio', 'Informes guardados'],
+          denseOnPhone: true,
+          compactPadding: true,
+          child: const Center(child: CircularProgressIndicator()),
+        ),
       );
     }
 
-    return AppPage(
-      title: 'Informes guardados',
-      subtitle: phone
-          ? 'Compartidos con el equipo'
-          : 'Gestiona y comparte tus informes de produccion',
-      breadcrumb: const ['Inicio', 'Informes guardados'],
-      fillViewport: true,
-      compactPadding: true,
-      denseOnPhone: true,
-      actions: [
-        IconButton(
-          tooltip: 'Actualizar lista',
-          onPressed: _loadReports,
-          icon: const Icon(Icons.refresh),
-        ),
-      ],
-      child: phone
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!appState.cloudSyncEnabled) ...[
-                  StatusBanner(
-                    type: appState.cloudSyncError != null
-                        ? StatusBannerType.warning
-                        : StatusBannerType.info,
-                    message: appState.cloudSyncError != null
-                        ? 'Firebase no disponible: ${appState.cloudSyncError}'
-                        : 'Conectando con Firebase para sincronizar informes…',
-                  ),
-                  SizedBox(height: spacing),
-                ],
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: _reportsToolsSection(
-                      appState: appState,
-                      spacing: spacing,
-                      phone: phone,
+    return NavPermissionGate(
+      navId: AppNavId.reports,
+      child: AppPage(
+        title: 'Informes guardados',
+        subtitle: phone
+            ? 'Compartidos con el equipo'
+            : 'Gestiona y comparte tus informes de produccion',
+        breadcrumb: const ['Inicio', 'Informes guardados'],
+        fillViewport: true,
+        compactPadding: true,
+        denseOnPhone: true,
+        actions: [
+          IconButton(
+            tooltip: 'Actualizar lista',
+            onPressed: _loadReports,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+        child: phone
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!appState.cloudSyncEnabled) ...[
+                    StatusBanner(
+                      type: appState.cloudSyncError != null
+                          ? StatusBannerType.warning
+                          : StatusBannerType.info,
+                      message: appState.cloudSyncError != null
+                          ? 'Firebase no disponible: ${appState.cloudSyncError}'
+                          : 'Conectando con Firebase para sincronizar informes…',
+                    ),
+                    SizedBox(height: spacing),
+                  ],
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: _reportsToolsSection(
+                        appState: appState,
+                        spacing: spacing,
+                        phone: phone,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: _reportsListPanel(filtered: filtered, phone: phone),
-                ),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!appState.cloudSyncEnabled) ...[
-                  StatusBanner(
-                    type: appState.cloudSyncError != null
-                        ? StatusBannerType.warning
-                        : StatusBannerType.info,
-                    message: appState.cloudSyncError != null
-                        ? 'Firebase no disponible: ${appState.cloudSyncError}'
-                        : 'Conectando con Firebase para sincronizar informes…',
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: _reportsListPanel(filtered: filtered, phone: phone),
                   ),
-                  SizedBox(height: spacing),
                 ],
-                _reportsKpis(filtered),
-                SizedBox(height: spacing),
-                Expanded(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(
-                        width: 380,
-                        child: SingleChildScrollView(
-                          child: _reportsToolsSection(
-                            appState: appState,
-                            spacing: spacing,
-                            phone: phone,
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!appState.cloudSyncEnabled) ...[
+                    StatusBanner(
+                      type: appState.cloudSyncError != null
+                          ? StatusBannerType.warning
+                          : StatusBannerType.info,
+                      message: appState.cloudSyncError != null
+                          ? 'Firebase no disponible: ${appState.cloudSyncError}'
+                          : 'Conectando con Firebase para sincronizar informes…',
+                    ),
+                    SizedBox(height: spacing),
+                  ],
+                  _reportsKpis(filtered),
+                  SizedBox(height: spacing),
+                  Expanded(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: 380,
+                          child: SingleChildScrollView(
+                            child: _reportsToolsSection(
+                              appState: appState,
+                              spacing: spacing,
+                              phone: phone,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const AppSectionHeader(
-                              title: 'Informes guardados',
-                              icon: Icons.folder_special_outlined,
-                            ),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: _reportsListPanel(
-                                filtered: filtered,
-                                phone: phone,
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const AppSectionHeader(
+                                title: 'Informes guardados',
+                                icon: Icons.folder_special_outlined,
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 8),
+                              Expanded(
+                                child: _reportsListPanel(
+                                  filtered: filtered,
+                                  phone: phone,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+      ),
     );
   }
 }

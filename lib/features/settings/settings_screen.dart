@@ -5,6 +5,8 @@ import '../../core/alert_config.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_material_list_tile.dart';
+import '../../core/navigation/app_navigation.dart';
+import '../../core/widgets/nav_permission_gate.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/section_header.dart';
 import '../../core/widgets/status_banner.dart';
@@ -125,7 +127,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final appState = context.watch<AppState>();
     final phone = isPhoneLayout(context);
 
-    return AppPage(
+    return NavPermissionGate(
+      navId: AppNavId.settings,
+      child: AppPage(
       title: 'Configuración',
       subtitle: phone ? null : 'Límites de alertas y parámetros de calidad',
       maxContentWidth: 1080,
@@ -179,6 +183,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 

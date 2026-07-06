@@ -397,7 +397,7 @@ class AnalyticsExportService {
             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 8),
-          pw.Table.fromTextArray(
+          pw.TableHelper.fromTextArray(
             headers: ['Indicador', 'Valor'],
             data: [
               ['Total registros', '${summary.totalRecords}'],
@@ -459,7 +459,7 @@ class AnalyticsExportService {
           if (summary.timeSeries.isEmpty)
             pw.Text('Sin datos para el periodo seleccionado.')
           else
-            pw.Table.fromTextArray(
+            pw.TableHelper.fromTextArray(
               headers: [
                 'Periodo',
                 'Registros',
@@ -485,7 +485,7 @@ class AnalyticsExportService {
             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 8),
-          pw.Table.fromTextArray(
+          pw.TableHelper.fromTextArray(
             headers: ['Estado', 'Cantidad', 'Porcentaje'],
             data: [
               [

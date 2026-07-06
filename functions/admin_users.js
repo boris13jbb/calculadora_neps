@@ -1033,6 +1033,9 @@ const processUserCreationRequest = onDocumentCreated({
   const ref = snap.ref;
   const db = getFirestore();
   const auth = getAuth();
+  const requestId = event.params.requestId;
+  const secretRef = db.doc(
+      `workspaces/${WORKSPACE_ID}/user_creation_secrets/${requestId}`);
 
   await ref.set({status: "processing"}, {merge: true});
 
@@ -1055,9 +1058,12 @@ const processUserCreationRequest = onDocumentCreated({
       throw new Error("Cuenta del solicitante desactivada.");
     }
 
+    const secretSnap = await secretRef.get();
+    const secretPassword = String(secretSnap.data()?.password || "");
+
     const user = await executeCreateAppUser(db, auth, {
       username: data.username,
-      password: data.password,
+      password: secretPassword || data.password,
       displayName: data.displayName,
       role: data.role,
       isActive: data.isActive,
@@ -1070,18 +1076,18 @@ const processUserCreationRequest = onDocumentCreated({
     await ref.set({
       status: "completed",
       user,
-      password: FieldValue.delete(),
       completedAt: FieldValue.serverTimestamp(),
       errorMessage: FieldValue.delete(),
     }, {merge: true});
+    await secretRef.delete().catch(() => undefined);
   } catch (error) {
     logger.error("processUserCreationRequest error", error);
     await ref.set({
       status: "failed",
       errorMessage: error.message || "No se pudo crear el usuario.",
-      password: FieldValue.delete(),
       completedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
+    await secretRef.delete().catch(() => undefined);
   }
 });
 
@@ -1130,7 +1136,8 @@ async function dispatchUserAdminRequest(db, auth, data, performedByUsername) {
 /**
  * Procesa solicitudes de administración de usuarios (editar, activar,
  * desactivar, eliminar, resetear contraseña) escritas en Firestore por el
- * cliente. Evita el fallo CORS de llamar callables desde el navegador.
+ * cliente. Las contraseñas de reset se leen desde user_admin_secrets.
+ * Evita el fallo CORS de llamar callables desde el navegador.
  */
 const processUserAdminRequest = onDocumentCreated({
   document: `workspaces/${WORKSPACE_ID}/user_admin_requests/{requestId}`,
@@ -1145,6 +1152,9 @@ const processUserAdminRequest = onDocumentCreated({
   const ref = snap.ref;
   const db = getFirestore();
   const auth = getAuth();
+  const requestId = event.params.requestId;
+  const secretRef = db.doc(
+      `workspaces/${WORKSPACE_ID}/user_admin_secrets/${requestId}`);
 
   await ref.set({status: "processing"}, {merge: true});
 
@@ -1153,25 +1163,31 @@ const processUserAdminRequest = onDocumentCreated({
     const {username} = await assertRequesterIsSuperAdmin(db, requesterUid);
     const performedByUsername = String(data.requestedByUsername || username);
 
+    const payload = {...data};
+    if (payload.type === "resetPassword") {
+      const secretSnap = await secretRef.get();
+      payload.newPassword = String(secretSnap.data()?.newPassword || "");
+    }
+
     const result = await dispatchUserAdminRequest(
-        db, auth, data, performedByUsername,
+        db, auth, payload, performedByUsername,
     );
 
     await ref.set({
       status: "completed",
       ...(result.user ? {user: result.user} : {success: true}),
-      newPassword: FieldValue.delete(),
       completedAt: FieldValue.serverTimestamp(),
       errorMessage: FieldValue.delete(),
     }, {merge: true});
+    await secretRef.delete().catch(() => undefined);
   } catch (error) {
     logger.error("processUserAdminRequest error", error);
     await ref.set({
       status: "failed",
       errorMessage: error.message || "No se pudo completar la operación.",
-      newPassword: FieldValue.delete(),
       completedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
+    await secretRef.delete().catch(() => undefined);
   }
 });
 

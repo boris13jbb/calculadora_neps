@@ -13,14 +13,14 @@ En **GitHub → Settings → Secrets and variables → Actions**, cree:
 Archivo local de referencia (no commitear):
 
 ```
-vicunha-calculadora-neps-firebase-adminsdk-fbsvc-6f75950579.json
+secrets/vicunha-calculadora-neps-firebase-adminsdk-fbsvc-6f75950579.json
 ```
 
 ### Registrar el secret desde PowerShell
 
 ```powershell
 cd C:\Users\BRS\Documents\regneps
-node -e "console.log(JSON.stringify(require('./vicunha-calculadora-neps-firebase-adminsdk-fbsvc-6f75950579.json')))" | gh secret set FIREBASE_SERVICE_ACCOUNT
+node -e "console.log(JSON.stringify(require('./secrets/vicunha-calculadora-neps-firebase-adminsdk-fbsvc-6f75950579.json')))" | gh secret set FIREBASE_SERVICE_ACCOUNT
 ```
 
 ## Roles IAM recomendados
@@ -45,7 +45,7 @@ Sin **Service Usage Consumer**, el workflow publica **Hosting** correctamente pe
 Functions no se despliegan desde este workflow; use localmente:
 
 ```powershell
-$env:GOOGLE_APPLICATION_CREDENTIALS = "ruta\al\service-account.json"
+$env:GOOGLE_APPLICATION_CREDENTIALS = "secrets\vicunha-calculadora-neps-firebase-adminsdk-fbsvc-6f75950579.json"
 firebase deploy --only functions --project vicunha-calculadora-neps
 ```
 

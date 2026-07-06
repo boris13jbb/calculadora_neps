@@ -89,8 +89,9 @@ Notas:
 - El repositorio hace **fallback** al callable directo solo ante fallos de
   infraestructura (trigger sin desplegar, timeout, red). Los errores de
   negocio (`status: failed`) se muestran tal cual, sin reintentar.
-- La contraseña (`password` / `newPassword`) se guarda en el documento solo de
-  forma transitoria y el trigger la borra con `FieldValue.delete()` al terminar.
+- La contraseña de creación va en `user_creation_secrets/{requestId}` y la de
+  reset en `user_admin_secrets/{requestId}`; el documento de solicitud no
+  incluye `password` ni `newPassword`. El trigger borra el secreto al terminar.
 - Los callables siguen disponibles para Android/iOS y como respaldo.
 - Reglas: solo `super_admin` puede crear en ambas colecciones; nadie puede
   actualizar/borrar los documentos desde el cliente (solo el Admin SDK).

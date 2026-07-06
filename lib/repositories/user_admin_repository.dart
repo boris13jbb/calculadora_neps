@@ -28,7 +28,9 @@ class UserAdminRepository {
 
   static const _workspacePath = 'workspaces/vicunha';
   static const _creationRequestsPath = '$_workspacePath/user_creation_requests';
+  static const _creationSecretsPath = '$_workspacePath/user_creation_secrets';
   static const _adminRequestsPath = '$_workspacePath/user_admin_requests';
+  static const _adminSecretsPath = '$_workspacePath/user_admin_secrets';
 
   static const _requestTimeout = Duration(seconds: 90);
 
@@ -108,13 +110,9 @@ class UserAdminRepository {
     required String newPassword,
   }) async {
     try {
-      await _enqueueAdminRequest(
-        {
-          'type': 'resetPassword',
-          'uid': uid,
-          'newPassword': newPassword,
-        },
-        failureFallbackMessage: 'No se pudo restablecer la contraseña.',
+      await _resetPasswordViaFirestoreQueue(
+        uid: uid,
+        newPassword: newPassword,
       );
     } on UserAdminException {
       rethrow;
@@ -122,6 +120,30 @@ class UserAdminRepository {
       debugPrint('Cola resetPassword falló, probando callable: $error');
       await _service.resetUserPassword(uid: uid, newPassword: newPassword);
     }
+  }
+
+  Future<void> _resetPasswordViaFirestoreQueue({
+    required String uid,
+    required String newPassword,
+  }) async {
+    final requestRef = await _writeRequest(
+      _adminRequestsPath,
+      {
+        'type': 'resetPassword',
+        'uid': uid,
+      },
+    );
+
+    await _firestore.doc('$_adminSecretsPath/${requestRef.id}').set({
+      'newPassword': newPassword,
+      'requestedByUid': _auth.currentUser!.uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+
+    await _awaitRequestCompletion(
+      requestRef,
+      failureFallbackMessage: 'No se pudo restablecer la contraseña.',
+    );
   }
 
   Future<void> disableUser(String uid) => _setUserActive(uid, false);
@@ -188,13 +210,18 @@ class UserAdminRepository {
       {
         'type': 'create',
         'username': username,
-        'password': password,
         if (displayName != null && displayName.trim().isNotEmpty)
           'displayName': displayName.trim(),
         'role': role.code,
         'isActive': isActive,
       },
     );
+
+    await _firestore.doc('$_creationSecretsPath/${requestRef.id}').set({
+      'password': password,
+      'requestedByUid': _auth.currentUser!.uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
     final data = await _awaitRequestCompletion(
       requestRef,
