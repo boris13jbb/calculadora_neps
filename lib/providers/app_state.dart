@@ -1293,13 +1293,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _clearCaptureInputs() {
-    telarController.clear();
-    nepsController.clear();
-    turnoController.clear();
-    operarioController.clear();
-    lineaProduccionController.clear();
-    observacionController.clear();
-    accionInmediataController.clear();
+    capture.clearCaptureFields(notify: false);
   }
 
   Future<void> addRecord() async {
@@ -1415,8 +1409,7 @@ class AppState extends ChangeNotifier {
       return;
     }
     await _clearAllRecords();
-    telarController.clear();
-    nepsController.clear();
+    clearCaptureFields();
     if (!cloudSyncEnabled) {
       notifyListeners();
     }
@@ -1424,13 +1417,9 @@ class AppState extends ChangeNotifier {
   }
 
   void clearCaptureFields() {
-    telarController.clear();
-    nepsController.clear();
-    turnoController.clear();
-    operarioController.clear();
-    lineaProduccionController.clear();
-    observacionController.clear();
-    accionInmediataController.clear();
+    capture.clearCaptureFields(notify: false);
+    selectedFabric = null;
+    useManualFabric = false;
     notifyListeners();
   }
 

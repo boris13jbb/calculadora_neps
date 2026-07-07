@@ -56,12 +56,22 @@ class CaptureFormScope extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearCaptureFields() {
+  void clearCaptureFields({bool notify = true}) {
     telarController.clear();
     nepsController.clear();
+    lotePrefixController.clear();
+    loteSuffixController.clear();
+    loteFullController.clear();
+    manualTelaController.clear();
+    turnoController.clear();
+    operarioController.clear();
+    lineaProduccionController.clear();
     observacionController.clear();
     accionInmediataController.clear();
-    notifyListeners();
+    loteFullEntryMode = false;
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   @override
