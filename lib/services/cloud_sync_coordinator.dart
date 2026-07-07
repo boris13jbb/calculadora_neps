@@ -2,8 +2,11 @@ import 'dart:async';
 
 import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
+import '../models/record_filters.dart';
+import '../models/records_page_result.dart';
 import '../models/saved_report.dart';
 import 'cloud_sync_port.dart';
+import 'firestore_record_query_builder.dart';
 
 /// Orquesta bootstrap, migraciones y suscripciones en tiempo real de Firestore.
 ///
@@ -14,8 +17,10 @@ class CloudSyncCoordinator {
 
   final CloudSyncPort _cloud;
 
-  StreamSubscription<List<NepRecord>>? _recordsSubscription;
+  StreamSubscription<RecordsPageResult>? _recordsSubscription;
   StreamSubscription<List<String>>? _fabricsSubscription;
+
+  bool _useRemoteFilters = false;
 
   Future<void> bootstrap() => _cloud.bootstrap();
 
@@ -65,26 +70,44 @@ class CloudSyncCoordinator {
 
   Future<void> deleteReport(String reportId) => _cloud.deleteReport(reportId);
 
-  /// Escucha registros y telas. Opcionalmente espera el primer snapshot.
+  /// Escucha registros paginados y telas en tiempo real.
   Future<void> bindSubscriptions({
-    required void Function(List<NepRecord> records) onRecords,
+    required void Function(RecordsPageResult page) onRecords,
     required void Function(List<String> fabrics) onFabrics,
     AppUserRole viewerRole = AppUserRole.operario,
+    RecordFilters? filters,
+    int limit = 50,
     bool waitForFirstSnapshot = false,
     Duration timeout = const Duration(seconds: 15),
+    void Function(Object error, StackTrace stackTrace)? onConnectionError,
   }) async {
+    _useRemoteFilters = filters != null &&
+        FirestoreRecordQueryBuilder.hasRemoteFilters(filters);
+
     _recordsSubscription?.cancel();
     _fabricsSubscription?.cancel();
 
     final recordsReady = Completer<void>();
     final fabricsReady = Completer<void>();
 
-    _recordsSubscription = _cloud.watchRecords(viewerRole: viewerRole).listen(
+    final recordsStream = _useRemoteFilters
+        ? _cloud.watchRecordsByFilters(
+            filters: filters!,
+            viewerRole: viewerRole,
+            limit: limit,
+          )
+        : _cloud.watchRecentRecords(
+            viewerRole: viewerRole,
+            limit: limit,
+          );
+
+    _recordsSubscription = recordsStream.listen(
       (data) {
         onRecords(data);
         if (!recordsReady.isCompleted) recordsReady.complete();
       },
-      onError: (Object error) {
+      onError: (Object error, StackTrace stackTrace) {
+        onConnectionError?.call(error, stackTrace);
         if (!recordsReady.isCompleted) recordsReady.completeError(error);
       },
     );
@@ -94,7 +117,8 @@ class CloudSyncCoordinator {
         onFabrics(data);
         if (!fabricsReady.isCompleted) fabricsReady.complete();
       },
-      onError: (Object error) {
+      onError: (Object error, StackTrace stackTrace) {
+        onConnectionError?.call(error, stackTrace);
         if (!fabricsReady.isCompleted) fabricsReady.completeError(error);
       },
     );
@@ -110,6 +134,35 @@ class CloudSyncCoordinator {
       if (!recordsReady.isCompleted) recordsReady.complete();
       if (!fabricsReady.isCompleted) fabricsReady.complete();
     }
+  }
+
+  /// Re-suscribe solo el stream de registros (paginación / filtros remotos).
+  Future<void> rebindRecordsOnly({
+    required void Function(RecordsPageResult page) onRecords,
+    required AppUserRole viewerRole,
+    RecordFilters? filters,
+    required int limit,
+  }) async {
+    _useRemoteFilters = filters != null &&
+        FirestoreRecordQueryBuilder.hasRemoteFilters(filters);
+
+    _recordsSubscription?.cancel();
+
+    final recordsStream = _useRemoteFilters
+        ? _cloud.watchRecordsByFilters(
+            filters: filters!,
+            viewerRole: viewerRole,
+            limit: limit,
+          )
+        : _cloud.watchRecentRecords(
+            viewerRole: viewerRole,
+            limit: limit,
+          );
+
+    _recordsSubscription = recordsStream.listen(
+      (data) => onRecords(data),
+      onError: (_) {},
+    );
   }
 
   void dispose() {

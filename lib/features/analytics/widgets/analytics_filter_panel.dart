@@ -176,7 +176,7 @@ class _CustomDateRangeFields extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
+                const Icon(
                   Icons.error_outline,
                   size: 16,
                   color: AppColors.statusCritical,

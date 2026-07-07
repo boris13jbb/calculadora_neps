@@ -204,6 +204,29 @@ class _RecordsScreenState extends State<RecordsScreen> {
                 ),
               ),
             SizedBox(height: spacing),
+            if (appState.hasMoreRecords || appState.isLoadingMoreRecords)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Center(
+                  child: OutlinedButton.icon(
+                    onPressed: appState.isLoadingMoreRecords
+                        ? null
+                        : appState.loadMoreRecords,
+                    icon: appState.isLoadingMoreRecords
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.expand_more),
+                    label: Text(
+                      appState.isLoadingMoreRecords
+                          ? 'Cargando más registros…'
+                          : 'Cargar más registros',
+                    ),
+                  ),
+                ),
+              ),
             Expanded(
               child: RecordsTable(
                 appState: appState,

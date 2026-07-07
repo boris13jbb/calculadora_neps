@@ -49,7 +49,7 @@ class QualityChartsCatalog {
 /// Usa el ancho disponible del contenido (no el lado corto de la pantalla)
 /// para decidir columnas, de modo que en web con sidebar se muestren todas
 /// las gráficas aunque la ventana no sea muy alta.
-class QualityChartsSection extends StatelessWidget {
+class QualityChartsSection extends StatefulWidget {
   const QualityChartsSection({
     super.key,
     required this.records,
@@ -68,8 +68,44 @@ class QualityChartsSection extends StatelessWidget {
   final VoidCallback? onGoToRecords;
 
   @override
+  State<QualityChartsSection> createState() => _QualityChartsSectionState();
+}
+
+class _QualityChartsSectionState extends State<QualityChartsSection> {
+  String? _cacheKey;
+  _QualityChartData? _cachedData;
+
+  String _buildCacheKey() {
+    final records = widget.records;
+    if (records.isEmpty) return 'empty_${widget.include.join(',')}';
+    final newest = records
+        .map((r) => r.createdAt.millisecondsSinceEpoch)
+        .reduce((a, b) => a > b ? a : b);
+    return '${records.length}_${newest}_${widget.include.join(',')}';
+  }
+
+  _QualityChartData _chartData() {
+    final key = _buildCacheKey();
+    if (_cacheKey == key && _cachedData != null) return _cachedData!;
+    _cacheKey = key;
+    final records = widget.records;
+    _cachedData = _QualityChartData(
+      topTelars: analyticsService.topTelaresPorNeps(records, limit: 10),
+      topTelas: analyticsService.topTelasPorNeps(records, limit: 8),
+      topLotes: analyticsService.topLotesPorNeps(records, limit: 8),
+      trend: analyticsService.tendenciaDiaria(records),
+      criticalTrend: analyticsService.tendenciaCriticosDiaria(records),
+      avgByTelar: analyticsService.promedioPorTelar(records).take(10).toList(),
+      distribution: analyticsService.distribucionPorEstado(records),
+      telarAlerts: analyticsService.topTelaresConAlertas(records, limit: 6),
+      pctCritical: analyticsService.porcentajeCriticos(records),
+    );
+    return _cachedData!;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (records.isEmpty) {
+    if (widget.records.isEmpty) {
       return Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -84,24 +120,24 @@ class QualityChartsSection extends StatelessWidget {
           ],
         ),
         child: EmptyState(
-          compact: compact,
+          compact: widget.compact,
           icon: Icons.bar_chart_outlined,
           title: 'Sin datos para gráficas',
           message: 'Importe o capture registros para ver el análisis visual.',
           iconColor: AppColors.primaryGreen,
           actions: [
-            if (onGoToCapture != null)
+            if (widget.onGoToCapture != null)
               EmptyStateAction(
                 label: 'Capturar registro',
                 icon: Icons.add_circle_outline,
-                onPressed: onGoToCapture!,
+                onPressed: widget.onGoToCapture!,
               ),
-            if (onGoToRecords != null)
+            if (widget.onGoToRecords != null)
               EmptyStateAction(
                 label: 'Importar datos',
                 icon: Icons.upload_file,
                 filled: false,
-                onPressed: onGoToRecords!,
+                onPressed: widget.onGoToRecords!,
               ),
           ],
         ),
@@ -114,18 +150,7 @@ class QualityChartsSection extends StatelessWidget {
         final twoColumns = width >= 680;
         final chartHeight = width < 480 ? 210.0 : (twoColumns ? 280.0 : 250.0);
 
-        final topTelars =
-            analyticsService.topTelaresPorNeps(records, limit: 10);
-        final topTelas = analyticsService.topTelasPorNeps(records, limit: 8);
-        final topLotes = analyticsService.topLotesPorNeps(records, limit: 8);
-        final trend = analyticsService.tendenciaDiaria(records);
-        final criticalTrend = analyticsService.tendenciaCriticosDiaria(records);
-        final avgByTelar =
-            analyticsService.promedioPorTelar(records).take(10).toList();
-        final distribution = analyticsService.distribucionPorEstado(records);
-        final telarAlerts =
-            analyticsService.topTelaresConAlertas(records, limit: 6);
-        final pctCritical = analyticsService.porcentajeCriticos(records);
+        final data = _chartData();
 
         Widget row(Widget left, Widget? right) {
           if (!twoColumns || right == null) {
@@ -147,25 +172,13 @@ class QualityChartsSection extends StatelessWidget {
           );
         }
 
-        final data = _QualityChartData(
-          topTelars: topTelars,
-          topTelas: topTelas,
-          topLotes: topLotes,
-          trend: trend,
-          criticalTrend: criticalTrend,
-          avgByTelar: avgByTelar,
-          distribution: distribution,
-          telarAlerts: telarAlerts,
-          pctCritical: pctCritical,
-        );
-
         final cards = <Widget>[
-          for (final kind in include)
+          for (final kind in widget.include)
             _buildChartCard(
               kind: kind,
               data: data,
               chartHeight: chartHeight,
-              formatDecimal: formatDecimal,
+              formatDecimal: widget.formatDecimal,
             ),
         ];
 
@@ -498,7 +511,7 @@ class _VerticalBarChart extends StatelessWidget {
           show: true,
           drawVerticalLine: false,
           horizontalInterval: safeMax / 4,
-          getDrawingHorizontalLine: (_) => FlLine(
+          getDrawingHorizontalLine: (_) => const FlLine(
             color: AppColors.border,
             strokeWidth: 1,
             dashArray: [4, 4],
@@ -672,7 +685,7 @@ class _StackedAlertBarChart extends StatelessWidget {
           drawVerticalLine: false,
           horizontalInterval: safeMax / 4,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: AppColors.border, dashArray: [4, 4]),
+              const FlLine(color: AppColors.border, dashArray: [4, 4]),
         ),
         borderData: FlBorderData(show: false),
         barGroups: List.generate(summaries.length, (i) {
@@ -773,11 +786,11 @@ class _CriticalGauge extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: AppColors.muted),
               ),
               const SizedBox(height: 12),
-              _LegendDot(
+              const _LegendDot(
                   color: AppColors.statusNormal, label: 'Objetivo < 25%'),
-              _LegendDot(
+              const _LegendDot(
                   color: AppColors.statusWarning, label: 'Atención 25–50%'),
-              _LegendDot(
+              const _LegendDot(
                   color: AppColors.statusCritical, label: 'Riesgo > 50%'),
             ],
           ),
@@ -1061,7 +1074,7 @@ class _LineChartWidget extends StatelessWidget {
           drawVerticalLine: false,
           horizontalInterval: safeMax / 4,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: AppColors.border, dashArray: [4, 4]),
+              const FlLine(color: AppColors.border, dashArray: [4, 4]),
         ),
         borderData: FlBorderData(show: false),
         lineBarsData: [

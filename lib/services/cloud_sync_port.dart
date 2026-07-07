@@ -1,13 +1,37 @@
 import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
+import '../models/record_filters.dart';
+import '../models/records_page_result.dart';
 import '../models/saved_report.dart';
 
 /// Contrato de sincronizacion sin dependencias de Firebase en el arranque.
 abstract class CloudSyncPort {
   Future<void> bootstrap();
 
+  /// Suscripción legacy (compatibilidad). Preferir [watchRecentRecords].
   Stream<List<NepRecord>> watchRecords({
     AppUserRole viewerRole = AppUserRole.operario,
+  });
+
+  /// Últimos registros paginados en tiempo real.
+  Stream<RecordsPageResult> watchRecentRecords({
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = 50,
+  });
+
+  /// Registros en un rango de fechas (tiempo real).
+  Stream<RecordsPageResult> watchRecordsByDateRange({
+    required DateTime from,
+    required DateTime to,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = 50,
+  });
+
+  /// Registros filtrados con consulta Firestore (tiempo real).
+  Stream<RecordsPageResult> watchRecordsByFilters({
+    required RecordFilters filters,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = 50,
   });
 
   Stream<List<String>> watchFabrics();

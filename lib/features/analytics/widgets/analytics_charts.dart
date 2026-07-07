@@ -447,7 +447,7 @@ class _LineChartBody extends StatelessWidget {
           drawVerticalLine: false,
           horizontalInterval: safeMax / 4,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: AppColors.border, dashArray: [4, 4]),
+              const FlLine(color: AppColors.border, dashArray: [4, 4]),
         ),
         borderData: FlBorderData(show: false),
         lineBarsData: [
@@ -548,7 +548,7 @@ class _BarChartBody extends StatelessWidget {
           show: true,
           drawVerticalLine: false,
           getDrawingHorizontalLine: (_) =>
-              FlLine(color: AppColors.border, dashArray: [4, 4]),
+              const FlLine(color: AppColors.border, dashArray: [4, 4]),
         ),
         borderData: FlBorderData(show: false),
         barGroups: [

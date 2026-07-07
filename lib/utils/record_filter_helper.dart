@@ -4,6 +4,88 @@ import '../models/record_filters.dart';
 import '../services/alert_service.dart';
 
 class RecordFilterHelper {
+  /// Filtros que solo pueden aplicarse en memoria (neps, mts, búsqueda, etc.).
+  static bool needsInMemoryFiltering(RecordFilters filters) {
+    return filters.loteTrama != null ||
+        filters.nepsMin != null ||
+        filters.nepsMax != null ||
+        filters.mtsMin != null ||
+        filters.mtsMax != null ||
+        filters.lineaProduccion != null ||
+        filters.soloNoRevisados ||
+        filters.soloConAccionCorrectiva ||
+        filters.searchText.trim().isNotEmpty;
+  }
+
+  /// Aplica únicamente filtros que Firestore no puede resolver.
+  static List<NepRecord> applyInMemoryOnly(
+    List<NepRecord> records,
+    RecordFilters filters,
+  ) {
+    if (!needsInMemoryFiltering(filters)) return records;
+    return records
+        .where((record) => _matchesInMemory(record, filters))
+        .toList();
+  }
+
+  static bool _matchesInMemory(NepRecord record, RecordFilters filters) {
+    if (filters.loteTrama != null &&
+        record.loteTrama.toLowerCase() != filters.loteTrama!.toLowerCase()) {
+      return false;
+    }
+
+    if (filters.lineaProduccion != null &&
+        record.lineaProduccion.toLowerCase() !=
+            filters.lineaProduccion!.toLowerCase()) {
+      return false;
+    }
+
+    if (filters.soloNoRevisados && record.revisadoPorSupervisor) {
+      return false;
+    }
+
+    if (filters.soloConAccionCorrectiva &&
+        record.accionCorrectiva.trim().isEmpty) {
+      return false;
+    }
+
+    if (filters.nepsMin != null && record.neps < filters.nepsMin!) {
+      return false;
+    }
+
+    if (filters.nepsMax != null && record.neps > filters.nepsMax!) {
+      return false;
+    }
+
+    final mts = record.neps / testLengthM;
+    if (filters.mtsMin != null && mts < filters.mtsMin!) {
+      return false;
+    }
+
+    if (filters.mtsMax != null && mts > filters.mtsMax!) {
+      return false;
+    }
+
+    final search = filters.searchText.trim().toLowerCase();
+    if (search.isNotEmpty) {
+      final haystack = [
+        record.tela,
+        record.loteTrama,
+        record.telar,
+        record.turno,
+        record.operario,
+        record.lineaProduccion,
+        record.observacion,
+        record.accionCorrectiva,
+        record.neps.toString(),
+        mts.round().toString(),
+      ].join(' ').toLowerCase();
+      if (!haystack.contains(search)) return false;
+    }
+
+    return true;
+  }
+
   static List<NepRecord> apply(List<NepRecord> records, RecordFilters filters) {
     return records.where((record) => _matches(record, filters)).toList();
   }

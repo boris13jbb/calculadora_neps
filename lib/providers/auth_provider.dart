@@ -30,7 +30,7 @@ class AuthProvider extends ChangeNotifier {
   final AuthService _authService;
   final UserAdminService _userAdminService;
 
-  AuthStatus status = AuthStatus.unknown;
+  AuthStatus status = AuthStatus.unauthenticated;
   AppUser? profile;
   String? errorMessage;
   StreamSubscription<User?>? _authSub;

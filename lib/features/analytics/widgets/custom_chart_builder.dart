@@ -67,7 +67,7 @@ class _CustomChartBuilderState extends State<CustomChartBuilder> {
               // Tres selectores en fila requieren ~200 px cada uno para evitar overflow.
               const minSelectorWidth = 200.0;
               const selectorGap = 12.0;
-              final rowMinWidth = minSelectorWidth * 3 + selectorGap * 2;
+              const rowMinWidth = minSelectorWidth * 3 + selectorGap * 2;
               final stacked = constraints.maxWidth < rowMinWidth;
 
               final metricField = _SelectorField<ChartMetric>(
@@ -524,7 +524,7 @@ class _BarPreview extends StatelessWidget {
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
-          getDrawingHorizontalLine: (_) => FlLine(
+          getDrawingHorizontalLine: (_) => const FlLine(
             color: AppColors.border,
             strokeWidth: 1,
           ),
@@ -626,7 +626,7 @@ class _LinePreview extends StatelessWidget {
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
-          getDrawingHorizontalLine: (_) => FlLine(
+          getDrawingHorizontalLine: (_) => const FlLine(
             color: AppColors.border,
             strokeWidth: 1,
           ),

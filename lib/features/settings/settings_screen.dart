@@ -130,60 +130,60 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return NavPermissionGate(
       navId: AppNavId.settings,
       child: AppPage(
-      title: 'Configuración',
-      subtitle: phone ? null : 'Límites de alertas y parámetros de calidad',
-      maxContentWidth: 1080,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (appState.cloudSyncEnabled)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: StatusBanner(
-                type: StatusBannerType.info,
-                message:
-                    'Rol: ${appState.authRole.label}${appState.authUsername != null ? ' · ${appState.authUsername}' : ''}',
+        title: 'Configuración',
+        subtitle: phone ? null : 'Límites de alertas y parámetros de calidad',
+        maxContentWidth: 1080,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (appState.cloudSyncEnabled)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: StatusBanner(
+                  type: StatusBannerType.info,
+                  message:
+                      'Rol: ${appState.authRole.label}${appState.authUsername != null ? ' · ${appState.authUsername}' : ''}',
+                ),
               ),
-            ),
-          if (appState.isReadOnlyUser)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 12),
-              child: StatusBanner(
-                type: StatusBannerType.warning,
-                message:
-                    'Modo solo lectura (Gerencia). No puede capturar ni modificar registros.',
+            if (appState.isReadOnlyUser)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: StatusBanner(
+                  type: StatusBannerType.warning,
+                  message:
+                      'Modo solo lectura (Gerencia). No puede capturar ni modificar registros.',
+                ),
               ),
-            ),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final twoColumns = constraints.maxWidth >= 820;
-              final left = _limitsSection(appState);
-              final right = _alertsAndDefaultsSection(appState);
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final twoColumns = constraints.maxWidth >= 820;
+                final left = _limitsSection(appState);
+                final right = _alertsAndDefaultsSection(appState);
 
-              if (!twoColumns) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                if (!twoColumns) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      left,
+                      const SizedBox(height: 16),
+                      right,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    left,
-                    const SizedBox(height: 16),
-                    right,
+                    Expanded(child: left),
+                    const SizedBox(width: 20),
+                    Expanded(child: right),
                   ],
                 );
-              }
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: left),
-                  const SizedBox(width: 20),
-                  Expanded(child: right),
-                ],
-              );
-            },
-          ),
-        ],
+              },
+            ),
+          ],
+        ),
       ),
-    ),
     );
   }
 

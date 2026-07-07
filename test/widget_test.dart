@@ -13,7 +13,7 @@ Future<void> _pumpApp(WidgetTester tester, Size size) async {
 
   await tester.pumpWidget(const NepsApp());
   await tester.pump();
-  await tester.pumpAndSettle(const Duration(seconds: 2));
+  await tester.pump(const Duration(milliseconds: 300));
 }
 
 void main() {

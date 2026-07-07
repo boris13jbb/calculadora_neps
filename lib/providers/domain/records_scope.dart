@@ -1,25 +1,63 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants.dart';
 import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
+import '../../services/firestore_record_query_builder.dart';
+import '../../services/record_local_storage_service.dart';
 import '../../utils/record_filter_helper.dart';
 
-/// Estado de registros locales y filtros de tabla.
+/// Estado de registros locales, filtros y paginación.
 class RecordsScope extends ChangeNotifier {
-  RecordsScope();
+  RecordsScope({RecordLocalStorageService? localStorage})
+      : _localStorage = localStorage ?? recordLocalStorageService;
+
+  final RecordLocalStorageService _localStorage;
 
   List<NepRecord> items = [];
   final RecordFilters filters = RecordFilters();
   int filterPanelKey = 0;
 
-  List<NepRecord> get visible => RecordFilterHelper.apply(items, filters);
+  int queryLimit = recordsInitialPageSize;
+  bool hasMoreFromCloud = false;
+  bool isLoadingMore = false;
+  int totalLoadedHint = 0;
+
+  bool remoteFiltersActive = false;
+
+  /// Registros visibles tras filtros.
+  List<NepRecord> get visible {
+    if (remoteFiltersActive && usesRemoteFilters) {
+      return RecordFilterHelper.applyInMemoryOnly(items, filters);
+    }
+    return RecordFilterHelper.apply(items, filters);
+  }
+
+  /// Subconjunto ligero para el panel principal (últimos N o 30 días).
+  List<NepRecord> get dashboardRecords {
+    final cutoff = DateTime.now().subtract(const Duration(days: 30));
+    final recent =
+        items.where((r) => r.createdAt.isAfter(cutoff)).toList(growable: false);
+    if (recent.length >= dashboardRecordsLimit) {
+      return recent.take(dashboardRecordsLimit).toList(growable: false);
+    }
+    if (items.length <= dashboardRecordsLimit) return items;
+    return items.take(dashboardRecordsLimit).toList(growable: false);
+  }
+
+  bool get usesRemoteFilters =>
+      FirestoreRecordQueryBuilder.hasRemoteFilters(filters);
 
   void replaceAll(List<NepRecord> next) {
     items = next;
+    notifyListeners();
+  }
+
+  void applyPageResult(List<NepRecord> records, {required bool hasMore}) {
+    items = records;
+    hasMoreFromCloud = hasMore;
+    totalLoadedHint = records.length;
+    isLoadingMore = false;
     notifyListeners();
   }
 
@@ -28,7 +66,7 @@ class RecordsScope extends ChangeNotifier {
     if (index >= 0) {
       items[index] = record;
     } else {
-      items.add(record);
+      items.insert(0, record);
     }
     notifyListeners();
   }
@@ -40,6 +78,8 @@ class RecordsScope extends ChangeNotifier {
 
   void clear() {
     items = [];
+    hasMoreFromCloud = false;
+    totalLoadedHint = 0;
     notifyListeners();
   }
 
@@ -52,6 +92,7 @@ class RecordsScope extends ChangeNotifier {
   void clearFilters() {
     filters.clear();
     filterPanelKey++;
+    queryLimit = recordsInitialPageSize;
     notifyListeners();
   }
 
@@ -65,27 +106,39 @@ class RecordsScope extends ChangeNotifier {
     filters.tela = tela;
     filters.loteTrama = loteTrama;
     filterPanelKey++;
+    queryLimit = recordsInitialPageSize;
+    notifyListeners();
+  }
+
+  void onFiltersChanged() {
+    queryLimit = recordsInitialPageSize;
+    notifyListeners();
+  }
+
+  Future<void> requestLoadMore() async {
+    if (isLoadingMore || !hasMoreFromCloud) return;
+    if (queryLimit >= recordsMaxPageSize) return;
+    isLoadingMore = true;
+    queryLimit = (queryLimit + recordsPageSizeIncrement).clamp(
+      recordsInitialPageSize,
+      recordsMaxPageSize,
+    );
     notifyListeners();
   }
 
   Future<List<NepRecord>> loadFromPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedData = prefs.getString(storageKey);
-    if (savedData == null || savedData.isEmpty) return [];
+    return _localStorage.loadRecent(limit: recordsMaxPageSize);
+  }
 
-    try {
-      final List decoded = jsonDecode(savedData);
-      return decoded
-          .map((item) => NepRecord.fromJson(Map<String, dynamic>.from(item)))
-          .toList();
-    } catch (error) {
-      throw FormatException('Datos locales corruptos: $error');
-    }
+  Future<List<NepRecord>> loadAllLocal() async {
+    return _localStorage.loadAll();
   }
 
   Future<void> persistLocally() async {
-    final prefs = await SharedPreferences.getInstance();
-    final encoded = jsonEncode(items.map((record) => record.toJson()).toList());
-    await prefs.setString(storageKey, encoded);
+    await _localStorage.saveAll(items);
+  }
+
+  Future<void> persistRecord(NepRecord record) async {
+    await _localStorage.upsert(record);
   }
 }

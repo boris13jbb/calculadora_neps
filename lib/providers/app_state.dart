@@ -20,6 +20,7 @@ import '../models/pdf_report_style.dart';
 import '../models/record_filters.dart';
 import '../models/record_import_result.dart';
 import '../models/saved_report.dart';
+import '../models/sync_phase.dart';
 import '../services/alert_config_service.dart';
 import '../services/alert_service.dart';
 import '../services/cloud_sync_coordinator.dart';
@@ -101,13 +102,23 @@ class AppState extends ChangeNotifier {
         getAuthRole: () => authRole,
         loadLocalRecords: () => recordsScope.loadFromPreferences(),
         loadLocalFabrics: () => fabricCatalogService.loadFabrics(),
-        applyRecords: (data) => records = data,
+        applyRecordsPage: (page) {
+          recordsScope.applyPageResult(
+            page.records,
+            hasMore: page.hasMore,
+          );
+        },
         applyFabrics: (data) => fabrics = data,
         syncFabricSelection: _syncFabricSelection,
         cacheRecords: _cacheRecordsLocally,
         cacheFabrics: _cacheFabricsLocally,
-        migrateReports: () => reportStorageService.migrateLocalReportsIfNeeded(),
+        migrateReports: () =>
+            reportStorageService.migrateLocalReportsIfNeeded(),
         refreshUserRoleAndConfig: _refreshUserRoleAndConfig,
+        getActiveFilters: () => recordsScope.filters,
+        getQueryLimit: () => recordsScope.queryLimit,
+        setRemoteFiltersActive: (active) =>
+            recordsScope.remoteFiltersActive = active,
         onStateChanged: notifyListeners,
         reportStorageService: reportStorageService,
       ),
@@ -122,6 +133,9 @@ class AppState extends ChangeNotifier {
   set cloudSyncEnabled(bool value) => _cloud.enabled = value;
   String? get cloudSyncError => _cloud.error;
   set cloudSyncError(String? value) => _cloud.error = value;
+  SyncPhase get syncPhase => _cloud.syncPhase;
+  bool get hasMoreRecords => recordsScope.hasMoreFromCloud;
+  bool get isLoadingMoreRecords => recordsScope.isLoadingMore;
   final LoteTramaCatalogService loteTramaCatalogService;
   final RecordImportService recordImportService;
   final ReportStorageService reportStorageService;
@@ -181,6 +195,9 @@ class AppState extends ChangeNotifier {
   PdfReportStyle pdfReportStyle = PdfReportStyle.completo;
 
   List<NepRecord> get visibleRecords => recordsScope.visible;
+
+  /// Subconjunto ligero para el panel principal.
+  List<NepRecord> get dashboardRecords => recordsScope.dashboardRecords;
 
   int get criticalAlertsCount =>
       alertService.detectCriticalRecords(records).length;
@@ -270,9 +287,15 @@ class AppState extends ChangeNotifier {
     capture.attachListeners(notifyListeners);
     recordsScope.addListener(notifyListeners);
     capture.addListener(notifyListeners);
-    await alertConfigService.load();
+
+    await Future<void>.delayed(Duration.zero);
+
+    await Future.wait([
+      alertConfigService.load(),
+      notificationPreferencesService.load(),
+    ]);
     alertService.updateConfig(alertConfigService.config);
-    await notificationPreferencesService.load();
+
     await loadData();
     if (launchUri != null) {
       await applyLaunchParameters(launchUri);
@@ -380,14 +403,18 @@ class AppState extends ChangeNotifier {
   Future<void> loadData() async {
     isLoading = true;
     bootstrapError = null;
+    _cloud.syncPhase = SyncPhase.loadingLocal;
     notifyListeners();
 
     try {
       await _loadLocalData();
+      _cloud.syncPhase =
+          cloudSyncService != null ? SyncPhase.syncingCloud : SyncPhase.offline;
     } catch (error, stackTrace) {
       bootstrapError =
           'No se pudieron cargar los datos guardados. Verifique el almacenamiento local.';
       ErrorHandler.log(error, stackTrace, 'loadLocalData');
+      _cloud.syncPhase = SyncPhase.offline;
     }
 
     isLoading = false;
@@ -408,9 +435,16 @@ class AppState extends ChangeNotifier {
   Future<void> enableCloudSyncIfAvailable() => _cloud.enableIfAvailable();
 
   Future<void> _loadLocalData() async {
-    records = await recordsScope.loadFromPreferences();
-    fabrics = await fabricCatalogService.loadFabrics();
-    loteCatalog = await loteTramaCatalogService.loadCatalog();
+    final loaded = await Future.wait([
+      recordsScope.loadFromPreferences(),
+      fabricCatalogService.loadFabrics(),
+      loteTramaCatalogService.loadCatalog(),
+    ]);
+
+    records = loaded[0] as List<NepRecord>;
+    fabrics = loaded[1] as List<String>;
+    loteCatalog = loaded[2] as List<String>;
+
     _suppressLotePersist = true;
     try {
       await _loadLotePreferences();
@@ -519,8 +553,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _cacheRecordsLocally(List<NepRecord> data) async {
-    records = data;
+    recordsScope.items = data;
     await recordsScope.persistLocally();
+    recordsScope.notifyListeners();
+    notifyListeners();
   }
 
   Future<void> _refreshUserRoleAndConfig() async {
@@ -550,7 +586,9 @@ class AppState extends ChangeNotifier {
 
   Future<bool> _ensureCloudReady() => _cloud.ensureReady();
 
-  Future<void> reconnectCloudIfNeeded() => _cloud.reconnectIfNeeded();
+  Future<void> reconnectCloudIfNeeded() => _cloud.ensureConnected();
+
+  Future<void> ensureCloudConnected() => _cloud.ensureConnected();
 
   void _syncFabricSelection() {
     if (fabrics.isEmpty) {
@@ -725,9 +763,26 @@ class AppState extends ChangeNotifier {
   }
 
   void clearFilters() {
-    filters.clear();
-    filterPanelKey++;
+    recordsScope.clearFilters();
+    recordsScope.remoteFiltersActive = false;
+    filterPanelKey = recordsScope.filterPanelKey;
+    unawaited(_rebindRecordsIfCloudReady());
     notifyListeners();
+  }
+
+  Future<void> loadMoreRecords() async {
+    await recordsScope.requestLoadMore();
+    await _rebindRecordsIfCloudReady();
+    notifyListeners();
+  }
+
+  Future<void> _rebindRecordsIfCloudReady() async {
+    if (cloudSyncCoordinator == null || !cloudSyncEnabled) return;
+    try {
+      await _cloud.rebindRecordsSubscription();
+    } catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'rebindRecords');
+    }
   }
 
   String get timestamp {
@@ -1389,5 +1444,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void onFiltersChanged() => notifyListeners();
+  void onFiltersChanged() {
+    recordsScope.onFiltersChanged();
+    filterPanelKey = recordsScope.filterPanelKey;
+    unawaited(_rebindRecordsIfCloudReady());
+    notifyListeners();
+  }
 }

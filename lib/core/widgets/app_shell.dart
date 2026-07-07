@@ -6,9 +6,9 @@ import '../../providers/auth_provider.dart';
 import '../layout/breakpoints.dart';
 import '../navigation/app_navigation.dart';
 import '../theme/app_theme.dart';
-import 'app_loading_view.dart';
 import 'empty_state.dart';
 import 'status_banner.dart';
+import 'sync_status_banner.dart';
 import 'vicunha_sidebar.dart';
 
 class AppShell extends StatefulWidget {
@@ -25,22 +25,25 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
     final auth = context.watch<AuthProvider>();
+    final bootstrapError =
+        context.select<AppState, String?>((s) => s.bootstrapError);
+    final navigationIndex =
+        context.select<AppState, int>((s) => s.navigationIndex);
+    final criticalAlertsCount =
+        context.select<AppState, int>((s) => s.criticalAlertsCount);
+    final appState = context.read<AppState>();
+
     final navItems = AppNavigation.visibleFor(auth.profile);
     appState.applyPendingNavigation(auth.profile);
 
-    if (appState.isLoading) {
-      return const AppLoadingView();
-    }
-
-    if (appState.bootstrapError != null) {
+    if (bootstrapError != null) {
       return Scaffold(
         body: Center(
           child: EmptyState(
             icon: Icons.storage_outlined,
             title: 'Error al cargar datos',
-            message: appState.bootstrapError!,
+            message: bootstrapError,
             iconColor: AppColors.danger,
             actions: [
               EmptyStateAction(
@@ -75,7 +78,7 @@ class _AppShellState extends State<AppShell> {
     }
 
     final safeIndex =
-        AppNavigation.clampIndex(appState.navigationIndex, navItems.length);
+        AppNavigation.clampIndex(navigationIndex, navItems.length);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -90,9 +93,8 @@ class _AppShellState extends State<AppShell> {
                   label: item.label,
                   icon: item.icon,
                   selectedIcon: item.selectedIcon,
-                  badgeCount: item.id == AppNavId.alerts
-                      ? appState.criticalAlertsCount
-                      : 0,
+                  badgeCount:
+                      item.id == AppNavId.alerts ? criticalAlertsCount : 0,
                 ),
               )
               .toList();
@@ -116,7 +118,6 @@ class _AppShellState extends State<AppShell> {
                   const VerticalDivider(width: 1, thickness: 1),
                   Expanded(
                     child: _ShellBody(
-                      appState: appState,
                       navItems: navItems,
                       selectedIndex: safeIndex,
                     ),
@@ -130,7 +131,6 @@ class _AppShellState extends State<AppShell> {
         return Scaffold(
           body: SafeArea(
             child: _ShellBody(
-              appState: appState,
               navItems: navItems,
               selectedIndex: safeIndex,
             ),
@@ -145,11 +145,11 @@ class _AppShellState extends State<AppShell> {
                 .entries
                 .map(
                   (entry) => NavigationDestination(
-                    icon: _navIcon(entry.key, entry.value, appState),
+                    icon: _navIcon(entry.key, entry.value, criticalAlertsCount),
                     selectedIcon: _navSelectedIcon(
                       entry.key,
                       entry.value,
-                      appState,
+                      criticalAlertsCount,
                     ),
                     label: entry.value.label,
                   ),
@@ -164,26 +164,28 @@ class _AppShellState extends State<AppShell> {
 
 class _ShellBody extends StatelessWidget {
   const _ShellBody({
-    required this.appState,
     required this.navItems,
     required this.selectedIndex,
   });
 
-  final AppState appState;
   final List<AppNavItem> navItems;
   final int selectedIndex;
 
   @override
   Widget build(BuildContext context) {
+    final cloudSyncError =
+        context.select<AppState, String?>((s) => s.cloudSyncError);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (appState.cloudSyncError != null)
+        const SyncStatusBanner(),
+        if (cloudSyncError != null)
           StatusBanner(
             type: StatusBannerType.warning,
-            message: appState.cloudSyncError!.contains('permisos')
+            message: cloudSyncError.contains('permisos')
                 ? 'Firebase conectado parcialmente. Si no ve informes, pulse Actualizar en Informes o recargue la página.'
-                : appState.cloudSyncError!,
+                : cloudSyncError,
           ),
         Expanded(
           child: IndexedStack(
@@ -196,20 +198,20 @@ class _ShellBody extends StatelessWidget {
   }
 }
 
-Widget _navIcon(int index, AppNavItem item, AppState appState) {
-  if (item.id == AppNavId.alerts && appState.criticalAlertsCount > 0) {
+Widget _navIcon(int index, AppNavItem item, int criticalAlertsCount) {
+  if (item.id == AppNavId.alerts && criticalAlertsCount > 0) {
     return Badge(
-      label: Text('${appState.criticalAlertsCount}'),
+      label: Text('$criticalAlertsCount'),
       child: Icon(item.icon),
     );
   }
   return Icon(item.icon);
 }
 
-Widget _navSelectedIcon(int index, AppNavItem item, AppState appState) {
-  if (item.id == AppNavId.alerts && appState.criticalAlertsCount > 0) {
+Widget _navSelectedIcon(int index, AppNavItem item, int criticalAlertsCount) {
+  if (item.id == AppNavId.alerts && criticalAlertsCount > 0) {
     return Badge(
-      label: Text('${appState.criticalAlertsCount}'),
+      label: Text('$criticalAlertsCount'),
       child: Icon(item.selectedIcon),
     );
   }

@@ -10,9 +10,12 @@ import '../core/permissions/record_visibility.dart';
 import '../firebase_options.dart';
 import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
+import '../models/record_filters.dart';
+import '../models/records_page_result.dart';
 import '../utils/firestore_json_helper.dart';
 import '../models/saved_report.dart';
 import 'cloud_sync_port.dart';
+import 'firestore_record_query_builder.dart';
 
 class CloudSyncService implements CloudSyncPort {
   bool _bootstrapped = false;
@@ -23,6 +26,9 @@ class CloudSyncService implements CloudSyncPort {
 
   DocumentReference<Map<String, dynamic>> get _workspace =>
       _firestore.collection('workspaces').doc(cloudWorkspaceId);
+
+  CollectionReference<Map<String, dynamic>> get _workspaceRecords =>
+      _workspace.collection('records');
 
   CollectionReference<Map<String, dynamic>> get _reports =>
       _workspace.collection('reports');
@@ -91,6 +97,16 @@ class CloudSyncService implements CloudSyncPort {
     return _workspace.collection('users').doc(userId).collection('records');
   }
 
+  CollectionReference<Map<String, dynamic>> _recordsCollectionForRole(
+    AppUserRole viewerRole,
+    String userId,
+  ) {
+    if (canViewWorkspaceRecords(viewerRole)) {
+      return _workspaceRecords;
+    }
+    return _userRecords(userId);
+  }
+
   String _userMigrationKey(String userId) =>
       '$cloudUserMigrationKeyPrefix$userId';
 
@@ -98,50 +114,92 @@ class CloudSyncService implements CloudSyncPort {
   Stream<List<NepRecord>> watchRecords({
     AppUserRole viewerRole = AppUserRole.operario,
   }) {
+    return watchRecentRecords(viewerRole: viewerRole, limit: recordsMaxPageSize)
+        .map((page) => page.records);
+  }
+
+  @override
+  Stream<RecordsPageResult> watchRecentRecords({
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = recordsInitialPageSize,
+  }) {
     return Stream.fromFuture(_requireUserId()).asyncExpand((userId) {
-      if (canViewWorkspaceRecords(viewerRole)) {
-        return _watchWorkspaceRecords();
-      }
-      return _watchUserRecords(userId);
+      final collection = _recordsCollectionForRole(viewerRole, userId);
+      final query = FirestoreRecordQueryBuilder.build(
+        collection: collection,
+        limit: limit,
+      );
+      return _watchQuery(query, limit);
     });
   }
 
-  Stream<List<NepRecord>> _watchUserRecords(String userId) {
-    return _userRecords(userId).orderBy('createdAt').snapshots().map(
-          (snapshot) => snapshot.docs.map(_recordFromDoc).toList(),
-        );
+  @override
+  Stream<RecordsPageResult> watchRecordsByDateRange({
+    required DateTime from,
+    required DateTime to,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = recordsInitialPageSize,
+  }) {
+    final filters = RecordFilters()
+      ..dateFrom = from
+      ..dateTo = to;
+    return watchRecordsByFilters(
+      filters: filters,
+      viewerRole: viewerRole,
+      limit: limit,
+    );
   }
 
-  Stream<List<NepRecord>> _watchWorkspaceRecords() {
-    return _firestore
-        .collectionGroup('records')
-        .orderBy('createdAt')
-        .snapshots()
-        .map((snapshot) {
-      final records = <NepRecord>[];
-      for (final doc in snapshot.docs) {
-        if (!_isVicunhaRecordPath(doc.reference.path)) continue;
-        records.add(_recordFromDoc(doc));
-      }
+  @override
+  Stream<RecordsPageResult> watchRecordsByFilters({
+    required RecordFilters filters,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = recordsInitialPageSize,
+  }) {
+    return Stream.fromFuture(_requireUserId()).asyncExpand((userId) {
+      final collection = _recordsCollectionForRole(viewerRole, userId);
+      final query = FirestoreRecordQueryBuilder.build(
+        collection: collection,
+        filters: filters,
+        limit: limit,
+      );
+      return _watchQuery(query, limit);
+    });
+  }
+
+  Stream<RecordsPageResult> _watchQuery(
+    Query<Map<String, dynamic>> query,
+    int limit,
+  ) {
+    return query.snapshots().map((snapshot) {
+      final records = snapshot.docs.map(_recordFromDoc).toList();
+      final hasMore = snapshot.docs.length >= limit;
       if (kDebugMode) {
         debugPrint(
-          '[cloudSync] workspace records snapshot: ${records.length} items',
+          '[cloudSync] records snapshot: ${records.length} items (limit=$limit)',
         );
       }
-      return records;
+      return RecordsPageResult(
+        records: records,
+        hasMore: hasMore,
+        queryLimit: limit,
+      );
     });
-  }
-
-  bool _isVicunhaRecordPath(String path) {
-    return path.startsWith('workspaces/$cloudWorkspaceId/users/') &&
-        path.endsWith('/records') == false &&
-        path.contains('/records/');
   }
 
   NepRecord _recordFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = Map<String, dynamic>.from(doc.data());
     data['id'] ??= doc.id;
-    data['createdByUid'] ??= doc.reference.parent.parent?.id;
+    data['createdByUid'] ??=
+        data['ownerUid'] ?? doc.reference.parent.parent?.id;
+    final createdAt = data['createdAt'];
+    if (createdAt is Timestamp) {
+      data['createdAt'] = createdAt.toDate().toIso8601String();
+    }
+    final updatedAt = data['updatedAt'];
+    if (updatedAt is Timestamp) {
+      data['updatedAt'] = updatedAt.toDate().toIso8601String();
+    }
     return NepRecord.fromJson(data);
   }
 
@@ -217,9 +275,20 @@ class CloudSyncService implements CloudSyncPort {
   Future<void> upsertRecord(NepRecord record) async {
     final currentUid = await _requireUserId();
     final ownerUid = recordOwnerUid(record, currentUid);
-    await _userRecords(ownerUid)
-        .doc(record.id)
-        .set(_recordData(record), SetOptions(merge: true));
+    final data = _recordData(record, ownerUid);
+
+    final batch = _firestore.batch();
+    batch.set(
+      _userRecords(ownerUid).doc(record.id),
+      data,
+      SetOptions(merge: true),
+    );
+    batch.set(
+      _workspaceRecords.doc(record.id),
+      data,
+      SetOptions(merge: true),
+    );
+    await batch.commit();
   }
 
   @override
@@ -232,9 +301,15 @@ class CloudSyncService implements CloudSyncPort {
 
       for (final record in chunk) {
         final ownerUid = recordOwnerUid(record, currentUid);
+        final data = _recordData(record, ownerUid);
         batch.set(
           _userRecords(ownerUid).doc(record.id),
-          _recordData(record),
+          data,
+          SetOptions(merge: true),
+        );
+        batch.set(
+          _workspaceRecords.doc(record.id),
+          data,
           SetOptions(merge: true),
         );
       }
@@ -248,7 +323,11 @@ class CloudSyncService implements CloudSyncPort {
     final currentUid = await _requireUserId();
     final targetUid =
         ownerUid?.trim().isNotEmpty == true ? ownerUid! : currentUid;
-    await _userRecords(targetUid).doc(recordId).delete();
+
+    final batch = _firestore.batch();
+    batch.delete(_userRecords(targetUid).doc(recordId));
+    batch.delete(_workspaceRecords.doc(recordId));
+    await batch.commit();
   }
 
   @override
@@ -345,9 +424,17 @@ class CloudSyncService implements CloudSyncPort {
     );
   }
 
-  Map<String, dynamic> _recordData(NepRecord record) {
+  Map<String, dynamic> _recordData(NepRecord record, String ownerUid) {
+    final payload = Map<String, dynamic>.from(record.toJson());
+    payload['createdAt'] = Timestamp.fromDate(record.createdAt);
+    if (record.fechaRevision != null) {
+      payload['fechaRevision'] = Timestamp.fromDate(record.fechaRevision!);
+    }
     return {
-      ...record.toJson(),
+      ...payload,
+      'ownerUid': ownerUid,
+      'alertLevel': record.alertLevel.name,
+      'mtsCalculados': record.mtsCalculados,
       'updatedAt': FieldValue.serverTimestamp(),
     };
   }

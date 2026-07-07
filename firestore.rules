@@ -198,7 +198,20 @@ service cloud.firestore {
 
       match /records/{recordId} {
         allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
-        allow write: if false;
+        allow create: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && canWriteOperational()
+          && (
+            isSupervisorOrAbove() ||
+            request.resource.data.ownerUid == request.auth.uid
+          );
+        allow update, delete: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && canWriteOperational()
+          && (
+            isSupervisorOrAbove() ||
+            resource.data.ownerUid == request.auth.uid
+          );
       }
     }
   }

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:calculadora_neps/models/app_user_role.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
+import 'package:calculadora_neps/models/record_filters.dart';
+import 'package:calculadora_neps/models/records_page_result.dart';
 import 'package:calculadora_neps/models/saved_report.dart';
 import 'package:calculadora_neps/services/cloud_sync_coordinator.dart';
 import 'package:calculadora_neps/services/cloud_sync_port.dart';
@@ -10,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// Puerto falso para validar el rol pasado a las suscripciones en nube.
 class FakeCloudSyncPort implements CloudSyncPort {
   AppUserRole? lastViewerRole;
+  int? lastLimit;
+  RecordFilters? lastFilters;
 
   @override
   Future<void> bootstrap() async {}
@@ -20,6 +24,40 @@ class FakeCloudSyncPort implements CloudSyncPort {
   }) {
     lastViewerRole = viewerRole;
     return Stream.value(const []);
+  }
+
+  @override
+  Stream<RecordsPageResult> watchRecentRecords({
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = 50,
+  }) {
+    lastViewerRole = viewerRole;
+    lastLimit = limit;
+    return Stream.value(const RecordsPageResult(records: []));
+  }
+
+  @override
+  Stream<RecordsPageResult> watchRecordsByDateRange({
+    required DateTime from,
+    required DateTime to,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = 50,
+  }) {
+    lastViewerRole = viewerRole;
+    lastLimit = limit;
+    return Stream.value(const RecordsPageResult(records: []));
+  }
+
+  @override
+  Stream<RecordsPageResult> watchRecordsByFilters({
+    required RecordFilters filters,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = 50,
+  }) {
+    lastViewerRole = viewerRole;
+    lastLimit = limit;
+    lastFilters = filters;
+    return Stream.value(const RecordsPageResult(records: []));
   }
 
   @override
@@ -83,8 +121,10 @@ void main() {
       viewerRole: AppUserRole.supervisor,
       onRecords: (_) {},
       onFabrics: (_) {},
+      limit: 75,
     );
 
     expect(port.lastViewerRole, AppUserRole.supervisor);
+    expect(port.lastLimit, 75);
   });
 }

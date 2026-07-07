@@ -47,8 +47,6 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final width = MediaQuery.sizeOf(context).width;
-    final cardWidth = width > 520 ? 420.0 : width - 32;
 
     return Scaffold(
       backgroundColor: AppColors.surface,
@@ -57,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: cardWidth),
+              constraints: const BoxConstraints(maxWidth: 420),
               child: Card(
                 elevation: 0,
                 color: AppColors.surfaceAlt,

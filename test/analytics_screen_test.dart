@@ -3,6 +3,7 @@ import 'package:calculadora_neps/features/analytics/analytics_screen.dart';
 import 'package:calculadora_neps/models/app_user.dart';
 import 'package:calculadora_neps/models/app_user_role.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
+import 'package:calculadora_neps/providers/analytics_provider.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
 import 'package:calculadora_neps/providers/auth_provider.dart';
 import 'package:flutter/material.dart';
@@ -48,6 +49,9 @@ void main() {
         providers: [
           ChangeNotifierProvider<AppState>.value(value: appState),
           ChangeNotifierProvider<AuthProvider>.value(value: auth),
+          ChangeNotifierProvider<AnalyticsProvider>(
+            create: (_) => AnalyticsProvider(),
+          ),
         ],
         child: MaterialApp(
           theme: AppTheme.build(),

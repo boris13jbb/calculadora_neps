@@ -64,6 +64,8 @@ class ErrorHandler {
     return switch (error.code) {
       'permission-denied' =>
         'No tiene permisos para acceder a los datos en la nube.',
+      'failed-precondition' =>
+        'Firestore requiere un índice que aún se está creando. Espere unos minutos y toque el banner para reintentar.',
       'unavailable' => 'Servicio de Firebase no disponible. Intente más tarde.',
       'unauthenticated' => 'Debe iniciar sesión nuevamente.',
       _ => error.message ?? 'Error de Firebase (${error.code}).',

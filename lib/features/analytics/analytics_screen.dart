@@ -15,9 +15,9 @@ import '../../models/analytics_period.dart';
 import '../../models/analytics_summary.dart';
 import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
+import '../../providers/analytics_provider.dart';
 import '../../providers/app_state.dart';
 import '../../services/analytics_preferences_service.dart';
-import '../../services/analytics_service.dart';
 import '../../utils/analytics_filter_description.dart';
 import '../../utils/record_filter_helper.dart';
 import 'models/chart_config.dart';
@@ -106,11 +106,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         ensureAnalyticsCustomDateDefaults(_filters);
       }
     });
+    context.read<AnalyticsProvider>().scheduleInvalidate();
     _persistPreferences();
   }
 
   void _onFiltersChanged() {
     setState(() {});
+    context.read<AnalyticsProvider>().scheduleInvalidate();
     _persistPreferences();
   }
 
@@ -119,6 +121,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _filters.clear();
       _filterPanelKey++;
     });
+    context.read<AnalyticsProvider>().invalidate();
     _persistPreferences();
   }
 
@@ -137,37 +140,42 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final spacing = screenSpacing(context);
     final dateError = _dateRangeError();
     final records = _filteredRecords(appState);
-    final summary = analyticsService.buildSummary(records, _period);
+    final summary = context.read<AnalyticsProvider>().buildSummary(
+          records,
+          _period,
+          filters: _filters,
+        );
 
     return NavPermissionGate(
       navId: AppNavId.analytics,
       child: AppPage(
-      title: 'Análisis gráfico',
-      subtitle:
-          phone ? null : 'Visualización de informes por día, semana, mes y año',
-      breadcrumb: const ['Inicio', 'Gráficas'],
-      denseOnPhone: true,
-      compactPadding: true,
-      fillViewport: true,
-      actions: [
-        if (!phone)
-          TextButton.icon(
-            onPressed: () =>
-                AppNavigation.navigateIfAllowed(context, AppNavId.dashboard),
-            icon: const Icon(Icons.dashboard_outlined, size: 18),
-            label: const Text('Panel principal'),
-          ),
-      ],
-      child: _buildBody(
-        context,
-        appState: appState,
-        phone: phone,
-        spacing: spacing,
-        records: records,
-        summary: summary,
-        dateError: dateError,
+        title: 'Análisis gráfico',
+        subtitle: phone
+            ? null
+            : 'Visualización de informes por día, semana, mes y año',
+        breadcrumb: const ['Inicio', 'Gráficas'],
+        denseOnPhone: true,
+        compactPadding: true,
+        fillViewport: true,
+        actions: [
+          if (!phone)
+            TextButton.icon(
+              onPressed: () =>
+                  AppNavigation.navigateIfAllowed(context, AppNavId.dashboard),
+              icon: const Icon(Icons.dashboard_outlined, size: 18),
+              label: const Text('Panel principal'),
+            ),
+        ],
+        child: _buildBody(
+          context,
+          appState: appState,
+          phone: phone,
+          spacing: spacing,
+          records: records,
+          summary: summary,
+          dateError: dateError,
+        ),
       ),
-    ),
     );
   }
 
