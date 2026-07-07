@@ -1410,6 +1410,15 @@ class AppState extends ChangeNotifier {
     }
     await _clearAllRecords();
     clearCaptureFields();
+    // En modo sincronizado, puede haber registros históricos del workspace
+    // visibles según el rol. Para que "Nueva sesión" realmente empiece vacía,
+    // aplicamos un filtro remoto desde "ahora" y re-suscribimos el stream.
+    recordsScope.clearFilters();
+    recordsScope.filters.dateFrom = DateTime.now();
+    recordsScope.filters.dateTo = null;
+    recordsScope.filters.quickRange = null;
+    filterPanelKey = recordsScope.filterPanelKey;
+    unawaited(_rebindRecordsIfCloudReady());
     if (!cloudSyncEnabled) {
       notifyListeners();
     }
