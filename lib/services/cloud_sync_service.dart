@@ -334,6 +334,18 @@ class CloudSyncService implements CloudSyncPort {
   Future<void> clearRecords() async {
     final userId = await _requireUserId();
     await _deleteCollection(_userRecords(userId));
+    // Para roles supervisor/gerencia/admin los registros visibles suelen venir de
+    // `workspaces/{id}/records`. El rol efectivo puede venir de custom claims,
+    // así que intentamos limpiar también esa colección y, si no hay permisos,
+    // lo ignoramos (operario).
+    try {
+      await _deleteCollection(_workspaceRecords);
+    } on FirebaseException catch (error, stackTrace) {
+      if (error.code != 'permission-denied') {
+        ErrorHandler.log(error, stackTrace, 'clearWorkspaceRecords');
+        rethrow;
+      }
+    }
   }
 
   @override

@@ -1,6 +1,7 @@
+import '../core/constants.dart';
+
 /// Nivel de alerta según cantidad de neps.
-enum AlertLevel {
-  normal('Normal'),
+enum AlertLevel {  normal('Normal'),
   advertencia('Advertencia'),
   critico('Crítico');
 
@@ -25,6 +26,7 @@ class GroupNepsSummary {
   const GroupNepsSummary({
     required this.key,
     required this.totalNeps,
+    this.totalMts = 0,
     required this.recordCount,
     required this.averageNeps,
     this.criticalCount = 0,
@@ -33,10 +35,15 @@ class GroupNepsSummary {
 
   final String key;
   final double totalNeps;
+  final double totalMts;
   final int recordCount;
   final double averageNeps;
   final int criticalCount;
   final int warningCount;
+
+  /// Promedio de neps por metro cuadrado (área de prueba = 0.09 m²).
+  double get nepsPorM2 =>
+      recordCount <= 0 || averageNeps <= 0 ? 0 : averageNeps / testLengthM;
 }
 
 /// Información de alerta para un telar.
@@ -44,6 +51,7 @@ class TelarAlertSummary {
   const TelarAlertSummary({
     required this.telar,
     required this.totalNeps,
+    required this.totalMts,
     required this.recordCount,
     required this.averageNeps,
     required this.criticalCount,
@@ -53,9 +61,14 @@ class TelarAlertSummary {
 
   final String telar;
   final double totalNeps;
+  final double totalMts;
   final int recordCount;
   final double averageNeps;
   final int criticalCount;
   final int warningCount;
   final bool isReincident;
+
+  /// Promedio de neps por metro cuadrado (área de prueba = 0.09 m²).
+  double get nepsPorM2 =>
+      recordCount <= 0 || averageNeps <= 0 ? 0 : averageNeps / testLengthM;
 }

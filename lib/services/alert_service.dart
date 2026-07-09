@@ -237,6 +237,7 @@ class AlertService {
     return map.entries.map((entry) {
       final items = entry.value;
       final total = items.fold<double>(0, (s, r) => s + r.neps);
+      final totalMts = items.fold<double>(0, (s, r) => s + r.mtsCalculados);
       final critical = items
           .where((r) => getAlertLevel(r.neps) == AlertLevel.critico)
           .length;
@@ -246,6 +247,7 @@ class AlertService {
       return TelarAlertSummary(
         telar: entry.key,
         totalNeps: total,
+        totalMts: totalMts,
         recordCount: items.length,
         averageNeps: items.isEmpty ? 0 : total / items.length,
         criticalCount: critical,
@@ -269,6 +271,7 @@ class AlertService {
     final summaries = map.entries.map((entry) {
       final items = entry.value;
       final total = items.fold<double>(0, (s, r) => s + r.neps);
+      final totalMts = items.fold<double>(0, (s, r) => s + r.mtsCalculados);
       final critical = items
           .where((r) => getAlertLevel(r.neps) == AlertLevel.critico)
           .length;
@@ -278,6 +281,7 @@ class AlertService {
       return GroupNepsSummary(
         key: entry.key,
         totalNeps: total,
+        totalMts: totalMts,
         recordCount: items.length,
         averageNeps: items.isEmpty ? 0 : total / items.length,
         criticalCount: critical,

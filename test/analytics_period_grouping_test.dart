@@ -103,6 +103,43 @@ void main() {
       expect(analytics.resumenPorTurno(mixed).length, 2);
       expect(analytics.resumenPorOperario(mixed).first.key, 'Ana');
     });
+
+    test('filtra registros del mes actual', () {
+      final now = DateTime(2026, 3, 15, 12);
+      final records = [
+        _record(neps: 10, createdAt: DateTime(2026, 3, 1)),
+        _record(neps: 20, createdAt: DateTime(2026, 2, 28, 23, 59)),
+        _record(neps: 30, createdAt: DateTime(2026, 3, 31, 18)),
+        _record(neps: 40, createdAt: DateTime(2026, 4, 1)),
+      ];
+
+      final filtered = analytics.filterRecordsForCurrentPeriod(
+        records,
+        AnalyticsPeriod.month,
+        reference: now,
+      );
+
+      expect(filtered, hasLength(2));
+      expect(filtered.map((r) => r.neps).toList(), [10, 30]);
+    });
+
+    test('buildSummary expone mejor telar del periodo', () {
+      final now = DateTime(2026, 3, 15, 12);
+      final records = [
+        _record(neps: 90, telar: '1', createdAt: DateTime(2026, 3, 10)),
+        _record(neps: 9, telar: '2', createdAt: DateTime(2026, 3, 11)),
+        _record(neps: 45, telar: '3', createdAt: DateTime(2026, 2, 20)),
+      ];
+
+      final summary = analytics.buildSummary(
+        records,
+        AnalyticsPeriod.month,
+        reference: now,
+      );
+
+      expect(summary.bestTelar, isNotNull);
+      expect(summary.bestTelar!.key, '2');
+    });
   });
 
   group('AnalyticsDateValidator', () {

@@ -79,6 +79,17 @@ class AnalyticsExportService {
         'Promedio neps por turno,${_reportExport.formatNumber(summary.averageNepsPerTurno!)}',
       );
     }
+    if (summary.bestTelar != null) {
+      buffer.writeln(
+        'Mejor telar (menor neps/m2),T${summary.bestTelar!.key}',
+      );
+      buffer.writeln(
+        'Mejor telar neps/m2,${_reportExport.formatNumber(summary.bestTelar!.nepsPorM2)}',
+      );
+      buffer.writeln(
+        'Mejor telar registros,${summary.bestTelar!.recordCount}',
+      );
+    }
     buffer.writeln();
 
     _writeSeriesCsv(buffer, 'TENDENCIA (${period.label})', summary.timeSeries);
@@ -207,6 +218,20 @@ class AnalyticsExportService {
           'Promedio neps por turno',
           _reportExport.formatNumber(summary.averageNepsPerTurno!),
         ],
+      if (summary.bestTelar != null) ...[
+        [
+          'Mejor telar (menor neps/m²)',
+          'T${summary.bestTelar!.key}',
+        ],
+        [
+          'Mejor telar neps/m²',
+          _reportExport.formatNumber(summary.bestTelar!.nepsPorM2),
+        ],
+        [
+          'Mejor telar registros',
+          '${summary.bestTelar!.recordCount}',
+        ],
+      ],
     ];
 
     for (var r = 0; r < rows.length; r++) {
@@ -433,6 +458,20 @@ class AnalyticsExportService {
                   'Promedio neps por turno',
                   _reportExport.formatNumber(summary.averageNepsPerTurno!),
                 ],
+              if (summary.bestTelar != null) ...[
+                [
+                  'Mejor telar (menor neps/m²)',
+                  'T${summary.bestTelar!.key}',
+                ],
+                [
+                  'Mejor telar neps/m²',
+                  _reportExport.formatNumber(summary.bestTelar!.nepsPorM2),
+                ],
+                [
+                  'Mejor telar registros',
+                  '${summary.bestTelar!.recordCount}',
+                ],
+              ],
             ],
           ),
           pw.SizedBox(height: 16),

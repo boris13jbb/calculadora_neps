@@ -71,5 +71,29 @@ void main() {
       expect(top.length, 1);
       expect(top.first.key, '2');
     });
+
+    test('mejor telar usa menor neps por m2', () {
+      final mixed = [
+        _record(telar: '1', neps: 90),
+        _record(telar: '2', neps: 18),
+        _record(telar: '3', neps: 9),
+      ];
+
+      final best = analytics.mejorTelarPorNepsM2(mixed);
+      expect(best, isNotNull);
+      expect(best!.key, '3');
+      expect(best.nepsPorM2, closeTo(100, 0.01));
+    });
+
+    test('mejores telares ordena ascendente por neps por m2', () {
+      final mixed = [
+        _record(telar: '1', neps: 90),
+        _record(telar: '2', neps: 18),
+        _record(telar: '3', neps: 9),
+      ];
+
+      final ranking = analytics.mejoresTelaresPorNepsM2(mixed);
+      expect(ranking.map((item) => item.key).toList(), ['3', '2', '1']);
+    });
   });
 }

@@ -17,6 +17,7 @@ import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
 import '../../providers/analytics_provider.dart';
 import '../../providers/app_state.dart';
+import '../../services/analytics_service.dart';
 import '../../services/analytics_preferences_service.dart';
 import '../../utils/analytics_filter_description.dart';
 import '../../utils/record_filter_helper.dart';
@@ -269,9 +270,63 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               summary: summary,
               formatDecimal: appState.formatDecimal,
               formatNumber: appState.formatNumber,
+              periodLabel: _period == AnalyticsPeriod.custom
+                  ? 'rango seleccionado'
+                  : '${_period.label} actual',
               compact: phone,
             ),
             SizedBox(height: spacing + 4),
+            Builder(builder: (context) {
+              final periodRecords =
+                  analyticsService.filterRecordsForCurrentPeriod(records, _period);
+              final bestTelars =
+                  analyticsService.mejoresTelaresPorNepsM2(periodRecords, limit: 10);
+              if (bestTelars.isEmpty) return const SizedBox.shrink();
+
+              DateQuickRange? quickRangeForPeriod() {
+                return switch (_period) {
+                  AnalyticsPeriod.day => DateQuickRange.hoy,
+                  AnalyticsPeriod.week => DateQuickRange.estaSemana,
+                  AnalyticsPeriod.month => DateQuickRange.esteMes,
+                  AnalyticsPeriod.year => DateQuickRange.esteAno,
+                  AnalyticsPeriod.custom => null,
+                };
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AppSectionHeader(
+                    icon: Icons.emoji_events_outlined,
+                    title: 'Mejores telares',
+                    subtitle: _period == AnalyticsPeriod.custom
+                        ? 'Menor neps/m² en el rango seleccionado'
+                        : 'Menor neps/m² — ${_period.label} actual',
+                  ),
+                  SizedBox(height: phone ? 10 : 14),
+                  AnalyticsBestTelarsSection(
+                    compact: phone,
+                    items: bestTelars,
+                    formatNumber: appState.formatNumber,
+                    onSelectTelar: (item) {
+                      if (_period == AnalyticsPeriod.custom) {
+                        appState.navigateToRecordsFiltered(
+                          telar: item.key,
+                          dateFrom: _filters.dateFrom,
+                          dateTo: _filters.dateTo,
+                        );
+                        return;
+                      }
+                      appState.navigateToRecordsFiltered(
+                        telar: item.key,
+                        quickRange: quickRangeForPeriod(),
+                      );
+                    },
+                  ),
+                  SizedBox(height: spacing + 4),
+                ],
+              );
+            }),
             AppSectionHeader(
               icon: Icons.show_chart,
               title: 'Catálogo de gráficas',

@@ -17,6 +17,8 @@ import '../../models/nep_record.dart';
 import '../../providers/app_state.dart';
 import '../../services/alert_service.dart';
 import '../../core/widgets/record_filters_panel.dart';
+import '../../core/widgets/status_banner.dart';
+import '../../utils/filter_description_helper.dart';
 
 class RecordsScreen extends StatefulWidget {
   const RecordsScreen({super.key});
@@ -144,6 +146,17 @@ class _RecordsScreenState extends State<RecordsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (appState.filters.hasActiveFilters)
+              Padding(
+                padding: EdgeInsets.only(bottom: spacing),
+                child: StatusBanner(
+                  type: StatusBannerType.info,
+                  message:
+                      'Filtros activos: ${FilterDescriptionHelper.describe(appState.filters)}',
+                  actionLabel: 'Limpiar',
+                  onAction: appState.clearFilters,
+                ),
+              ),
             // Resumen fuera de la tabla, aprovechando el ancho.
             KpiStrip(
               compact: phone,

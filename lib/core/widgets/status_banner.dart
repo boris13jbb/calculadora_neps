@@ -35,46 +35,69 @@ class StatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bg = _color.withValues(alpha: 0.10);
     return Material(
-      color: _color.withValues(alpha: 0.12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _color.withValues(alpha: 0.22)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(_icon, size: 18, color: _color),
-            const SizedBox(width: 8),
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: _color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(_icon, size: 18, color: _color),
+            ),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 message,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: _color,
+                  color: AppColors.textDark,
                   height: 1.3,
                 ),
               ),
             ),
             if (actionLabel != null && onAction != null) ...[
-              TextButton(
+              const SizedBox(width: 8),
+              FilledButton.tonal(
                 onPressed: onAction,
-                style: TextButton.styleFrom(
+                style: FilledButton.styleFrom(
+                  backgroundColor: _color.withValues(alpha: 0.14),
                   foregroundColor: _color,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  minimumSize: const Size(0, 0),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
-                child: Text(actionLabel!, style: const TextStyle(fontSize: 11)),
+                child: Text(actionLabel!),
               ),
             ],
-            if (onDismiss != null)
+            if (onDismiss != null) ...[
+              const SizedBox(width: 4),
               IconButton(
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 onPressed: onDismiss,
-                icon: Icon(Icons.close, size: 16, color: _color),
+                icon: Icon(Icons.close, size: 18, color: _color),
               ),
+            ],
           ],
         ),
       ),

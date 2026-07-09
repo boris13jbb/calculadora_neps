@@ -16,6 +16,7 @@ class AnalyticsSummary {
     required this.byTelar,
     required this.byTurno,
     required this.byOperario,
+    this.bestTelar,
   });
 
   final int totalRecords;
@@ -29,6 +30,9 @@ class AnalyticsSummary {
   final List<GroupNepsSummary> byTelar;
   final List<GroupNepsSummary> byTurno;
   final List<GroupNepsSummary> byOperario;
+
+  /// Telar con menor neps/m² en el periodo evaluado.
+  final GroupNepsSummary? bestTelar;
 
   int get criticalCount => alertDistribution.critico;
   int get warningCount => alertDistribution.advertencia;

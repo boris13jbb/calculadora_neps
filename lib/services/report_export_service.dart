@@ -143,6 +143,12 @@ class ReportExportService {
         ExportColumn.recomendacion => _recommendationFor(item, all),
       };
 
+  double _avgMtsCalculadosFromGroup(GroupNepsSummary group) {
+    if (group.recordCount <= 0) return 0;
+    if (group.averageNeps <= 0) return 0;
+    return group.averageNeps / testLengthM;
+  }
+
   List<String> _classicTotalRegistrosRow(
     int count,
     List<ExportColumn> columns,
@@ -634,6 +640,8 @@ class ReportExportService {
     final summary = summarize(records);
     final critical = _alerts.detectCriticalRecords(records);
     final topTelars = _analytics.topTelaresPorNeps(records, limit: 10);
+    final bestTelars = _analytics.mejoresTelaresPorNepsM2(records, limit: 10);
+    final bestTelar = _analytics.mejorTelarPorNepsM2(records);
     final porTela = _analytics.resumenPorTela(records).take(10).toList();
     final porLote = _analytics.resumenPorLoteTrama(records).take(10).toList();
     final worstTela = _alerts.mostProblematicTela(records);
@@ -669,6 +677,7 @@ class ReportExportService {
             criticalTelars: _analytics.countTelaresCriticos(records),
             worstTela: worstTela?.key,
             worstLote: worstLote?.key,
+            bestTelar: bestTelar,
           ),
           pw.SizedBox(height: 14),
           pw.Text('Tabla principal de registros',
@@ -691,13 +700,34 @@ class ReportExportService {
                     pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
             pw.SizedBox(height: 6),
             _pdfGroupTable(
-              ['Telar', 'Total neps', 'Promedio', 'Registros'],
+              ['Telar', 'Total neps', 'Promedio por m²', 'Registros'],
               topTelars
                   .map(
                     (e) => [
                       e.key,
                       formatDecimal(e.totalNeps),
-                      formatNumber(e.averageNeps),
+                      formatNumber(_avgMtsCalculadosFromGroup(e)),
+                      '${e.recordCount}',
+                    ],
+                  )
+                  .toList(),
+            ),
+          ],
+          if (bestTelars.isNotEmpty) ...[
+            pw.SizedBox(height: 14),
+            pw.Text(
+              'Mejores telares (menor neps/m²)',
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12),
+            ),
+            pw.SizedBox(height: 6),
+            _pdfGroupTable(
+              ['Telar', 'Total neps', 'Promedio por m²', 'Registros'],
+              bestTelars
+                  .map(
+                    (e) => [
+                      e.key,
+                      formatDecimal(e.totalNeps),
+                      formatNumber(_avgMtsCalculadosFromGroup(e)),
                       '${e.recordCount}',
                     ],
                   )
@@ -931,6 +961,7 @@ class ReportExportService {
     required int criticalTelars,
     String? worstTela,
     String? worstLote,
+    GroupNepsSummary? bestTelar,
   }) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(10),
@@ -961,6 +992,15 @@ class ReportExportService {
             'Lote/trama más crítico: ${worstLote ?? '—'}',
             style: const pw.TextStyle(fontSize: 9),
           ),
+          if (bestTelar != null) ...[
+            pw.SizedBox(height: 4),
+            pw.Text(
+              'Mejor telar (menor neps/m²): ${bestTelar.key} — '
+              '${formatNumber(_avgMtsCalculadosFromGroup(bestTelar))} neps/m² '
+              '(${bestTelar.recordCount} registros)',
+              style: const pw.TextStyle(fontSize: 9),
+            ),
+          ],
         ],
       ),
     );

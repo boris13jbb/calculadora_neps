@@ -72,6 +72,7 @@ class AnalyticsService {
           (s) => GroupNepsSummary(
             key: s.telar,
             totalNeps: s.totalNeps,
+            totalMts: s.totalMts,
             recordCount: s.recordCount,
             averageNeps: s.averageNeps,
             criticalCount: s.criticalCount,
@@ -154,6 +155,7 @@ class AnalyticsService {
           (s) => GroupNepsSummary(
             key: s.telar,
             totalNeps: s.totalNeps,
+            totalMts: s.totalMts,
             recordCount: s.recordCount,
             averageNeps: s.averageNeps,
             criticalCount: s.criticalCount,
@@ -210,6 +212,88 @@ class AnalyticsService {
     return summaries;
   }
 
+  /// Filtra registros al periodo calendario actual (día, semana, mes o año).
+  List<NepRecord> filterRecordsForCurrentPeriod(
+    List<NepRecord> records,
+    AnalyticsPeriod period, {
+    DateTime? reference,
+  }) {
+    if (period == AnalyticsPeriod.custom || records.isEmpty) {
+      return records;
+    }
+
+    final now = reference ?? DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final DateTime start;
+    final DateTime end;
+
+    switch (period) {
+      case AnalyticsPeriod.day:
+        start = today;
+        end = DateTime(today.year, today.month, today.day, 23, 59, 59, 999);
+      case AnalyticsPeriod.week:
+        start = _weekStart(today);
+        final weekEnd = start.add(const Duration(days: 6));
+        end = DateTime(
+          weekEnd.year,
+          weekEnd.month,
+          weekEnd.day,
+          23,
+          59,
+          59,
+          999,
+        );
+      case AnalyticsPeriod.month:
+        start = DateTime(now.year, now.month);
+        end = DateTime(now.year, now.month + 1, 0, 23, 59, 59, 999);
+      case AnalyticsPeriod.year:
+        start = DateTime(now.year);
+        end = DateTime(now.year, 12, 31, 23, 59, 59, 999);
+      case AnalyticsPeriod.custom:
+        return records;
+    }
+
+    return records
+        .where(
+          (record) =>
+              !record.createdAt.isBefore(start) &&
+              !record.createdAt.isAfter(end),
+        )
+        .toList(growable: false);
+  }
+
+  /// Telar con menor neps/m² (mejor desempeño) del conjunto dado.
+  GroupNepsSummary? mejorTelarPorNepsM2(
+    List<NepRecord> records, {
+    int minRecordCount = 1,
+  }) {
+    final candidates = resumenPorTelar(records)
+        .where(
+          (summary) =>
+              summary.recordCount >= minRecordCount && summary.averageNeps > 0,
+        )
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) => a.nepsPorM2.compareTo(b.nepsPorM2));
+    return candidates.first;
+  }
+
+  /// Telares ordenados por menor neps/m² (mejores primero).
+  List<GroupNepsSummary> mejoresTelaresPorNepsM2(
+    List<NepRecord> records, {
+    int limit = 10,
+    int minRecordCount = 1,
+  }) {
+    final candidates = resumenPorTelar(records)
+        .where(
+          (summary) =>
+              summary.totalMts > 0 && summary.recordCount >= minRecordCount,
+        )
+        .toList()
+      ..sort((a, b) => a.nepsPorM2.compareTo(b.nepsPorM2));
+    return candidates.take(limit).toList();
+  }
+
   int countTelaresCriticos(List<NepRecord> records) =>
       _alerts.detectCriticalTelars(records).length;
 
@@ -264,8 +348,15 @@ class AnalyticsService {
   /// Construye un resumen completo para pantalla de gráficas y exportación.
   AnalyticsSummary buildSummary(
     List<NepRecord> records,
-    AnalyticsPeriod period,
-  ) {
+    AnalyticsPeriod period, {
+    DateTime? reference,
+  }) {
+    final periodRecords = filterRecordsForCurrentPeriod(
+      records,
+      period,
+      reference: reference,
+    );
+
     return AnalyticsSummary(
       totalRecords: totalRegistros(records),
       totalNeps: totalNeps(records),
@@ -278,6 +369,7 @@ class AnalyticsService {
       byTelar: topTelaresPorNeps(records, limit: 12),
       byTurno: resumenPorTurno(records),
       byOperario: resumenPorOperario(records),
+      bestTelar: mejorTelarPorNepsM2(periodRecords),
     );
   }
 
@@ -295,6 +387,7 @@ class AnalyticsService {
     final summaries = map.entries.map((entry) {
       final items = entry.value;
       final total = items.fold<double>(0, (s, r) => s + r.neps);
+      final totalMts = items.fold<double>(0, (s, r) => s + r.mtsCalculados);
       var critical = 0;
       var warning = 0;
       for (final item in items) {
@@ -310,6 +403,7 @@ class AnalyticsService {
       return GroupNepsSummary(
         key: entry.key,
         totalNeps: total,
+        totalMts: totalMts,
         recordCount: items.length,
         averageNeps: items.isEmpty ? 0 : total / items.length,
         criticalCount: critical,

@@ -61,6 +61,27 @@ class RecordsScope extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Fusiona registros remotos sin borrar los que solo existen en local.
+  void mergePageResult(List<NepRecord> records, {required bool hasMore}) {
+    if (records.isEmpty) {
+      hasMoreFromCloud = hasMore;
+      isLoadingMore = false;
+      notifyListeners();
+      return;
+    }
+
+    final byId = {for (final record in items) record.id: record};
+    for (final record in records) {
+      byId[record.id] = record;
+    }
+    items = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    hasMoreFromCloud = hasMore;
+    totalLoadedHint = items.length;
+    isLoadingMore = false;
+    notifyListeners();
+  }
+
   void upsert(NepRecord record) {
     final index = items.indexWhere((item) => item.id == record.id);
     if (index >= 0) {
@@ -100,11 +121,17 @@ class RecordsScope extends ChangeNotifier {
     String? telar,
     String? tela,
     String? loteTrama,
+    DateQuickRange? quickRange,
+    DateTime? dateFrom,
+    DateTime? dateTo,
   }) {
     filters.clear();
     filters.telar = telar;
     filters.tela = tela;
     filters.loteTrama = loteTrama;
+    filters.quickRange = quickRange;
+    filters.dateFrom = dateFrom;
+    filters.dateTo = dateTo;
     filterPanelKey++;
     queryLimit = recordsInitialPageSize;
     notifyListeners();
@@ -127,7 +154,7 @@ class RecordsScope extends ChangeNotifier {
   }
 
   Future<List<NepRecord>> loadFromPreferences() async {
-    return _localStorage.loadRecent(limit: recordsMaxPageSize);
+    return _localStorage.loadAll();
   }
 
   Future<List<NepRecord>> loadAllLocal() async {
@@ -140,5 +167,9 @@ class RecordsScope extends ChangeNotifier {
 
   Future<void> persistRecord(NepRecord record) async {
     await _localStorage.upsert(record);
+  }
+
+  Future<void> persistMerged(List<NepRecord> records) async {
+    await _localStorage.upsertMany(records);
   }
 }

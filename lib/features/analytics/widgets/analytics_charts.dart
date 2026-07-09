@@ -15,12 +15,14 @@ class AnalyticsKpiSection extends StatelessWidget {
     required this.summary,
     required this.formatDecimal,
     required this.formatNumber,
+    this.periodLabel,
     this.compact = false,
   });
 
   final AnalyticsSummary summary;
   final String Function(double) formatDecimal;
   final String Function(double) formatNumber;
+  final String? periodLabel;
   final bool compact;
 
   @override
@@ -96,6 +98,19 @@ class AnalyticsKpiSection extends StatelessWidget {
           color: AppColors.statusNormal,
           subtitle: '${summary.normalCount} registros',
         ),
+        if (summary.bestTelar != null)
+          KpiCard(
+            compact: compact,
+            label: periodLabel == null
+                ? 'Mejor telar'
+                : 'Mejor telar ($periodLabel)',
+            value: 'T${summary.bestTelar!.key}',
+            icon: Icons.emoji_events_outlined,
+            color: AppColors.statusNormal,
+            subtitle:
+                '${formatNumber(summary.bestTelar!.nepsPorM2)} neps/m² · '
+                '${summary.bestTelar!.recordCount} reg.',
+          ),
         if (summary.averageNepsPerTelar != null)
           KpiCard(
             compact: compact,
@@ -365,6 +380,281 @@ class AnalyticsChartCard extends StatelessWidget {
           SizedBox(height: height, child: child),
         ],
       ),
+    );
+  }
+}
+
+/// Tabla/lista de mejores telares por menor neps/m².
+class AnalyticsBestTelarsSection extends StatelessWidget {
+  const AnalyticsBestTelarsSection({
+    super.key,
+    required this.items,
+    required this.formatNumber,
+    required this.onSelectTelar,
+    this.compact = false,
+  });
+
+  final List<GroupNepsSummary> items;
+  final String Function(double) formatNumber;
+  final ValueChanged<GroupNepsSummary> onSelectTelar;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final top1 = items.isEmpty ? null : items.first;
+    return AnalyticsChartCard(
+      title: 'Top 10 (menor neps/m²)',
+      icon: Icons.table_chart_outlined,
+      height: compact ? 330 : 360,
+      child: items.isEmpty
+          ? _emptyMessage('Sin datos para el periodo seleccionado.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (top1 != null)
+                  _BestTelarHighlightCard(
+                    compact: compact,
+                    item: top1,
+                    formatNumber: formatNumber,
+                    onTap: () => onSelectTelar(top1),
+                  ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: compact
+                      ? _MobileBestTelarsList(
+                          items: items,
+                          formatNumber: formatNumber,
+                          onSelectTelar: onSelectTelar,
+                        )
+                      : _DesktopBestTelarsTable(
+                          items: items,
+                          formatNumber: formatNumber,
+                          onSelectTelar: onSelectTelar,
+                        ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _BestTelarHighlightCard extends StatelessWidget {
+  const _BestTelarHighlightCard({
+    required this.item,
+    required this.formatNumber,
+    required this.onTap,
+    required this.compact,
+  });
+
+  final GroupNepsSummary item;
+  final String Function(double) formatNumber;
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: EdgeInsets.all(compact ? 12 : 14),
+        decoration: BoxDecoration(
+          color: AppColors.primaryBlue.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: AppColors.primaryBlue.withValues(alpha: 0.20),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.primaryBlue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                '#1',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Mejor telar',
+                    style: TextStyle(
+                      fontSize: compact ? 11 : 12,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'T${item.key}',
+                    style: TextStyle(
+                      fontSize: compact ? 16 : 18,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.textDark,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${item.recordCount} registros',
+                    style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  'NEPS/m²',
+                  style: TextStyle(
+                    fontSize: compact ? 10 : 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.muted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  formatNumber(item.nepsPorM2),
+                  style: TextStyle(
+                    fontSize: compact ? 18 : 20,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.primaryBlue,
+                    fontFamily: 'monospace',
+                    height: 1.05,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopBestTelarsTable extends StatelessWidget {
+  const _DesktopBestTelarsTable({
+    required this.items,
+    required this.formatNumber,
+    required this.onSelectTelar,
+  });
+
+  final List<GroupNepsSummary> items;
+  final String Function(double) formatNumber;
+  final ValueChanged<GroupNepsSummary> onSelectTelar;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      primary: false,
+      child: SingleChildScrollView(
+        primary: false,
+        scrollDirection: Axis.horizontal,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 820),
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(AppColors.header),
+            headingTextStyle: const TextStyle(
+              color: AppColors.headerText,
+              fontWeight: FontWeight.w900,
+              fontSize: 12,
+            ),
+            columns: const [
+              DataColumn(label: Text('#')),
+              DataColumn(label: Text('TELAR')),
+              DataColumn(label: Text('NEPS/m²')),
+              DataColumn(label: Text('PROM. NEPS')),
+              DataColumn(label: Text('REGISTROS')),
+            ],
+            rows: List.generate(items.length, (index) {
+              final item = items[index];
+              return DataRow(
+                cells: [
+                  DataCell(Text('${index + 1}'), onTap: () => onSelectTelar(item)),
+                  DataCell(Text('T${item.key}'), onTap: () => onSelectTelar(item)),
+                  DataCell(
+                    Text(
+                      formatNumber(item.nepsPorM2),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    onTap: () => onSelectTelar(item),
+                  ),
+                  DataCell(
+                    Text(formatNumber(item.averageNeps)),
+                    onTap: () => onSelectTelar(item),
+                  ),
+                  DataCell(
+                    Text('${item.recordCount}'),
+                    onTap: () => onSelectTelar(item),
+                  ),
+                ],
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileBestTelarsList extends StatelessWidget {
+  const _MobileBestTelarsList({
+    required this.items,
+    required this.formatNumber,
+    required this.onSelectTelar,
+  });
+
+  final List<GroupNepsSummary> items;
+  final String Function(double) formatNumber;
+  final ValueChanged<GroupNepsSummary> onSelectTelar;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      itemCount: items.length,
+      separatorBuilder: (_, __) =>
+          const Divider(height: 1, indent: 10, endIndent: 10),
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return ListTile(
+          dense: true,
+          onTap: () => onSelectTelar(item),
+          title: Text(
+            'T${item.key}',
+            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+          ),
+          subtitle: Text(
+            '${formatNumber(item.nepsPorM2)} neps/m² · '
+            '${item.recordCount} reg.',
+            style: const TextStyle(fontSize: 11),
+          ),
+          trailing: Text(
+            formatNumber(item.averageNeps),
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontFamily: 'monospace',
+            ),
+          ),
+        );
+      },
     );
   }
 }

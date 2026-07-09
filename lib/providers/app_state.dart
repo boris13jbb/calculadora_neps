@@ -103,14 +103,22 @@ class AppState extends ChangeNotifier {
         loadLocalRecords: () => recordsScope.loadFromPreferences(),
         loadLocalFabrics: () => fabricCatalogService.loadFabrics(),
         applyRecordsPage: (page) {
-          recordsScope.applyPageResult(
-            page.records,
-            hasMore: page.hasMore,
-          );
+          if (recordsScope.remoteFiltersActive &&
+              recordsScope.usesRemoteFilters) {
+            recordsScope.applyPageResult(
+              page.records,
+              hasMore: page.hasMore,
+            );
+          } else {
+            recordsScope.mergePageResult(
+              page.records,
+              hasMore: page.hasMore,
+            );
+          }
         },
         applyFabrics: (data) => fabrics = data,
         syncFabricSelection: _syncFabricSelection,
-        cacheRecords: _cacheRecordsLocally,
+        cacheRecords: _mergeRecordsLocally,
         cacheFabrics: _cacheFabricsLocally,
         migrateReports: () =>
             reportStorageService.migrateLocalReportsIfNeeded(),
@@ -391,11 +399,17 @@ class AppState extends ChangeNotifier {
     String? telar,
     String? tela,
     String? loteTrama,
+    DateQuickRange? quickRange,
+    DateTime? dateFrom,
+    DateTime? dateTo,
   }) {
     recordsScope.applyNavigationFilters(
       telar: telar,
       tela: tela,
       loteTrama: loteTrama,
+      quickRange: quickRange,
+      dateFrom: dateFrom,
+      dateTo: dateTo,
     );
     requestNavigation(AppNavId.records);
   }
@@ -559,6 +573,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> _mergeRecordsLocally(List<NepRecord> data) async {
+    if (data.isEmpty) return;
+    await recordsScope.persistMerged(data);
+  }
+
   Future<void> _refreshUserRoleAndConfig() async {
     final coordinator = cloudSyncCoordinator;
     if (coordinator == null) return;
@@ -663,6 +682,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _persistRecord(NepRecord record) async {
+    recordsScope.upsert(record);
+    await recordsScope.persistRecord(record);
+    notifyListeners();
+
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
         await cloudSyncCoordinator!.upsertRecord(record);
@@ -675,13 +698,15 @@ class AppState extends ChangeNotifier {
         );
       }
     }
-
-    records = [...records, record];
-    await _cacheRecordsLocally(records);
-    notifyListeners();
   }
 
   Future<void> _persistRecords(List<NepRecord> updatedRecords) async {
+    for (final record in updatedRecords) {
+      recordsScope.upsert(record);
+    }
+    await recordsScope.persistMerged(updatedRecords);
+    notifyListeners();
+
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
         await cloudSyncCoordinator!.upsertRecords(updatedRecords);
@@ -690,13 +715,12 @@ class AppState extends ChangeNotifier {
         cloudSyncEnabled = false;
       }
     }
-
-    records.addAll(updatedRecords);
-    await _cacheRecordsLocally(records);
-    notifyListeners();
   }
 
   Future<void> _replaceAllRecords(List<NepRecord> updatedRecords) async {
+    records = updatedRecords;
+    await _cacheRecordsLocally(updatedRecords);
+
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
         await cloudSyncCoordinator!.replaceRecords(updatedRecords);
@@ -705,15 +729,15 @@ class AppState extends ChangeNotifier {
         cloudSyncEnabled = false;
       }
     }
-
-    records = updatedRecords;
-    await _cacheRecordsLocally(records);
-    notifyListeners();
   }
 
   Future<void> _removeRecord(String recordId) async {
     final index = records.indexWhere((record) => record.id == recordId);
     final ownerUid = index >= 0 ? records[index].createdByUid : null;
+
+    recordsScope.removeById(recordId);
+    await recordsScope.persistLocally();
+    notifyListeners();
 
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
@@ -726,25 +750,24 @@ class AppState extends ChangeNotifier {
         cloudSyncEnabled = false;
       }
     }
-
-    records.removeWhere((record) => record.id == recordId);
-    await _cacheRecordsLocally(records);
-    notifyListeners();
   }
 
   Future<void> _clearAllRecords() async {
+    recordsScope.clear();
+    await recordsScope.persistLocally();
+    notifyListeners();
+
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
         await cloudSyncCoordinator!.clearRecords();
-        return;
-      } catch (_) {
+      } catch (error, stackTrace) {
         cloudSyncEnabled = false;
+        ErrorHandler.log(error, stackTrace, 'clearRecords');
+        showMessage(
+          'Tabla vaciada en el dispositivo, pero no se pudo limpiar Firebase.',
+        );
       }
     }
-
-    records = [];
-    await _cacheRecordsLocally(records);
-    notifyListeners();
   }
 
   double calculateMts(double neps) => neps / testLengthM;
@@ -1346,6 +1369,13 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _updateRecord(NepRecord record) async {
+    records = [
+      for (final item in records)
+        if (item.id == record.id) record else item,
+    ];
+    await recordsScope.persistRecord(record);
+    notifyListeners();
+
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
       try {
         await cloudSyncCoordinator!.upsertRecord(record);
@@ -1358,13 +1388,6 @@ class AppState extends ChangeNotifier {
         );
       }
     }
-
-    records = [
-      for (final item in records)
-        if (item.id == record.id) record else item,
-    ];
-    await _cacheRecordsLocally(records);
-    notifyListeners();
   }
 
   Future<void> deleteRecord(String recordId) async {
@@ -1410,13 +1433,7 @@ class AppState extends ChangeNotifier {
     }
     await _clearAllRecords();
     clearCaptureFields();
-    // En modo sincronizado, puede haber registros históricos del workspace
-    // visibles según el rol. Para que "Nueva sesión" realmente empiece vacía,
-    // aplicamos un filtro remoto desde "ahora" y re-suscribimos el stream.
     recordsScope.clearFilters();
-    recordsScope.filters.dateFrom = DateTime.now();
-    recordsScope.filters.dateTo = null;
-    recordsScope.filters.quickRange = null;
     filterPanelKey = recordsScope.filterPanelKey;
     unawaited(_rebindRecordsIfCloudReady());
     if (!cloudSyncEnabled) {
