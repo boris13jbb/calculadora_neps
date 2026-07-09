@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/errors/error_handler.dart';
 import '../../core/layout/responsive_layout.dart';
 import '../../core/navigation/app_navigation.dart';
 import '../../core/widgets/nav_permission_gate.dart';
@@ -15,12 +16,14 @@ import '../../models/analytics_period.dart';
 import '../../models/analytics_summary.dart';
 import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
+import '../../models/saved_report.dart';
 import '../../providers/analytics_provider.dart';
 import '../../providers/app_state.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/analytics_service.dart';
 import '../../services/analytics_preferences_service.dart';
 import '../../utils/analytics_filter_description.dart';
-import '../../utils/record_filter_helper.dart';
+import '../../utils/analytics_records_source.dart';
 import 'models/chart_config.dart';
 import 'widgets/analytics_charts.dart';
 import 'widgets/analytics_export_actions.dart';
@@ -44,11 +47,61 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final AnalyticsPreferencesService _prefsService = analyticsPreferencesService;
   bool _prefsLoaded = false;
   ChartConfig _chartConfig = const ChartConfig();
+  List<SavedReport> _savedReports = [];
+  bool _reportsLoading = false;
+  String? _reportsLoadError;
+  int? _lastSeenNavIndex;
+  bool _cloudWasReady = false;
 
   @override
   void initState() {
     super.initState();
     _loadPreferences();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadSavedReports();
+    });
+  }
+
+  Future<void> _loadSavedReports({bool showLoader = true}) async {
+    if (showLoader) {
+      setState(() => _reportsLoading = true);
+    }
+    try {
+      final loaded = await context.read<AppState>().refreshReports();
+      if (!mounted) return;
+      setState(() {
+        _savedReports = loaded;
+        _reportsLoadError = null;
+      });
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'analyticsLoadReports');
+      if (!mounted) return;
+      setState(() {
+        _savedReports = [];
+        _reportsLoadError = ErrorHandler.userMessage(error);
+      });
+    } finally {
+      if (mounted) setState(() => _reportsLoading = false);
+    }
+  }
+
+  void _scheduleReloadIfNeeded(AppState appState, AuthProvider auth) {
+    final analyticsIndex = AppNavigation.indexOf(auth.profile, AppNavId.analytics);
+    if (analyticsIndex == null) return;
+
+    final navIndex = appState.navigationIndex;
+    final enteringTab =
+        navIndex == analyticsIndex && _lastSeenNavIndex != analyticsIndex;
+    final cloudJustReady = appState.cloudSyncEnabled && !_cloudWasReady;
+
+    if (navIndex == analyticsIndex && (enteringTab || cloudJustReady)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadSavedReports(showLoader: false);
+      });
+    }
+
+    _lastSeenNavIndex = navIndex;
+    _cloudWasReady = appState.cloudSyncEnabled;
   }
 
   Future<void> _loadPreferences() async {
@@ -65,6 +118,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       }
       if (_period == AnalyticsPeriod.custom) {
         ensureAnalyticsCustomDateDefaults(_filters);
+      } else {
+        _filters.dateFrom = null;
+        _filters.dateTo = null;
+        _filters.quickRange = null;
       }
       _prefsLoaded = true;
       _filterPanelKey++;
@@ -105,6 +162,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _period = period;
       if (period == AnalyticsPeriod.custom) {
         ensureAnalyticsCustomDateDefaults(_filters);
+      } else {
+        _filters.dateFrom = null;
+        _filters.dateTo = null;
+        _filters.quickRange = null;
       }
     });
     context.read<AnalyticsProvider>().scheduleInvalidate();
@@ -120,14 +181,27 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   void _clearFilters() {
     setState(() {
       _filters.clear();
+      if (_period == AnalyticsPeriod.custom) {
+        ensureAnalyticsCustomDateDefaults(_filters);
+      }
       _filterPanelKey++;
     });
     context.read<AnalyticsProvider>().invalidate();
     _persistPreferences();
   }
 
-  List<NepRecord> _filteredRecords(AppState appState) =>
-      RecordFilterHelper.apply(appState.records, _filters);
+  AnalyticsRecordsSource _recordsSource(AppState appState) =>
+      buildAnalyticsRecordsSource(
+        liveRecords: appState.records,
+        savedReports: _savedReports,
+      );
+
+  List<NepRecord> _filteredRecords(AnalyticsRecordsSource source) =>
+      applyAnalyticsFilters(
+        records: source.records,
+        filters: _filters,
+        period: _period,
+      );
 
   String? _dateRangeError() {
     if (_period != AnalyticsPeriod.custom) return null;
@@ -137,10 +211,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
+    final auth = context.watch<AuthProvider>();
+    _scheduleReloadIfNeeded(appState, auth);
+
     final phone = isPhoneLayout(context);
     final spacing = screenSpacing(context);
     final dateError = _dateRangeError();
-    final records = _filteredRecords(appState);
+    final source = _recordsSource(appState);
+    final records = _filteredRecords(source);
     final summary = context.read<AnalyticsProvider>().buildSummary(
           records,
           _period,
@@ -172,6 +250,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           appState: appState,
           phone: phone,
           spacing: spacing,
+          source: source,
           records: records,
           summary: summary,
           dateError: dateError,
@@ -185,17 +264,22 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     required AppState appState,
     required bool phone,
     required double spacing,
+    required AnalyticsRecordsSource source,
     required List<NepRecord> records,
     required AnalyticsSummary summary,
     required String? dateError,
   }) {
-    if (appState.isLoading && appState.records.isEmpty) {
+    if ((appState.isLoading || _reportsLoading) &&
+        !source.hasAnyData &&
+        appState.records.isEmpty) {
       return const AppLoadingView(
-        message: 'Cargando información de informes…',
+        message: 'Cargando registros e informes guardados…',
       );
     }
 
-    if (appState.bootstrapError != null && appState.records.isEmpty) {
+    if (appState.bootstrapError != null &&
+        !source.hasAnyData &&
+        appState.records.isEmpty) {
       return EmptyState(
         compact: phone,
         icon: Icons.cloud_off_outlined,
@@ -224,6 +308,24 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 message: appState.cloudSyncError!,
               ),
             ),
+          if (_reportsLoadError != null)
+            Padding(
+              padding: EdgeInsets.only(bottom: spacing),
+              child: StatusBanner(
+                type: StatusBannerType.warning,
+                message:
+                    'No se pudieron cargar todos los informes guardados: $_reportsLoadError',
+                actionLabel: 'Reintentar',
+                onAction: () => _loadSavedReports(),
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.only(bottom: spacing),
+            child: StatusBanner(
+              type: StatusBannerType.info,
+              message: source.describe(),
+            ),
+          ),
           FormulaBox(compact: phone),
           SizedBox(height: spacing),
           AppSectionHeader(
@@ -234,7 +336,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           SizedBox(height: phone ? 10 : 14),
           AnalyticsFilterPanel(
             key: ValueKey(_filterPanelKey),
-            records: appState.records,
+            records: source.records,
             filters: _filters,
             period: _period,
             dateRangeError: dateError,
@@ -249,14 +351,29 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               compact: phone,
               icon: Icons.bar_chart_outlined,
               title: 'Sin datos',
-              message: 'No hay datos disponibles para el periodo seleccionado.',
+              message: source.hasAnyData
+                  ? 'No hay registros que coincidan con el periodo o filtros '
+                      'seleccionados. Pruebe ampliar el rango o limpiar filtros.'
+                  : 'No hay registros ni informes guardados todavía. '
+                      'Capture datos o guarde un informe en la sección Informes.',
               actions: [
-                EmptyStateAction(
-                  label: 'Limpiar filtros',
-                  icon: Icons.filter_alt_off,
-                  filled: false,
-                  onPressed: _clearFilters,
-                ),
+                if (source.hasAnyData)
+                  EmptyStateAction(
+                    label: 'Limpiar filtros',
+                    icon: Icons.filter_alt_off,
+                    filled: false,
+                    onPressed: _clearFilters,
+                  )
+                else
+                  EmptyStateAction(
+                    label: 'Ir a Informes',
+                    icon: Icons.folder_special_outlined,
+                    filled: false,
+                    onPressed: () => AppNavigation.navigateIfAllowed(
+                      context,
+                      AppNavId.reports,
+                    ),
+                  ),
               ],
             )
           else if (dateError == null) ...[

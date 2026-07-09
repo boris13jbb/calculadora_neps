@@ -26,13 +26,14 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final appState = AppState();
     appState.isLoading = false;
+    final now = DateTime.now();
     appState.records = [
       NepRecord(
         telar: '1',
         neps: 40,
         tela: 'T1',
         loteTrama: 'L1',
-        createdAt: DateTime(2026, 6, 1),
+        createdAt: DateTime(now.year, now.month, 5),
       ),
     ];
 
