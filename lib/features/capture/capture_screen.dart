@@ -114,7 +114,6 @@ class _CaptureScreenState extends State<CaptureScreen>
                 : _MobileCaptureLayout(
                     appState: appState,
                     tabController: _tabController!,
-                    onRecordAdded: () => _tabController?.animateTo(1),
                   ),
       ),
     );
@@ -275,12 +274,10 @@ class _MobileCaptureLayout extends StatelessWidget {
   const _MobileCaptureLayout({
     required this.appState,
     required this.tabController,
-    required this.onRecordAdded,
   });
 
   final AppState appState;
   final TabController tabController;
-  final VoidCallback onRecordAdded;
 
   @override
   Widget build(BuildContext context) {
@@ -320,10 +317,7 @@ class _MobileCaptureLayout extends StatelessWidget {
           child: TabBarView(
             controller: tabController,
             children: [
-              _MobileCaptureTab(
-                appState: appState,
-                onRecordAdded: onRecordAdded,
-              ),
+              _MobileCaptureTab(appState: appState),
               CompactRecordsPanel(
                 appState: appState,
                 records: appState.records,
@@ -341,20 +335,12 @@ class _MobileCaptureLayout extends StatelessWidget {
 }
 
 class _MobileCaptureTab extends StatelessWidget {
-  const _MobileCaptureTab({
-    required this.appState,
-    required this.onRecordAdded,
-  });
+  const _MobileCaptureTab({required this.appState});
 
   final AppState appState;
-  final VoidCallback onRecordAdded;
 
   Future<void> _addRecord(BuildContext context) async {
-    final before = appState.records.length;
     await submitCaptureWithChecks(context, appState);
-    if (context.mounted && appState.records.length > before) {
-      onRecordAdded();
-    }
   }
 
   @override
@@ -902,6 +888,9 @@ class _CaptureFormPanel extends StatelessWidget {
                   children: [
                     const _CompactLabel('Telar', ultraCompact: true),
                     TextField(
+                      key: ValueKey(
+                        'capture-telar-${appState.captureFormEpoch}',
+                      ),
                       controller: appState.telarController,
                       keyboardType: TextInputType.number,
                       inputFormatters: digitsOnlyInputFormatters,
@@ -919,6 +908,9 @@ class _CaptureFormPanel extends StatelessWidget {
                   children: [
                     const _CompactLabel('Neps', ultraCompact: true),
                     TextField(
+                      key: ValueKey(
+                        'capture-neps-${appState.captureFormEpoch}',
+                      ),
                       controller: appState.nepsController,
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
@@ -993,6 +985,7 @@ class _CaptureFormPanel extends StatelessWidget {
           const SizedBox(height: 10),
           const _CompactLabel('Telar'),
           TextField(
+            key: ValueKey('capture-telar-${appState.captureFormEpoch}'),
             controller: appState.telarController,
             keyboardType: TextInputType.number,
             inputFormatters: digitsOnlyInputFormatters,
@@ -1002,6 +995,7 @@ class _CaptureFormPanel extends StatelessWidget {
           const SizedBox(height: 8),
           const _CompactLabel('Neps'),
           TextField(
+            key: ValueKey('capture-neps-${appState.captureFormEpoch}'),
             controller: appState.nepsController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: decimalNumberInputFormatters,

@@ -1,3 +1,4 @@
+import '../core/constants.dart';
 import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
 import '../models/record_filters.dart';
@@ -32,6 +33,13 @@ abstract class CloudSyncPort {
     required RecordFilters filters,
     AppUserRole viewerRole = AppUserRole.operario,
     int limit = 50,
+  });
+
+  /// Una sola lectura de registros filtrados (p. ej. informe consolidado por rango).
+  Future<RecordsPageResult> fetchRecordsByFilters({
+    required RecordFilters filters,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = reportExportRecordLimit,
   });
 
   Stream<List<String>> watchFabrics();

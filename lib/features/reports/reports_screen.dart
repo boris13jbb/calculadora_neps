@@ -18,6 +18,7 @@ import '../../models/nep_record.dart';
 import '../../models/record_filters.dart';
 import '../../models/saved_report.dart';
 import '../../providers/app_state.dart';
+import '../../providers/auth_provider.dart';
 import '../../utils/file_share_helper.dart';
 import '../../utils/record_filter_helper.dart';
 import '../../utils/report_share_helper.dart';
@@ -31,8 +32,6 @@ class ReportsScreen extends StatefulWidget {
 }
 
 class _ReportsScreenState extends State<ReportsScreen> {
-  static const int _reportsTabIndex = 5;
-
   late final ReportShareHelper shareHelper;
   List<SavedReport> reports = [];
   final Set<String> selectedReportIds = {};
@@ -53,11 +52,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   void _scheduleReloadIfNeeded(AppState appState) {
     final navIndex = appState.navigationIndex;
-    final enteringTab =
-        navIndex == _reportsTabIndex && _lastSeenNavIndex != _reportsTabIndex;
+    final reportsIndex = AppNavigation.indexOf(
+      context.read<AuthProvider>().profile,
+      AppNavId.reports,
+    );
+    final enteringTab = reportsIndex != null &&
+        navIndex == reportsIndex &&
+        _lastSeenNavIndex != reportsIndex;
     final cloudJustReady = appState.cloudSyncEnabled && !_cloudWasReady;
 
-    if (navIndex == _reportsTabIndex && (enteringTab || cloudJustReady)) {
+    if (reportsIndex != null &&
+        navIndex == reportsIndex &&
+        (enteringTab || cloudJustReady)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _loadReports(showLoader: !isLoading);
       });

@@ -74,6 +74,21 @@ class CaptureFormScope extends ChangeNotifier {
     }
   }
 
+  /// Limpia los campos del registro individual tras guardar, conservando
+  /// tela y lote de la sesión para captura continua.
+  void clearFieldsForNextRecord({bool notify = true}) {
+    telarController.clear();
+    nepsController.clear();
+    turnoController.clear();
+    operarioController.clear();
+    lineaProduccionController.clear();
+    observacionController.clear();
+    accionInmediataController.clear();
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     telarController.dispose();

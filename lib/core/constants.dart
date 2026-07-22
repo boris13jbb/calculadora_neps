@@ -15,6 +15,9 @@ const int recordsPageSizeIncrement = 50;
 /// Máximo de registros en consultas paginadas.
 const int recordsMaxPageSize = 500;
 
+/// Límite para informes consolidados por rango de fechas (Firestore / local).
+const int reportExportRecordLimit = 10000;
+
 /// Límite de registros para KPIs y gráficas ligeras del panel principal.
 const int dashboardRecordsLimit = 100;
 const String fabricCatalogStorageKey = 'vicunha_fabric_catalog_v1';

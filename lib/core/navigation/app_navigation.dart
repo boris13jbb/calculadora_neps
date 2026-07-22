@@ -6,6 +6,7 @@ import '../../features/export/export_screen.dart';
 import '../../features/fabrics/fabric_catalog_screen.dart';
 import '../../features/records/records_screen.dart';
 import '../../features/reports/reports_screen.dart';
+import '../../features/reports/professional/widgets/report_builder_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/users/users_screen.dart';
 import '../../features/analytics/analytics_screen.dart';
@@ -24,6 +25,7 @@ enum AppNavId {
   alerts,
   fabrics,
   reports,
+  reportBuilder,
   export,
   users,
   settings,
@@ -106,6 +108,14 @@ class AppNavigation {
       selectedIcon: Icons.folder_special,
       permission: Permission.manageReports,
       screen: ReportsScreen(),
+    ),
+    AppNavItem(
+      id: AppNavId.reportBuilder,
+      label: 'Reportes',
+      icon: Icons.assessment_outlined,
+      selectedIcon: Icons.assessment,
+      permission: Permission.exportReports,
+      screen: ReportBuilderScreen(),
     ),
     AppNavItem(
       id: AppNavId.export,

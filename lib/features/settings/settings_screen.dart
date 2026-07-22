@@ -351,7 +351,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Text(
-            'Normal 0–30, Advertencia 31–60, Crítico 61+. '
+            'Normal 0–30, Advertencia 31–45, Crítico 46+. '
             'Los cambios aplican de inmediato a registros, alertas, dashboard y reportes.',
             style: TextStyle(fontSize: 12, color: AppColors.textDark),
           ),

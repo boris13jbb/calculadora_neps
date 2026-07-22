@@ -37,10 +37,13 @@ import '../core/permissions/role_permissions.dart';
 import '../services/record_export_coordinator.dart';
 import '../services/record_import_service.dart';
 import '../services/report_export_service.dart';
+import '../features/reports/professional/models/report_configuration.dart';
+import '../services/report_records_loader.dart';
 import '../services/report_storage_service.dart';
 import '../services/siri_shortcut_service.dart';
 import '../utils/file_share_helper.dart';
 import '../utils/filter_description_helper.dart';
+import '../utils/analytics_records_source.dart';
 import '../utils/lote_trama_helper.dart';
 import 'domain/capture_form_scope.dart';
 import 'domain/cloud_sync_scope.dart';
@@ -198,6 +201,9 @@ class AppState extends ChangeNotifier {
   bool isExporting = false;
   String? bootstrapError;
   int navigationIndex = 0;
+
+  /// Incrementa tras cada captura exitosa para forzar rebuild de campos telar/neps.
+  int captureFormEpoch = 0;
   AppNavId? pendingNavTarget;
   Set<ExportColumn> exportColumns = ExportColumn.defaultSelection();
   PdfReportStyle pdfReportStyle = PdfReportStyle.completo;
@@ -444,6 +450,30 @@ class AppState extends ChangeNotifier {
   Future<List<SavedReport>> refreshReports() async {
     await _cloud.bootstrapReportsIfNeeded();
     return reportStorageService.loadReports();
+  }
+
+  /// Registros unificados (en vivo + informes guardados) para analítica y reportes.
+  Future<List<NepRecord>> loadAnalyticsRecords() async {
+    final saved = await refreshReports();
+    return buildAnalyticsRecordsSource(
+      liveRecords: records,
+      savedReports: saved,
+    ).records;
+  }
+
+  /// Registros del periodo configurado (consulta nube por rango + local).
+  Future<List<NepRecord>> loadRecordsForReportPeriod(
+    ReportConfiguration config,
+  ) async {
+    final cloudReady = cloudSyncService != null && await _ensureCloudReady();
+    return reportRecordsLoader.load(
+      config: config,
+      inMemoryRecords: records,
+      loadAllLocal: recordsScope.loadAllLocal,
+      cloud: cloudSyncService,
+      viewerRole: authRole,
+      cloudReady: cloudReady,
+    );
   }
 
   Future<void> enableCloudSyncIfAvailable() => _cloud.enableIfAvailable();
@@ -1274,9 +1304,6 @@ class AppState extends ChangeNotifier {
     await _persistRecord(record);
     await addLoteTramaToCatalog(record.loteTrama);
     _clearCaptureInputs();
-    if (!cloudSyncEnabled) {
-      notifyListeners();
-    }
 
     final level = alertService.getAlertLevel(record.neps);
     if (level == AlertLevel.critico) {
@@ -1316,7 +1343,9 @@ class AppState extends ChangeNotifier {
   }
 
   void _clearCaptureInputs() {
-    capture.clearCaptureFields(notify: false);
+    capture.clearFieldsForNextRecord(notify: false);
+    captureFormEpoch++;
+    notifyListeners();
   }
 
   Future<void> addRecord() async {
@@ -1446,6 +1475,7 @@ class AppState extends ChangeNotifier {
     capture.clearCaptureFields(notify: false);
     selectedFabric = null;
     useManualFabric = false;
+    captureFormEpoch++;
     notifyListeners();
   }
 

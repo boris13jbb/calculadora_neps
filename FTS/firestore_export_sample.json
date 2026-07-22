@@ -1,0 +1,75 @@
+{
+  "exportedAt": "2026-07-16T05:00:00.000Z",
+  "projectId": "vicunha-calculadora-neps",
+  "workspaceId": "vicunha",
+  "records": [
+    {
+      "id": "hist-001",
+      "telar": "T-101",
+      "neps": 22,
+      "tela": "Tela estándar A",
+      "loteTrama": "63E264H001",
+      "createdAt": "2026-06-01T14:30:00.000Z",
+      "turno": "A",
+      "operario": "operario1",
+      "lineaProduccion": "L1",
+      "observacion": "Registro histórico de prueba",
+      "revisadoPorSupervisor": false,
+      "createdByUid": "firebase-uid-operario1",
+      "createdByRole": "operario"
+    },
+    {
+      "id": "hist-002",
+      "telar": "T-102",
+      "neps": 75,
+      "tela": "Tela estándar B",
+      "loteTrama": "63E264H002",
+      "createdAt": "2026-06-02T10:00:00.000Z",
+      "turno": "B",
+      "operario": "operario1",
+      "lineaProduccion": "L1",
+      "observacion": "Crítico histórico",
+      "revisadoPorSupervisor": true,
+      "accionCorrectiva": "Ajuste de trama",
+      "responsableRevision": "supervisor1",
+      "fechaRevision": "2026-06-02T11:00:00.000Z",
+      "historialAcciones": [
+        {
+          "fecha": "2026-06-02T11:00:00.000Z",
+          "responsable": "supervisor1",
+          "accion": "Ajuste de trama"
+        }
+      ],
+      "createdByUid": "firebase-uid-operario1",
+      "createdByRole": "operario"
+    }
+  ],
+  "users": [
+    {
+      "uid": "firebase-uid-operario1",
+      "username": "operario1",
+      "displayName": "Operario Migrado",
+      "role": "operario",
+      "isActive": true,
+      "isSuperAdmin": false,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "reports": [
+    {
+      "id": "rep-001",
+      "name": "Informe junio (migrado)",
+      "createdAt": "2026-06-30T12:00:00.000Z",
+      "appliedFilters": { "telar": "T-101" },
+      "records": []
+    }
+  ],
+  "fabrics": ["Tela estándar A", "Tela histórica C"],
+  "alertConfig": {
+    "limiteNormalMax": 30,
+    "limiteAdvertenciaMax": 60,
+    "cantidadReincidenciasCriticas": 3,
+    "diasParaReincidencia": 1,
+    "alertasActivas": true
+  }
+}

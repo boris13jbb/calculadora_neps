@@ -167,6 +167,28 @@ class CloudSyncService implements CloudSyncPort {
     });
   }
 
+  @override
+  Future<RecordsPageResult> fetchRecordsByFilters({
+    required RecordFilters filters,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = reportExportRecordLimit,
+  }) async {
+    final userId = await _requireUserId();
+    final collection = _recordsCollectionForRole(viewerRole, userId);
+    final query = FirestoreRecordQueryBuilder.build(
+      collection: collection,
+      filters: filters,
+      limit: limit,
+    );
+    final snapshot = await query.get();
+    final records = snapshot.docs.map(_recordFromDoc).toList();
+    return RecordsPageResult(
+      records: records,
+      hasMore: snapshot.docs.length >= limit,
+      queryLimit: limit,
+    );
+  }
+
   Stream<RecordsPageResult> _watchQuery(
     Query<Map<String, dynamic>> query,
     int limit,

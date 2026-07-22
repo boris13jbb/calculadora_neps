@@ -78,3 +78,14 @@ auth_users.json
 
 # Windows accidental artifact (reserved device name)
 NUL
+
+# RegNeps.Net (migración C#)
+RegNeps.Net/**/bin/
+RegNeps.Net/**/obj/
+RegNeps.Net/**/publish/
+RegNeps.Net/**/*.db
+RegNeps.Net/**/*.db-shm
+RegNeps.Net/**/*.db-wal
+RegNeps.Net/.vs/
+FTS/firestore_export.json
+!FTS/firestore_export_sample.json

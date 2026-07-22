@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/errors/error_handler.dart';
 import '../../core/layout/responsive_layout.dart';
@@ -11,6 +12,7 @@ import '../../core/widgets/kpi_card.dart';
 import '../../core/widgets/permission_gate.dart';
 import '../../models/app_user.dart';
 import '../../models/app_user_role.dart';
+import '../../providers/auth_provider.dart';
 import '../../repositories/user_admin_repository.dart';
 import '../../utils/username_auth_helper.dart';
 
@@ -193,10 +195,17 @@ class _UsersScreenState extends State<UsersScreen> {
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
+  bool _canDeleteUser(AppUser user, AuthProvider auth) {
+    if (!auth.hasPermission(Permission.deleteUsers)) return false;
+    if (auth.profile?.uid == user.uid) return false;
+    return true;
+  }
+
   Future<void> _deleteUser(AppUser user) async {
     final ok = await _confirm(
       'Eliminar usuario',
-      '¿Archivar a ${user.effectiveDisplayName}? Esta acción desactiva la cuenta.',
+      '¿Eliminar a ${user.effectiveDisplayName}? '
+      'La cuenta quedará desactivada y no podrá iniciar sesión.',
     );
     if (!ok) return;
 
@@ -206,11 +215,11 @@ class _UsersScreenState extends State<UsersScreen> {
       await _loadUsers();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Usuario archivado.')),
+          const SnackBar(content: Text('Usuario eliminado correctamente.')),
         );
       }
     } catch (error, stack) {
-      ErrorHandler.log(error, stack, 'toggleActive');
+      ErrorHandler.log(error, stack, 'deleteUser');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(ErrorHandler.userMessage(error))),
@@ -400,6 +409,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Widget _buildTable() {
     final dateFormat = _formatDate;
+    final auth = context.watch<AuthProvider>();
     return LayoutBuilder(
       builder: (context, constraints) {
         return SingleChildScrollView(
@@ -458,11 +468,13 @@ class _UsersScreenState extends State<UsersScreen> {
                                   ),
                                   onPressed: () => _toggleActive(user),
                                 ),
-                                IconButton(
-                                  tooltip: 'Archivar',
-                                  icon: const Icon(Icons.archive_outlined),
-                                  onPressed: () => _deleteUser(user),
-                                ),
+                                if (_canDeleteUser(user, auth))
+                                  IconButton(
+                                    tooltip: 'Eliminar usuario',
+                                    icon: const Icon(Icons.delete_outline),
+                                    color: AppColors.danger,
+                                    onPressed: () => _deleteUser(user),
+                                  ),
                               ],
                             ),
                     ),
@@ -478,6 +490,7 @@ class _UsersScreenState extends State<UsersScreen> {
 
   Widget _buildCards() {
     final dateFormat = _formatDateShort;
+    final auth = context.watch<AuthProvider>();
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: _users.length,
@@ -555,6 +568,15 @@ class _UsersScreenState extends State<UsersScreen> {
                         ),
                         label: Text(user.isActive ? 'Desactivar' : 'Activar'),
                       ),
+                      if (_canDeleteUser(user, auth))
+                        TextButton.icon(
+                          onPressed: () => _deleteUser(user),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('Eliminar'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.danger,
+                          ),
+                        ),
                     ],
                   ),
               ],

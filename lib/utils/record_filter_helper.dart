@@ -149,6 +149,17 @@ class RecordFilterHelper {
     return sorted;
   }
 
+  /// Orden cronológico ascendente (informes consolidados por rango).
+  static List<NepRecord> sortChronological(List<NepRecord> records) {
+    final sorted = List<NepRecord>.from(records);
+    sorted.sort((a, b) {
+      final cmp = a.createdAt.compareTo(b.createdAt);
+      if (cmp != 0) return cmp;
+      return compareTelar(a.telar, b.telar);
+    });
+    return sorted;
+  }
+
   static (DateTime?, DateTime?) resolveQuickRange(DateQuickRange range) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);

@@ -60,6 +60,28 @@ void main() {
       expect(state.records.first.loteTrama, '63E264H10A');
       expect(state.telarController.text, isEmpty);
       expect(state.nepsController.text, isEmpty);
+      expect(state.manualTelaController.text, 'BOLTON');
+      expect(state.loteFullController.text, '63E264H10A');
+      state.dispose();
+    });
+
+    test('tras agregar conserva tela y lote pero limpia campos del registro',
+        () async {
+      final state = await createReadyState();
+      state.useManualFabric = true;
+      state.manualTelaController.text = 'BOLTON';
+      state.loteFullController.text = '63E264H10A';
+      state.telarController.text = '102';
+      state.nepsController.text = '53';
+      state.turnoController.text = 'A';
+
+      await state.addRecord();
+
+      expect(state.telarController.text, isEmpty);
+      expect(state.nepsController.text, isEmpty);
+      expect(state.turnoController.text, isEmpty);
+      expect(state.manualTelaController.text, 'BOLTON');
+      expect(state.loteFullController.text, '63E264H10A');
       state.dispose();
     });
 

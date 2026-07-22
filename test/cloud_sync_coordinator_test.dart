@@ -110,6 +110,18 @@ class FakeCloudSyncPort implements CloudSyncPort {
 
   @override
   Future<void> registerFcmToken(String token) async {}
+
+  @override
+  Future<RecordsPageResult> fetchRecordsByFilters({
+    required RecordFilters filters,
+    AppUserRole viewerRole = AppUserRole.operario,
+    int limit = 50,
+  }) async {
+    lastViewerRole = viewerRole;
+    lastLimit = limit;
+    lastFilters = filters;
+    return const RecordsPageResult(records: []);
+  }
 }
 
 void main() {
