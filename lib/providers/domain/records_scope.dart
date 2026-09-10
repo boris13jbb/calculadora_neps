@@ -153,6 +153,10 @@ class RecordsScope extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> bindUser(String? uid) async {
+    await _localStorage.bindUser(uid);
+  }
+
   Future<List<NepRecord>> loadFromPreferences() async {
     return _localStorage.loadAll();
   }

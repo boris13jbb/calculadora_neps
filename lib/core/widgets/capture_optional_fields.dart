@@ -2,81 +2,180 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 import '../../providers/app_state.dart';
+import 'app_input_decoration.dart';
 
 /// Campos opcionales de producción para captura de registros.
-class CaptureOptionalFields extends StatelessWidget {
+///
+/// Se agrupan en «Datos adicionales» para no competir visualmente con
+/// Tela, Lote, Telar y Neps. Los controladores viven en [AppState], así que
+/// los valores se conservan al colapsar la sección.
+///
+/// No usa [ExpansionTile]: al combinarlo con setState/teclado provocaba
+/// dispose de campos y asserts `_dependents.isEmpty` en móvil.
+class CaptureOptionalFields extends StatefulWidget {
   const CaptureOptionalFields({
     super.key,
     required this.appState,
     this.ultraCompact = false,
+    this.collapsible = true,
+    this.initiallyExpanded = false,
   });
 
   final AppState appState;
   final bool ultraCompact;
 
+  /// Si es true, muestra un bloque colapsable «Datos adicionales».
+  final bool collapsible;
+
+  final bool initiallyExpanded;
+
+  @override
+  State<CaptureOptionalFields> createState() => CaptureOptionalFieldsState();
+}
+
+class CaptureOptionalFieldsState extends State<CaptureOptionalFields> {
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = widget.initiallyExpanded;
+  }
+
+  /// Abre la sección (p. ej. si un campo oculto tiene error).
+  void expandAndFocus() {
+    if (!_expanded) {
+      setState(() => _expanded = true);
+    }
+  }
+
+  bool get isExpanded => _expanded;
+
+  void _toggle() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _expanded = !_expanded);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final decoration = InputDecoration(
-      isDense: true,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-      contentPadding: EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: ultraCompact ? 8 : 10,
+    final fields = _buildFieldsColumn();
+
+    if (!widget.collapsible) {
+      return fields;
+    }
+
+    return Material(
+      color: AppColors.surfaceAlt,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              onTap: _toggle,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Datos adicionales',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Turno, operario, línea, observación y acción',
+                            style: TextStyle(
+                              fontSize: widget.ultraCompact ? 11 : 12,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: AppColors.textDark,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Controllers viven en AppState: al colapsar se pierde el TextField,
+            // no el valor. Se hace unfocus antes para no chocar con el IME.
+            if (_expanded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: fields,
+              ),
+          ],
+        ),
       ),
     );
+  }
 
-    final fields = [
-      _FieldSpec('Turno', appState.turnoController, 'Ej: A'),
-      _FieldSpec('Operario', appState.operarioController, 'Nombre'),
-      _FieldSpec('Línea', appState.lineaProduccionController, 'Línea'),
-      _FieldSpec('Observación', appState.observacionController, 'Notas'),
+  Widget _buildFieldsColumn() {
+    final specs = [
+      _FieldSpec('Turno', widget.appState.turnoController, 'Ej: A'),
+      _FieldSpec('Operario', widget.appState.operarioController, 'Nombre'),
+      _FieldSpec('Línea', widget.appState.lineaProduccionController, 'Línea'),
+      _FieldSpec(
+        'Observación',
+        widget.appState.observacionController,
+        'Notas',
+      ),
       _FieldSpec(
         'Acción inmediata',
-        appState.accionInmediataController,
+        widget.appState.accionInmediataController,
         'Acción tomada',
       ),
     ];
 
-    if (ultraCompact) {
-      return Column(
-        children: [
-          for (var i = 0; i < fields.length; i += 2) ...[
-            if (i > 0) const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(child: _buildField(fields[i], decoration)),
-                if (i + 1 < fields.length) ...[
-                  const SizedBox(width: 8),
-                  Expanded(child: _buildField(fields[i + 1], decoration)),
-                ],
-              ],
-            ),
-          ],
-        ],
-      );
-    }
-
     return Column(
-      children: fields
-          .map(
-            (f) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _buildField(f, decoration),
-            ),
-          )
-          .toList(),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < specs.length; i++) ...[
+          if (i > 0) SizedBox(height: widget.ultraCompact ? 10 : 14),
+          _buildField(specs[i]),
+        ],
+      ],
     );
   }
 
-  Widget _buildField(_FieldSpec spec, InputDecoration decoration) {
-    return TextField(
-      controller: spec.controller,
-      style: TextStyle(fontSize: ultraCompact ? 12 : 14),
-      decoration: decoration.copyWith(
-        labelText: spec.label,
-        hintText: spec.hint,
-      ),
-      textInputAction: TextInputAction.next,
+  Widget _buildField(_FieldSpec spec) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CaptureFieldLabel(spec.label),
+        TextField(
+          controller: spec.controller,
+          style: TextStyle(
+            fontSize: widget.ultraCompact ? 14 : 16,
+            color: AppColors.textDark,
+          ),
+          decoration: appInputDecoration(
+            spec.hint,
+            size: AppInputSize.comfortable,
+          ),
+          textInputAction: TextInputAction.next,
+        ),
+      ],
     );
   }
 }

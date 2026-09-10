@@ -7,11 +7,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../core/errors/error_handler.dart';
+import '../core/permissions/report_visibility.dart';
 import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
 import '../models/record_filters.dart';
+import '../models/reports_load_result.dart';
 import '../models/saved_report.dart';
 import '../utils/firebase_session_helper.dart';
+import '../utils/stable_id.dart';
 import 'cloud_sync_port.dart';
 import 'report_export_service.dart';
 
@@ -29,26 +32,74 @@ class ReportStorageService {
     _cloudSync = cloudSync;
   }
 
-  Future<List<SavedReport>> loadReports() async {
-    final local = await _loadReportsLocally();
-    final cloudSync = _cloudSync;
-    if (cloudSync == null || !isFirebaseSessionActive) return local;
+  /// Carga informes. Persiste el merge completo por id; filtra solo la vista.
+  /// No oculta fallos: si hay datos parciales, [ReportsLoadResult.isPartial] es true.
+  Future<ReportsLoadResult> loadReportsResult({
+    String? viewerUid,
+    bool canViewTeamReports = false,
+    bool fetchCloud = true,
+  }) async {
+    final localParse = await _loadReportsLocallyDetailed();
+    var merged = localParse.reports;
+    var skipped = localParse.skippedCount;
+    String? cloudError;
+    var isPartial = localParse.skippedCount > 0;
 
-    try {
-      await cloudSync.bootstrap();
-      await migrateLocalReportsIfNeeded();
-      final remote = await cloudSync.fetchReports();
-      final merged = _mergeReports(local, remote);
-      await _persistReportsLocally(merged);
-      return merged;
-    } catch (error, stackTrace) {
-      if (!isCloudAuthSkipError(error)) {
+    final cloudSync = _cloudSync;
+    final shouldFetchCloud =
+        fetchCloud && cloudSync != null && isFirebaseSessionActive;
+
+    if (shouldFetchCloud) {
+      try {
+        await cloudSync.bootstrap();
+        await migrateLocalReportsIfNeeded();
+        final remote = await cloudSync.fetchReports();
+        merged = _mergeReports(localParse.reports, remote);
+        await _persistReportsLocally(merged);
+      } catch (error, stackTrace) {
+        cloudError = ErrorHandler.userMessage(error);
         ErrorHandler.log(error, stackTrace, 'loadReportsFirebase');
+        isPartial = true;
+        merged = localParse.reports;
+        if (merged.isEmpty) {
+          return ReportsLoadResult(
+            reports: const [],
+            skippedCount: skipped,
+            cloudError: cloudError,
+            isPartial: true,
+          );
+        }
       }
-      if (local.isEmpty) rethrow;
     }
 
-    return local;
+    final visible = viewerUid == null
+        ? merged
+        : filterVisibleReports(
+            merged,
+            viewerUid: viewerUid,
+            canViewTeamReports: canViewTeamReports,
+          );
+
+    return ReportsLoadResult(
+      reports: visible,
+      skippedCount: skipped,
+      cloudError: cloudError,
+      isPartial: isPartial || cloudError != null,
+    );
+  }
+
+  Future<List<SavedReport>> loadReports({
+    String? viewerUid,
+    bool canViewTeamReports = false,
+  }) async {
+    final result = await loadReportsResult(
+      viewerUid: viewerUid,
+      canViewTeamReports: canViewTeamReports,
+    );
+    if (result.reports.isEmpty && result.cloudError != null) {
+      throw StateError(result.cloudError!);
+    }
+    return result.reports;
   }
 
   /// Sube informes locales a Firestore la primera vez que hay nube disponible.
@@ -98,20 +149,60 @@ class ReportStorageService {
   }
 
   Future<List<SavedReport>> _loadReportsLocally() async {
+    final detailed = await _loadReportsLocallyDetailed();
+    return detailed.reports;
+  }
+
+  Future<({List<SavedReport> reports, int skippedCount})>
+      _loadReportsLocallyDetailed() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(savedReportsStorageKey);
-    if (saved == null || saved.isEmpty) return [];
+    if (saved == null || saved.isEmpty) {
+      return (reports: <SavedReport>[], skippedCount: 0);
+    }
 
     try {
-      final List decoded = jsonDecode(saved);
-      return decoded
-          .map((item) => SavedReport.fromJson(Map<String, dynamic>.from(item)))
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final decoded = jsonDecode(saved);
+      if (decoded is! List) {
+        ErrorHandler.log(
+          StateError('vicunha_saved_reports_v1 no es una lista'),
+          StackTrace.current,
+          'loadReportsLocally',
+        );
+        return (reports: <SavedReport>[], skippedCount: 0);
+      }
+      return _parseReportList(decoded, sourceLabel: 'localReports');
     } catch (error, stackTrace) {
       ErrorHandler.log(error, stackTrace, 'loadReportsLocally');
-      return [];
+      return (reports: <SavedReport>[], skippedCount: 0);
     }
+  }
+
+  ({List<SavedReport> reports, int skippedCount}) _parseReportList(
+    List<dynamic> raw, {
+    required String sourceLabel,
+  }) {
+    final reports = <SavedReport>[];
+    var skipped = 0;
+    for (final item in raw) {
+      if (item is! Map) {
+        skipped++;
+        continue;
+      }
+      final parsed = SavedReport.tryFromJson(Map<String, dynamic>.from(item));
+      if (parsed == null) {
+        skipped++;
+        ErrorHandler.log(
+          StateError('Informe omitido en $sourceLabel (formato inválido)'),
+          StackTrace.current,
+          sourceLabel,
+        );
+        continue;
+      }
+      reports.add(parsed);
+    }
+    reports.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return (reports: reports, skippedCount: skipped);
   }
 
   Future<void> _persistReportsLocally(List<SavedReport> reports) async {
@@ -139,26 +230,31 @@ class ReportStorageService {
     RecordFilters? appliedFilters,
     bool saveFiles = true,
     PdfReportStyle exportStyle = PdfReportStyle.completo,
+    String? createdByUid,
   }) async {
     final report = SavedReport(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      id: generateStableId(prefix: 'rep'),
       name: name.trim(),
       createdAt: DateTime.now(),
-      records: records
-          .map(
-            (record) => NepRecord(
-              id: record.id,
-              telar: record.telar,
-              neps: record.neps,
-              tela: record.tela,
-              loteTrama: record.loteTrama,
-              createdAt: record.createdAt,
-            ),
-          )
-          .toList(),
+      records:
+          records.map((record) => NepRecord.fromJson(record.toJson())).toList(),
       appliedFilters: appliedFilters?.copy(),
+      createdByUid: createdByUid,
     );
 
+    return saveExistingReport(
+      report,
+      saveFiles: saveFiles,
+      exportStyle: exportStyle,
+    );
+  }
+
+  /// Guarda o actualiza un informe con id estable (reintentos sin duplicar).
+  Future<SavedReport> saveExistingReport(
+    SavedReport report, {
+    bool saveFiles = true,
+    PdfReportStyle exportStyle = PdfReportStyle.completo,
+  }) async {
     final cloudSync = _cloudSync;
     if (cloudSync != null) {
       try {
@@ -173,7 +269,11 @@ class ReportStorageService {
     await _upsertReportLocally(report);
 
     if (saveFiles && !kIsWeb) {
-      await _saveReportFiles(report, exportStyle: exportStyle);
+      try {
+        await _saveReportFiles(report, exportStyle: exportStyle);
+      } catch (error, stackTrace) {
+        ErrorHandler.log(error, stackTrace, 'saveReportFiles');
+      }
     }
 
     return report;

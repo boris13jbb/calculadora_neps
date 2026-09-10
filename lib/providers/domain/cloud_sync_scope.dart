@@ -78,16 +78,16 @@ class CloudSyncScope {
     if (current is CloudSyncService) {
       current.resetSession();
     }
-    service = null;
+    // Conserva el puerto para poder reconectar tras un nuevo login.
+    // Solo se desasocia el estado de sesión, no se destruye el servicio.
     enabled = false;
     error = null;
-    syncPhase = SyncPhase.loadingLocal;
+    syncPhase = SyncPhase.offline;
     receivedRealtimeSnapshot = false;
     host.reportStorageService.attachCloudSync(null);
   }
 
   void attachService(CloudSyncPort newService) {
-    if (service != null) return;
     service = newService;
     coordinator = CloudSyncCoordinator(newService);
     host.reportStorageService.attachCloudSync(newService);
@@ -96,28 +96,38 @@ class CloudSyncScope {
   void detachOnFailure() {
     coordinator?.dispose();
     coordinator = null;
-    service = null;
-    host.reportStorageService.attachCloudSync(null);
+    // No anula [service] de forma permanente: permite reintentos.
     enabled = false;
     syncPhase = SyncPhase.offline;
+    host.reportStorageService.attachCloudSync(null);
   }
 
   Future<void> connectWhenAuthenticated() => ensureConnected();
 
   /// Conecta o reconecta Firebase si hay sesión y aún no está en tiempo real.
   Future<void> ensureConnected() async {
-    if (service == null) return;
+    if (service == null) {
+      attachService(CloudSyncService());
+    } else if (coordinator == null) {
+      coordinator = CloudSyncCoordinator(service!);
+    }
 
     if (!isFirebaseSessionActive) {
       final hasSession = await waitForFirebaseSession(
         timeout: const Duration(seconds: 3),
       );
       if (!hasSession) {
-        syncPhase = SyncPhase.offline;
+        if (syncPhase == SyncPhase.loadingLocal ||
+            syncPhase == SyncPhase.syncingCloud) {
+          syncPhase = SyncPhase.offline;
+        }
         host.onStateChanged();
         return;
       }
     }
+
+    // Reatacha el storage tras un reset de sesión.
+    host.reportStorageService.attachCloudSync(service);
 
     if (enabled && syncPhase == SyncPhase.realtime) return;
 
@@ -147,9 +157,12 @@ class CloudSyncScope {
   }
 
   Future<void> enableIfAvailable() async {
-    if (service != null) return;
     try {
-      attachService(CloudSyncService());
+      if (service == null) {
+        attachService(CloudSyncService());
+      } else {
+        host.reportStorageService.attachCloudSync(service);
+      }
       await connectInBackground();
     } catch (error, stackTrace) {
       detachOnFailure();

@@ -47,9 +47,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   final AnalyticsPreferencesService _prefsService = analyticsPreferencesService;
   bool _prefsLoaded = false;
   ChartConfig _chartConfig = const ChartConfig();
-  List<SavedReport> _savedReports = [];
+  List<SavedReport> _historyReports = [];
   bool _reportsLoading = false;
+  bool _reportsReloadBusy = false;
   String? _reportsLoadError;
+  bool _reportsPartial = false;
+  int _skippedReportCount = 0;
   int? _lastSeenNavIndex;
   bool _cloudWasReady = false;
 
@@ -63,30 +66,46 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Future<void> _loadSavedReports({bool showLoader = true}) async {
-    if (showLoader) {
+    if (_reportsReloadBusy) return;
+    _reportsReloadBusy = true;
+    if (showLoader && mounted) {
       setState(() => _reportsLoading = true);
     }
     try {
-      final loaded = await context.read<AppState>().refreshReports();
+      final appState = context.read<AppState>();
+      final uidAtStart = appState.authUid;
+      final generation = appState.authGeneration;
+      final bundle = await appState.loadAnalyticsHistoryBundle();
       if (!mounted) return;
+      if (appState.authUid != uidAtStart ||
+          appState.authGeneration != generation) {
+        return;
+      }
       setState(() {
-        _savedReports = loaded;
-        _reportsLoadError = null;
+        _historyReports = bundle.historyReports;
+        _reportsPartial = bundle.isPartial;
+        _skippedReportCount = bundle.skippedReportCount;
+        _reportsLoadError = bundle.isPartial
+            ? (bundle.partialMessage ??
+                'Algunas fuentes de informes no pudieron cargarse por completo.')
+            : null;
       });
     } catch (error, stack) {
       ErrorHandler.log(error, stack, 'analyticsLoadReports');
       if (!mounted) return;
       setState(() {
-        _savedReports = [];
         _reportsLoadError = ErrorHandler.userMessage(error);
+        _reportsPartial = true;
       });
     } finally {
+      _reportsReloadBusy = false;
       if (mounted) setState(() => _reportsLoading = false);
     }
   }
 
   void _scheduleReloadIfNeeded(AppState appState, AuthProvider auth) {
-    final analyticsIndex = AppNavigation.indexOf(auth.profile, AppNavId.analytics);
+    final analyticsIndex =
+        AppNavigation.indexOf(auth.profile, AppNavId.analytics);
     if (analyticsIndex == null) return;
 
     final navIndex = appState.navigationIndex;
@@ -193,7 +212,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   AnalyticsRecordsSource _recordsSource(AppState appState) =>
       buildAnalyticsRecordsSource(
         liveRecords: appState.records,
-        savedReports: _savedReports,
+        savedReports: _historyReports,
+        isPartial: _reportsPartial,
+        partialMessage: _reportsLoadError,
+        skippedReportCount: _skippedReportCount,
       );
 
   List<NepRecord> _filteredRecords(AnalyticsRecordsSource source) =>
@@ -313,16 +335,19 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               padding: EdgeInsets.only(bottom: spacing),
               child: StatusBanner(
                 type: StatusBannerType.warning,
-                message:
-                    'No se pudieron cargar todos los informes guardados: $_reportsLoadError',
-                actionLabel: 'Reintentar',
-                onAction: () => _loadSavedReports(),
+                message: _reportsPartial
+                    ? 'Resultados parciales: $_reportsLoadError'
+                    : 'No se pudieron cargar todos los informes guardados: $_reportsLoadError',
+                actionLabel: _reportsReloadBusy ? null : 'Reintentar',
+                onAction: _reportsReloadBusy ? null : () => _loadSavedReports(),
               ),
             ),
           Padding(
             padding: EdgeInsets.only(bottom: spacing),
             child: StatusBanner(
-              type: StatusBannerType.info,
+              type: source.isPartial
+                  ? StatusBannerType.warning
+                  : StatusBannerType.info,
               message: source.describe(),
             ),
           ),
@@ -394,10 +419,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             ),
             SizedBox(height: spacing + 4),
             Builder(builder: (context) {
-              final periodRecords =
-                  analyticsService.filterRecordsForCurrentPeriod(records, _period);
-              final bestTelars =
-                  analyticsService.mejoresTelaresPorNepsM2(periodRecords, limit: 10);
+              final periodRecords = analyticsService
+                  .filterRecordsForCurrentPeriod(records, _period);
+              final bestTelars = analyticsService
+                  .mejoresTelaresPorNepsM2(periodRecords, limit: 10);
               if (bestTelars.isEmpty) return const SizedBox.shrink();
 
               DateQuickRange? quickRangeForPeriod() {

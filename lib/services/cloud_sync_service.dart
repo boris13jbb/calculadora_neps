@@ -244,9 +244,15 @@ class CloudSyncService implements CloudSyncPort {
 
     if (prefs.getBool(migrationKey) == true) return;
 
-    if (localRecords.isNotEmpty) {
+    // Criterio verificable: solo createdByUid == usuario autenticado.
+    // Los registros sin dueño (ambiguos) NO se suben ni se reasignan.
+    final migratable = localRecords
+        .where((record) => recordBelongsToUid(record, userId))
+        .toList(growable: false);
+
+    if (migratable.isNotEmpty) {
       try {
-        await upsertRecords(localRecords);
+        await upsertRecords(migratable);
       } catch (error, stackTrace) {
         ErrorHandler.log(error, stackTrace, 'migrateRecords');
       }
@@ -296,17 +302,40 @@ class CloudSyncService implements CloudSyncPort {
   @override
   Future<void> upsertRecord(NepRecord record) async {
     final currentUid = await _requireUserId();
-    final ownerUid = recordOwnerUid(record, currentUid);
-    final data = _recordData(record, ownerUid);
+    final verified = verifiedRecordOwnerUid(record);
+    var ownerUid = verified ?? currentUid;
 
+    if (verified != null && verified != currentUid) {
+      final role = await fetchUserRole();
+      if (!role.isSupervisorOrAbove) {
+        throw FirebaseException(
+          plugin: 'cloud_firestore',
+          code: 'permission-denied',
+          message: 'No se puede escribir un registro de otro propietario.',
+        );
+      }
+      ownerUid = verified;
+    }
+
+    final stamped = record.createdByUid == null || record.createdByUid!.isEmpty
+        ? record.copyWith(createdByUid: currentUid)
+        : record;
+    if (stamped.captureSessionId == null ||
+        stamped.captureSessionId!.trim().isEmpty) {
+      throw ArgumentError(
+        'captureSessionId es obligatorio para escrituras nuevas.',
+      );
+    }
+
+    final data = _recordData(stamped, ownerUid);
     final batch = _firestore.batch();
     batch.set(
-      _userRecords(ownerUid).doc(record.id),
+      _userRecords(ownerUid).doc(stamped.id),
       data,
       SetOptions(merge: true),
     );
     batch.set(
-      _workspaceRecords.doc(record.id),
+      _workspaceRecords.doc(stamped.id),
       data,
       SetOptions(merge: true),
     );
@@ -315,28 +344,8 @@ class CloudSyncService implements CloudSyncPort {
 
   @override
   Future<void> upsertRecords(List<NepRecord> records) async {
-    final currentUid = await _requireUserId();
-
-    for (var start = 0; start < records.length; start += 450) {
-      final batch = _firestore.batch();
-      final chunk = records.skip(start).take(450);
-
-      for (final record in chunk) {
-        final ownerUid = recordOwnerUid(record, currentUid);
-        final data = _recordData(record, ownerUid);
-        batch.set(
-          _userRecords(ownerUid).doc(record.id),
-          data,
-          SetOptions(merge: true),
-        );
-        batch.set(
-          _workspaceRecords.doc(record.id),
-          data,
-          SetOptions(merge: true),
-        );
-      }
-
-      await batch.commit();
+    for (final record in records) {
+      await upsertRecord(record);
     }
   }
 
@@ -356,15 +365,26 @@ class CloudSyncService implements CloudSyncPort {
   Future<void> clearRecords() async {
     final userId = await _requireUserId();
     await _deleteCollection(_userRecords(userId));
-    // Para roles supervisor/gerencia/admin los registros visibles suelen venir de
-    // `workspaces/{id}/records`. El rol efectivo puede venir de custom claims,
-    // así que intentamos limpiar también esa colección y, si no hay permisos,
-    // lo ignoramos (operario).
+
+    // Solo elimina del workspace los documentos propios. Nunca borra la
+    // colección completa (evitaría el trabajo de otros usuarios).
     try {
-      await _deleteCollection(_workspaceRecords);
+      QuerySnapshot<Map<String, dynamic>> snapshot;
+      do {
+        snapshot = await _workspaceRecords
+            .where('ownerUid', isEqualTo: userId)
+            .limit(450)
+            .get();
+        if (snapshot.docs.isEmpty) break;
+        final batch = _firestore.batch();
+        for (final doc in snapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      } while (snapshot.docs.length >= 450);
     } on FirebaseException catch (error, stackTrace) {
       if (error.code != 'permission-denied') {
-        ErrorHandler.log(error, stackTrace, 'clearWorkspaceRecords');
+        ErrorHandler.log(error, stackTrace, 'clearOwnedWorkspaceRecords');
         rethrow;
       }
     }
@@ -384,17 +404,50 @@ class CloudSyncService implements CloudSyncPort {
     QuerySnapshot<Map<String, dynamic>> snapshot;
     try {
       snapshot = await _reports.orderBy('createdAt', descending: true).get();
-    } catch (_) {
+    } on FirebaseException catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'fetchReportsOrderBy');
+      if (error.code == 'failed-precondition' ||
+          error.code == 'invalid-argument') {
+        snapshot = await _reports.get();
+      } else {
+        rethrow;
+      }
+    } catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'fetchReportsOrderByFallback');
       snapshot = await _reports.get();
     }
 
-    final reports = snapshot.docs.map((doc) {
-      final data = FirestoreJsonHelper.normalizeMap(
-        Map<String, dynamic>.from(doc.data()),
+    final reports = <SavedReport>[];
+    var skipped = 0;
+    for (final doc in snapshot.docs) {
+      try {
+        final data = FirestoreJsonHelper.normalizeMap(
+          Map<String, dynamic>.from(doc.data()),
+        );
+        data['id'] ??= doc.id;
+        final parsed = SavedReport.tryFromJson(data);
+        if (parsed == null) {
+          skipped++;
+          ErrorHandler.log(
+            StateError('Informe cloud omitido id=${doc.id}'),
+            StackTrace.current,
+            'fetchReports',
+          );
+          continue;
+        }
+        reports.add(parsed);
+      } catch (error, stackTrace) {
+        skipped++;
+        ErrorHandler.log(error, stackTrace, 'fetchReportsDoc');
+      }
+    }
+    if (skipped > 0) {
+      ErrorHandler.log(
+        StateError('fetchReports omitió $skipped documento(s) inválidos'),
+        StackTrace.current,
+        'fetchReports',
       );
-      data['id'] ??= doc.id;
-      return SavedReport.fromJson(data);
-    }).toList();
+    }
 
     reports.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return reports;
@@ -403,15 +456,27 @@ class CloudSyncService implements CloudSyncPort {
   @override
   Future<SavedReport> saveReport(SavedReport report) async {
     await bootstrap();
+    final uid = await _requireUserId();
+    final stamped =
+        (report.createdByUid == null || report.createdByUid!.trim().isEmpty)
+            ? SavedReport(
+                id: report.id,
+                name: report.name,
+                createdAt: report.createdAt,
+                records: report.records,
+                appliedFilters: report.appliedFilters,
+                createdByUid: uid,
+              )
+            : report;
 
-    await _reports.doc(report.id).set(
+    await _reports.doc(stamped.id).set(
       {
-        ...report.toJson(),
+        ...stamped.toJson(),
         'updatedAt': FieldValue.serverTimestamp(),
       },
       SetOptions(merge: true),
     );
-    return report;
+    return stamped;
   }
 
   @override
@@ -464,9 +529,13 @@ class CloudSyncService implements CloudSyncPort {
     if (record.fechaRevision != null) {
       payload['fechaRevision'] = Timestamp.fromDate(record.fechaRevision!);
     }
+    // Autoría y propietario alineados; no se falsifican desde el payload.
+    final createdBy = record.createdByUid?.trim();
     return {
       ...payload,
       'ownerUid': ownerUid,
+      'createdByUid':
+          (createdBy != null && createdBy.isNotEmpty) ? createdBy : ownerUid,
       'alertLevel': record.alertLevel.name,
       'mtsCalculados': record.mtsCalculados,
       'updatedAt': FieldValue.serverTimestamp(),

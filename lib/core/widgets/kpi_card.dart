@@ -59,13 +59,14 @@ class KpiCard extends StatelessWidget {
               children: [
                 Text(
                   label.toUpperCase(),
-                  maxLines: 2,
+                  maxLines: compact ? 1 : 2,
+                  softWrap: !compact,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: compact ? 10 : 11,
                     fontWeight: FontWeight.w800,
                     color: AppColors.muted,
-                    letterSpacing: 0.3,
+                    letterSpacing: compact ? 0.1 : 0.3,
                     height: 1.15,
                   ),
                 ),
@@ -162,10 +163,13 @@ class KpiStrip extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final target = compact ? (minCardWidth * 0.8) : minCardWidth;
+        // En compacto no reducir el ancho objetivo: menos columnas = menos recortes.
+        final target = compact
+            ? (minCardWidth < 180 ? 180.0 : minCardWidth.toDouble())
+            : minCardWidth.toDouble();
+        final maxCols = compact ? 2 : maxColumns;
         var columns = (width / target).floor();
-        columns = columns.clamp(1, maxColumns);
-        // No permitir más columnas que tarjetas.
+        columns = columns.clamp(1, maxCols);
         columns = columns > cards.length ? cards.length : columns;
         final itemWidth = (width - spacing * (columns - 1)) / columns;
 

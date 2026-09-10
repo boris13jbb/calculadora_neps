@@ -13,50 +13,104 @@ Future<void> promptSaveReport(BuildContext context, AppState appState) async {
     return;
   }
 
-  final nameController = TextEditingController(
-    text: 'Informe ${appState.timestamp}',
+  final name = await showDialog<String>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => _SaveReportDialog(
+      initialName: 'Informe ${appState.timestamp}',
+      style: appState.pdfReportStyle,
+    ),
   );
 
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
+  if (name != null && name.trim().isNotEmpty && context.mounted) {
+    await appState.saveCurrentReport(name.trim());
+  }
+}
+
+/// Diálogo de guardado con controller de ciclo de vida correcto.
+///
+/// Evita el fallo clásico de crear/dispose un [TextEditingController] fuera
+/// del State mientras el IME o la animación de cierre aún lo referencian.
+class _SaveReportDialog extends StatefulWidget {
+  const _SaveReportDialog({
+    required this.initialName,
+    required this.style,
+  });
+
+  final String initialName;
+  final PdfReportStyle style;
+
+  @override
+  State<_SaveReportDialog> createState() => _SaveReportDialogState();
+}
+
+class _SaveReportDialogState extends State<_SaveReportDialog> {
+  late final TextEditingController _nameController;
+  final _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _cancel() {
+    _focusNode.unfocus();
+    Navigator.pop(context);
+  }
+
+  void _confirm() {
+    _focusNode.unfocus();
+    Navigator.pop(context, _nameController.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
       title: const Text('Guardar informe'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       content: SizedBox(
         width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del informe',
-                border: OutlineInputBorder(),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: _nameController,
+                focusNode: _focusNode,
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _confirm(),
+                decoration: const InputDecoration(
+                  labelText: 'Nombre del informe',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            _ReportModeSummary(style: appState.pdfReportStyle),
-          ],
+              const SizedBox(height: 14),
+              _ReportModeSummary(style: widget.style),
+            ],
+          ),
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context, false),
+          onPressed: _cancel,
           child: const Text('Cancelar'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, true),
+          onPressed: _confirm,
           child: const Text('Guardar'),
         ),
       ],
-    ),
-  );
-
-  final name = nameController.text;
-  nameController.dispose();
-
-  if (confirmed == true && context.mounted) {
-    await appState.saveCurrentReport(name);
+    );
   }
 }
 
@@ -108,7 +162,7 @@ Future<void> showShareReportMenu(
 }
 
 bool captureActionsEnabled(AppState appState) =>
-    appState.records.isNotEmpty && !appState.isExporting;
+    appState.captureSessionRecords.isNotEmpty && !appState.isExporting;
 
 class _ShareReportDialog extends StatefulWidget {
   const _ShareReportDialog({

@@ -1,6 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'app_exception.dart';
 
 /// Convierte errores técnicos en mensajes seguros para UI y depuración controlada.
@@ -52,9 +52,11 @@ class ErrorHandler {
 
   /// Registra el error para depuración sin imprimir credenciales ni tokens.
   static void log(Object error, [StackTrace? stackTrace, String? context]) {
-    if (!kDebugMode) return;
     final prefix = context != null ? '[$context] ' : '';
     debugPrint('${prefix}Error: ${_sanitizeForLog(error)}');
+    if (error is FirebaseException) {
+      debugPrint('${prefix}Firebase code: ${error.code}');
+    }
     if (stackTrace != null) {
       debugPrint('$stackTrace');
     }

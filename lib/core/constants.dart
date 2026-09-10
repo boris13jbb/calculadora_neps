@@ -1,10 +1,22 @@
 const double testLengthM = 0.09;
 const int decimals = 0;
 
+/// Key legacy global (solo lectura/migración; no escribir datos nuevos aquí).
 const String storageKey = 'vicunha_neps_flutter_exportaciones_v1';
 const String recordsHiveBoxName = 'vicunha_records_v1';
 const String recordsHiveMigrationKey = 'vicunha_records_hive_migration_v1';
 const String flatRecordsBackfillKey = 'vicunha_flat_records_backfill_v1';
+
+/// Prefijos de almacenamiento local por UID.
+const String recordsPrefsKeyPrefix = 'vicunha_records_uid_v1_';
+const String recordsHiveBoxPrefix = 'vicunha_records_uid_v1_';
+const String recordsAmbiguousKey = 'vicunha_records_ambiguous_v1';
+const String recordsLegacySplitDoneKey = 'vicunha_records_legacy_split_v1';
+const String pendingSyncKeyPrefix = 'vicunha_pending_sync_v1_';
+const String captureDraftKeyPrefix = 'vicunha_capture_draft_v1_';
+const String personalSessionsKeyPrefix = 'vicunha_personal_sessions_v1_';
+const String personalReportsKeyPrefix = 'vicunha_personal_reports_v1_';
+const String lotePrefsKeyPrefix = 'vicunha_lote_prefs_v1_';
 
 /// Registros cargados en la primera página (Firestore / memoria).
 const int recordsInitialPageSize = 50;
@@ -37,6 +49,21 @@ const String loteTramaFullEntryStorageKey = 'vicunha_lote_trama_full_entry_v1';
 const String loteTramaCatalogStorageKey = 'vicunha_lote_trama_catalog_v1';
 const String alertConfigStorageKey = 'vicunha_alert_config_v1';
 const String notificationPrefsKey = 'vicunha_notification_prefs_v1';
+
+/// Prefijo de la sesión de captura activa por UID (`…_{uid}`).
+const String activeCaptureSessionKeyPrefix =
+    'vicunha_active_capture_session_v1_';
+
+String recordsPrefsKeyForUid(String uid) => '$recordsPrefsKeyPrefix$uid';
+String recordsHiveBoxForUid(String uid) => '$recordsHiveBoxPrefix$uid';
+String pendingSyncKeyForUid(String uid) => '$pendingSyncKeyPrefix$uid';
+String captureDraftKeyForUid(String uid) => '$captureDraftKeyPrefix$uid';
+String personalSessionsKeyForUid(String uid) =>
+    '$personalSessionsKeyPrefix$uid';
+String personalReportsKeyForUid(String uid) => '$personalReportsKeyPrefix$uid';
+String lotePrefsKeyForUid(String uid) => '$lotePrefsKeyPrefix$uid';
+String activeCaptureSessionKeyForUid(String uid) =>
+    '$activeCaptureSessionKeyPrefix$uid';
 
 /// Site key reCAPTCHA v3 para Firebase App Check (web).
 /// Definir con: `--dart-define=APP_CHECK_RECAPTCHA_SITE_KEY=...`

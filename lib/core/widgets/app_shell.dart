@@ -136,8 +136,12 @@ class _AppShellState extends State<AppShell> {
             ),
           ),
           bottomNavigationBar: NavigationBar(
-            height: 64,
-            labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+            height: constraints.maxWidth < 400 ? 56 : 64,
+            // Con muchas destinos en móvil, ocultar etiquetas evita el wrap
+            // letra-a-letra (p. ej. "Gráfic"/"as") y mantiene todos accesibles.
+            labelBehavior: constraints.maxWidth < 430
+                ? NavigationDestinationLabelBehavior.alwaysHide
+                : NavigationDestinationLabelBehavior.onlyShowSelected,
             selectedIndex: safeIndex,
             onDestinationSelected: appState.setNavigationIndex,
             destinations: navItems
@@ -152,6 +156,7 @@ class _AppShellState extends State<AppShell> {
                       criticalAlertsCount,
                     ),
                     label: entry.value.label,
+                    tooltip: entry.value.label,
                   ),
                 )
                 .toList(),

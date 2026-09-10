@@ -2,6 +2,7 @@ import '../core/constants.dart';
 import '../models/alert_level.dart';
 import '../models/corrective_action_entry.dart';
 import '../services/alert_service.dart';
+import '../utils/stable_id.dart';
 
 class NepRecord {
   String id;
@@ -23,6 +24,15 @@ class NepRecord {
   String? createdByEmail;
   String? createdByRole;
 
+  /// Quién modificó por última vez (p. ej. supervisor). No sustituye createdByUid.
+  String? lastModifiedByUid;
+  String? lastModifiedByEmail;
+  DateTime? lastModifiedAt;
+
+  /// Sesión de captura a la que pertenece el registro.
+  /// Los registros legacy pueden ser null (migración no destructiva).
+  String? captureSessionId;
+
   NepRecord({
     required this.telar,
     required this.neps,
@@ -42,7 +52,11 @@ class NepRecord {
     this.createdByUid,
     this.createdByEmail,
     this.createdByRole,
-  })  : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+    this.lastModifiedByUid,
+    this.lastModifiedByEmail,
+    this.lastModifiedAt,
+    this.captureSessionId,
+  })  : id = id ?? generateStableId(prefix: 'rec'),
         createdAt = createdAt ?? DateTime.now(),
         historialAcciones = historialAcciones ?? [];
 
@@ -81,6 +95,14 @@ class NepRecord {
         'createdByEmail': createdByEmail,
       if (createdByRole != null && createdByRole!.isNotEmpty)
         'createdByRole': createdByRole,
+      if (lastModifiedByUid != null && lastModifiedByUid!.isNotEmpty)
+        'lastModifiedByUid': lastModifiedByUid,
+      if (lastModifiedByEmail != null && lastModifiedByEmail!.isNotEmpty)
+        'lastModifiedByEmail': lastModifiedByEmail,
+      if (lastModifiedAt != null)
+        'lastModifiedAt': lastModifiedAt!.toIso8601String(),
+      if (captureSessionId != null && captureSessionId!.isNotEmpty)
+        'captureSessionId': captureSessionId,
     };
   }
 
@@ -100,7 +122,7 @@ class NepRecord {
     return NepRecord(
       id: json['id']?.toString(),
       telar: json['telar']?.toString() ?? '',
-      neps: double.tryParse(json['neps'].toString()) ?? 0,
+      neps: double.tryParse('${json['neps'] ?? ''}') ?? 0,
       tela: json['tela']?.toString() ?? '',
       loteTrama: json['loteTrama']?.toString() ?? '',
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
@@ -116,9 +138,16 @@ class NepRecord {
           ? DateTime.tryParse(json['fechaRevision'].toString())
           : null,
       historialAcciones: historial,
-      createdByUid: json['createdByUid']?.toString(),
+      createdByUid:
+          json['createdByUid']?.toString() ?? json['ownerUid']?.toString(),
       createdByEmail: json['createdByEmail']?.toString(),
       createdByRole: json['createdByRole']?.toString(),
+      lastModifiedByUid: json['lastModifiedByUid']?.toString(),
+      lastModifiedByEmail: json['lastModifiedByEmail']?.toString(),
+      lastModifiedAt: json['lastModifiedAt'] != null
+          ? DateTime.tryParse(json['lastModifiedAt'].toString())
+          : null,
+      captureSessionId: json['captureSessionId']?.toString(),
     );
   }
 
@@ -141,6 +170,10 @@ class NepRecord {
     String? createdByUid,
     String? createdByEmail,
     String? createdByRole,
+    String? lastModifiedByUid,
+    String? lastModifiedByEmail,
+    DateTime? lastModifiedAt,
+    String? captureSessionId,
   }) {
     return NepRecord(
       id: id ?? this.id,
@@ -162,6 +195,10 @@ class NepRecord {
       createdByUid: createdByUid ?? this.createdByUid,
       createdByEmail: createdByEmail ?? this.createdByEmail,
       createdByRole: createdByRole ?? this.createdByRole,
+      lastModifiedByUid: lastModifiedByUid ?? this.lastModifiedByUid,
+      lastModifiedByEmail: lastModifiedByEmail ?? this.lastModifiedByEmail,
+      lastModifiedAt: lastModifiedAt ?? this.lastModifiedAt,
+      captureSessionId: captureSessionId ?? this.captureSessionId,
     );
   }
 }

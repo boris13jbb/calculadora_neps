@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
@@ -10,6 +11,7 @@ import '../core/navigation/app_navigation.dart';
 import '../core/alert_config.dart';
 import '../core/constants.dart';
 import '../core/errors/error_handler.dart';
+import '../core/permissions/report_visibility.dart';
 import '../models/app_user.dart';
 import '../models/app_user_role.dart';
 import '../models/alert_level.dart';
@@ -20,6 +22,8 @@ import '../models/pdf_report_style.dart';
 import '../models/record_filters.dart';
 import '../models/record_import_result.dart';
 import '../models/saved_report.dart';
+import '../models/reports_load_result.dart';
+import '../models/analytics_history_bundle.dart';
 import '../models/sync_phase.dart';
 import '../services/alert_config_service.dart';
 import '../services/alert_service.dart';
@@ -45,6 +49,12 @@ import '../utils/file_share_helper.dart';
 import '../utils/filter_description_helper.dart';
 import '../utils/analytics_records_source.dart';
 import '../utils/lote_trama_helper.dart';
+import '../utils/stable_id.dart';
+import '../services/capture_draft_storage_service.dart';
+import '../services/pending_sync_queue_service.dart';
+import '../services/personal_session_archive_service.dart';
+import '../services/record_local_storage_service.dart';
+import '../core/permissions/record_visibility.dart';
 import 'domain/capture_form_scope.dart';
 import 'domain/cloud_sync_scope.dart';
 import 'domain/records_scope.dart';
@@ -106,6 +116,9 @@ class AppState extends ChangeNotifier {
         loadLocalRecords: () => recordsScope.loadFromPreferences(),
         loadLocalFabrics: () => fabricCatalogService.loadFabrics(),
         applyRecordsPage: (page) {
+          // Ignora actualizaciones remotas tras cambio de cuenta.
+          if (_authUid == null) return;
+          if (!_isAuthContextValid(_authGeneration, _authUid)) return;
           if (recordsScope.remoteFiltersActive &&
               recordsScope.usesRemoteFilters) {
             recordsScope.applyPageResult(
@@ -119,9 +132,16 @@ class AppState extends ChangeNotifier {
             );
           }
         },
-        applyFabrics: (data) => fabrics = data,
-        syncFabricSelection: _syncFabricSelection,
-        cacheRecords: _mergeRecordsLocally,
+        applyFabrics: (data) {
+          if (!_isAuthContextValid(_authGeneration, _authUid)) return;
+          fabrics = data;
+        },
+        syncFabricSelection: () =>
+            _syncFabricSelection(allowAutoSelect: _autoFillCaptureDefaults),
+        cacheRecords: (data) async {
+          if (!_isAuthContextValid(_authGeneration, _authUid)) return;
+          await _mergeRecordsLocally(data);
+        },
         cacheFabrics: _cacheFabricsLocally,
         migrateReports: () =>
             reportStorageService.migrateLocalReportsIfNeeded(),
@@ -157,7 +177,30 @@ class AppState extends ChangeNotifier {
   String? _authUsername;
   AppUserRole? _authAppRole;
 
+  /// Generación de autenticación: se incrementa al cambiar de cuenta o cerrar sesión.
+  /// Evita aplicar respuestas asíncronas tardías de la cuenta anterior.
+  int _authGeneration = 0;
+  bool _disposed = false;
+
+  /// Sesión de captura activa del usuario autenticado (lista/contadores de Capturar).
+  String? _activeCaptureSessionId;
+
+  /// Si es true, se pueden rellenar tela/lote por defecto al cargar preferencias.
+  /// Se desactiva al iniciar una sesión nueva vacía.
+  bool _autoFillCaptureDefaults = true;
+
+  /// Bloqueo contra doble pulsación en “Guardar y crear nueva sesión”.
+  bool _sessionTransitionBusy = false;
+
+  /// Informe / archivo personal ya persistido (reintento sin duplicar).
+  String? _pendingClosedSessionReportId;
+  String? _pendingClosedPersonalArchiveId;
+
   String? get authUsername => _authUsername;
+  String? get authUid => _authUid;
+  String? get activeCaptureSessionId => _activeCaptureSessionId;
+  bool get isSessionTransitionBusy => _sessionTransitionBusy;
+  int get authGeneration => _authGeneration;
 
   final CaptureFormScope capture = CaptureFormScope();
   final RecordsScope recordsScope = RecordsScope();
@@ -192,6 +235,43 @@ class AppState extends ChangeNotifier {
     recordsScope.items = value;
     recordsScope.notifyListeners();
   }
+
+  /// Registros de la sesión de captura activa del usuario autenticado.
+  List<NepRecord> get captureSessionRecords {
+    final sid = _activeCaptureSessionId;
+    if (sid == null || sid.isEmpty) return const [];
+    final uid = _authUid;
+    return records.where((record) {
+      if (record.captureSessionId != sid) return false;
+      if (uid == null || uid.isEmpty) return true;
+      final owner = record.createdByUid?.trim();
+      if (owner != null && owner.isNotEmpty && owner != uid) return false;
+      return true;
+    }).toList(growable: false);
+  }
+
+  /// Hay texto o selecciones pendientes en el formulario de captura.
+  bool get hasCaptureFormDraft {
+    if (telarController.text.trim().isNotEmpty) return true;
+    if (nepsController.text.trim().isNotEmpty) return true;
+    if (manualTelaController.text.trim().isNotEmpty) return true;
+    if (loteFullController.text.trim().isNotEmpty) return true;
+    if (lotePrefixController.text.trim().isNotEmpty) return true;
+    if (loteSuffixController.text.trim().isNotEmpty) return true;
+    if (turnoController.text.trim().isNotEmpty) return true;
+    if (operarioController.text.trim().isNotEmpty) return true;
+    if (lineaProduccionController.text.trim().isNotEmpty) return true;
+    if (observacionController.text.trim().isNotEmpty) return true;
+    if (accionInmediataController.text.trim().isNotEmpty) return true;
+    if (selectedFabric != null && selectedFabric!.trim().isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Hay trabajo de sesión que conviene guardar antes de vaciar.
+  bool get hasCaptureSessionWork =>
+      captureSessionRecords.isNotEmpty || hasCaptureFormDraft;
 
   List<String> fabrics = [];
   List<String> loteCatalog = [];
@@ -249,20 +329,219 @@ class AppState extends ChangeNotifier {
   }
 
   void applyAuthProfile(AppUser user) {
+    final previousUid = _authUid;
+    final switched = previousUid != null && previousUid != user.uid;
+    final firstLogin = previousUid == null;
+
+    final leavingUid = previousUid;
+    if (switched && leavingUid != null) {
+      // Persiste borrador del usuario saliente en SU espacio (no en el nuevo).
+      unawaited(_persistCaptureDraftForUid(leavingUid));
+    }
+
     _authUid = user.uid;
     _authUsername =
         user.username.isNotEmpty ? user.username : user.effectiveDisplayName;
     _authAppRole = user.role;
+
+    if (switched || firstLogin) {
+      _authGeneration++;
+      final generation = _authGeneration;
+      if (switched) {
+        // Retira de la UI los datos del usuario anterior; no los borra del disco.
+        recordsScope.clear();
+        clearCaptureFields(preserveCatalogDefaults: false);
+        _pendingClosedSessionReportId = null;
+        _pendingClosedPersonalArchiveId = null;
+        _activeCaptureSessionId = null;
+      }
+      unawaited(_bootstrapUserLocalState(user.uid, generation));
+    }
     notifyListeners();
   }
 
   /// Cierra suscripciones y estado de nube al cerrar sesión.
   void resetCloudSession() {
+    final previousUid = _authUid;
+    final previousGeneration = _authGeneration;
+    _authGeneration++;
+    if (previousUid != null) {
+      unawaited(_persistCaptureDraftForUid(previousUid));
+    }
     _cloud.resetSession();
     _authUid = null;
     _authUsername = null;
     _authAppRole = null;
+    _activeCaptureSessionId = null;
+    _pendingClosedSessionReportId = null;
+    _pendingClosedPersonalArchiveId = null;
+    recordsScope.clear();
+    clearCaptureFields(preserveCatalogDefaults: false);
+    unawaited(recordLocalStorageService.bindUser(null));
+    // Descarta cualquier resultado de la generación anterior.
+    assert(previousGeneration < _authGeneration);
     notifyListeners();
+  }
+
+  bool _isAuthContextValid(int generation, String? uid) {
+    if (_disposed) return false;
+    if (generation != _authGeneration) return false;
+    if (uid == null || uid.isEmpty) return _authUid == null;
+    return _authUid == uid;
+  }
+
+  Future<void> _bootstrapUserLocalState(String uid, int generation) async {
+    await recordsScope.bindUser(uid);
+    if (!_isAuthContextValid(generation, uid)) return;
+
+    final localRecords = await recordsScope.loadFromPreferences();
+    if (!_isAuthContextValid(generation, uid)) return;
+    records = localRecords;
+
+    await _restoreOrCreateCaptureSession(uid);
+    if (!_isAuthContextValid(generation, uid)) return;
+
+    await _restoreCaptureDraftForUid(uid);
+    if (!_isAuthContextValid(generation, uid)) return;
+
+    unawaited(_drainPendingSyncIfCurrent(uid, generation));
+    _notifyIfActive();
+  }
+
+  /// Asegura que exista sessionId activo (útil tras login o en tests).
+  Future<void> ensureCaptureSessionReady() async {
+    final uid = _authUid;
+    final generation = _authGeneration;
+    if (uid == null || uid.isEmpty) return;
+    await recordsScope.bindUser(uid);
+    if (!_isAuthContextValid(generation, uid)) return;
+    await _restoreOrCreateCaptureSession(uid);
+    _notifyIfActive();
+  }
+
+  Future<void> _restoreOrCreateCaptureSession(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = activeCaptureSessionKeyForUid(uid);
+    var sessionId = prefs.getString(key)?.trim();
+    if (sessionId == null || sessionId.isEmpty) {
+      sessionId = generateStableId(prefix: 'ses');
+      await prefs.setString(key, sessionId);
+      // No adopta registros legacy ambiguos ni ajenos.
+    }
+    _activeCaptureSessionId = sessionId;
+  }
+
+  Future<void> _persistActiveCaptureSessionId(
+    String uid,
+    String sessionId,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(activeCaptureSessionKeyForUid(uid), sessionId);
+  }
+
+  Future<void> _persistCaptureDraftForUid(String uid) async {
+    final sessionId = _activeCaptureSessionId ?? '';
+    final draft = CaptureDraftSnapshot(
+      ownerUid: uid,
+      captureSessionId: sessionId,
+      updatedAt: DateTime.now(),
+      telar: telarController.text,
+      neps: nepsController.text,
+      manualTela: manualTelaController.text,
+      selectedFabric: selectedFabric,
+      useManualFabric: useManualFabric,
+      loteFull: loteFullController.text,
+      lotePrefix: lotePrefixController.text,
+      loteSuffix: loteSuffixController.text,
+      loteFullEntryMode: loteFullEntryMode,
+      turno: turnoController.text,
+      operario: operarioController.text,
+      lineaProduccion: lineaProduccionController.text,
+      observacion: observacionController.text,
+      accionInmediata: accionInmediataController.text,
+    );
+    await captureDraftStorageService.save(draft);
+  }
+
+  Future<void> _restoreCaptureDraftForUid(String uid) async {
+    final draft = await captureDraftStorageService.loadForUid(uid);
+    if (draft == null) return;
+    if (draft.ownerUid != uid) return;
+    if (_activeCaptureSessionId != null &&
+        draft.captureSessionId.isNotEmpty &&
+        draft.captureSessionId != _activeCaptureSessionId) {
+      // Borrador de otra sesión: no rellenar la sesión activa vacía.
+      return;
+    }
+
+    _suppressLotePersist = true;
+    try {
+      telarController.text = draft.telar;
+      nepsController.text = draft.neps;
+      manualTelaController.text = draft.manualTela;
+      selectedFabric = draft.selectedFabric;
+      useManualFabric = draft.useManualFabric;
+      loteFullController.text = draft.loteFull;
+      lotePrefixController.text = draft.lotePrefix;
+      loteSuffixController.text = draft.loteSuffix;
+      loteFullEntryMode = draft.loteFullEntryMode;
+      turnoController.text = draft.turno;
+      operarioController.text = draft.operario;
+      lineaProduccionController.text = draft.lineaProduccion;
+      observacionController.text = draft.observacion;
+      accionInmediataController.text = draft.accionInmediata;
+      _autoFillCaptureDefaults = false;
+    } finally {
+      _suppressLotePersist = false;
+    }
+  }
+
+  Future<void> _drainPendingSyncIfCurrent(String uid, int generation) async {
+    if (cloudSyncCoordinator == null) return;
+    if (!await _ensureCloudReady()) return;
+    if (!_isAuthContextValid(generation, uid)) return;
+
+    final pending = await pendingSyncQueueService.loadForUid(uid);
+    if (pending.isEmpty) return;
+    if (!_isAuthContextValid(generation, uid)) return;
+
+    final remaining = <PendingSyncOp>[];
+    for (var i = 0; i < pending.length; i++) {
+      if (!_isAuthContextValid(generation, uid)) {
+        remaining.addAll(pending.sublist(i));
+        break;
+      }
+      final op = pending[i];
+      if (op.ownerUid != uid) {
+        continue;
+      }
+      try {
+        switch (op.type) {
+          case PendingSyncOpType.upsert:
+            final record = op.record;
+            if (record == null) continue;
+            final owner = verifiedRecordOwnerUid(record);
+            if (owner != null && owner != uid) continue;
+            await cloudSyncCoordinator!.upsertRecord(record);
+          case PendingSyncOpType.delete:
+            final recordId = op.recordId;
+            if (recordId == null || recordId.isEmpty) continue;
+            await cloudSyncCoordinator!.deleteRecord(
+              recordId,
+              ownerUid: op.ownerUid,
+            );
+        }
+      } catch (_) {
+        remaining.add(op);
+      }
+    }
+
+    if (!_isAuthContextValid(generation, uid)) return;
+    await pendingSyncQueueService.replaceAll(uid, remaining);
+    if (remaining.isEmpty) {
+      cloudSyncEnabled = true;
+      _notifyIfActive();
+    }
   }
 
   bool _requirePermission(bool allowed, String action) {
@@ -368,12 +647,18 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _cloud.dispose();
     capture.detachListeners(notifyListeners);
     recordsScope.removeListener(notifyListeners);
     capture.removeListener(notifyListeners);
     capture.dispose();
     super.dispose();
+  }
+
+  void _notifyIfActive() {
+    if (_disposed) return;
+    notifyListeners();
   }
 
   void setNavigationIndex(int index) {
@@ -448,17 +733,88 @@ class AppState extends ChangeNotifier {
   Future<void> reloadData() => loadData();
 
   Future<List<SavedReport>> refreshReports() async {
-    await _cloud.bootstrapReportsIfNeeded();
-    return reportStorageService.loadReports();
+    final result = await refreshReportsResult();
+    if (result.reports.isEmpty && result.cloudError != null) {
+      throw StateError(result.cloudError!);
+    }
+    return result.reports;
   }
 
-  /// Registros unificados (en vivo + informes guardados) para analítica y reportes.
+  /// Carga informes con resultado parcial (no oculta fallos de fuente).
+  Future<ReportsLoadResult> refreshReportsResult() async {
+    final generation = _authGeneration;
+    final uid = _authUid;
+    await _cloud.bootstrapReportsIfNeeded();
+    if (!_isAuthContextValid(generation, uid)) {
+      return const ReportsLoadResult(reports: [], isPartial: true);
+    }
+    return reportStorageService.loadReportsResult(
+      viewerUid: uid,
+      canViewTeamReports: canManageReports,
+    );
+  }
+
+  /// Registros unificados (vivos + archivo personal + informes autorizados).
   Future<List<NepRecord>> loadAnalyticsRecords() async {
-    final saved = await refreshReports();
+    final source = await loadAnalyticsRecordsSource();
+    return source.records;
+  }
+
+  /// Historial para gráficas: sesiones personales + informes autorizados.
+  Future<AnalyticsHistoryBundle> loadAnalyticsHistoryBundle() async {
+    final generation = _authGeneration;
+    final uid = _authUid;
+    final reportsResult = await refreshReportsResult();
+    if (!_isAuthContextValid(generation, uid)) {
+      return const AnalyticsHistoryBundle(
+        historyReports: [],
+        isPartial: true,
+        partialMessage: 'La sesión cambió durante la carga.',
+      );
+    }
+
+    final personalReports = <SavedReport>[];
+    if (uid != null && uid.isNotEmpty) {
+      final archives = await personalSessionArchiveService.loadForUid(uid);
+      if (!_isAuthContextValid(generation, uid)) {
+        return const AnalyticsHistoryBundle(
+          historyReports: [],
+          isPartial: true,
+          partialMessage: 'La sesión cambió durante la carga.',
+        );
+      }
+      for (final archive in archives) {
+        personalReports.add(
+          SavedReport(
+            id: archive.id,
+            name: archive.name.isEmpty
+                ? 'Sesión ${archive.captureSessionId}'
+                : archive.name,
+            createdAt: archive.savedAt,
+            records: archive.records,
+            createdByUid: archive.ownerUid,
+          ),
+        );
+      }
+    }
+
+    return AnalyticsHistoryBundle(
+      historyReports: [...personalReports, ...reportsResult.reports],
+      isPartial: reportsResult.isPartial,
+      partialMessage: reportsResult.cloudError,
+      skippedReportCount: reportsResult.skippedCount,
+    );
+  }
+
+  Future<AnalyticsRecordsSource> loadAnalyticsRecordsSource() async {
+    final bundle = await loadAnalyticsHistoryBundle();
     return buildAnalyticsRecordsSource(
       liveRecords: records,
-      savedReports: saved,
-    ).records;
+      savedReports: bundle.historyReports,
+      isPartial: bundle.isPartial,
+      partialMessage: bundle.partialMessage,
+      skippedReportCount: bundle.skippedReportCount,
+    );
   }
 
   /// Registros del periodo configurado (consulta nube por rango + local).
@@ -479,27 +835,51 @@ class AppState extends ChangeNotifier {
   Future<void> enableCloudSyncIfAvailable() => _cloud.enableIfAvailable();
 
   Future<void> _loadLocalData() async {
+    final uid = _authUid;
+    final generation = _authGeneration;
+
+    if (uid != null && uid.isNotEmpty) {
+      await recordsScope.bindUser(uid);
+      if (!_isAuthContextValid(generation, uid)) return;
+    } else {
+      // Sin sesión: no cargar el store legacy compartido en la UI.
+      records = [];
+    }
+
     final loaded = await Future.wait([
-      recordsScope.loadFromPreferences(),
+      uid == null || uid.isEmpty
+          ? Future<List<NepRecord>>.value(const [])
+          : recordsScope.loadFromPreferences(),
       fabricCatalogService.loadFabrics(),
       loteTramaCatalogService.loadCatalog(),
     ]);
+
+    if (uid != null && !_isAuthContextValid(generation, uid)) return;
 
     records = loaded[0] as List<NepRecord>;
     fabrics = loaded[1] as List<String>;
     loteCatalog = loaded[2] as List<String>;
 
+    if (uid != null && uid.isNotEmpty) {
+      await _restoreOrCreateCaptureSession(uid);
+      if (!_isAuthContextValid(generation, uid)) return;
+    }
+
     _suppressLotePersist = true;
     try {
-      await _loadLotePreferences();
-      _syncFabricSelection();
-      _ensureDefaultLotePreview();
+      // Preferencias de lote/tela del formulario son personales por UID.
+      // Tras nueva sesión (_autoFillCaptureDefaults=false) no se restauran.
+      if (_autoFillCaptureDefaults && uid != null && uid.isNotEmpty) {
+        await _loadLotePreferences();
+      }
+      _syncFabricSelection(allowAutoSelect: false);
     } finally {
       _suppressLotePersist = false;
     }
   }
 
   void _ensureDefaultLotePreview() {
+    if (!_autoFillCaptureDefaults) return;
     if (loteFullController.text.trim().isNotEmpty) return;
     if (loteCatalog.isEmpty) return;
     loteFullController.text = loteCatalog.first;
@@ -513,13 +893,43 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadLotePreferences() async {
     final prefs = await SharedPreferences.getInstance();
+    final uid = _authUid;
+    if (uid != null && uid.isNotEmpty) {
+      final raw = prefs.getString(lotePrefsKeyForUid(uid));
+      if (raw != null && raw.isNotEmpty) {
+        try {
+          final Map<String, dynamic> data =
+              Map<String, dynamic>.from(jsonDecode(raw) as Map);
+          final savedPrefix = data['prefix']?.toString();
+          if (savedPrefix != null && savedPrefix.trim().isNotEmpty) {
+            lotePrefixController.text =
+                LoteTramaHelper.normalizePrefix(savedPrefix);
+          }
+          loteFullEntryMode = data['fullEntry'] == true;
+          final savedFull = data['full']?.toString();
+          if (savedFull != null && savedFull.trim().isNotEmpty) {
+            final full = savedFull.trim();
+            loteFullController.text = full;
+            final parts = LoteTramaHelper.split(
+              full,
+              fallbackPrefix: lotePrefixController.text,
+            );
+            lotePrefixController.text = parts.prefix;
+            loteSuffixController.text = parts.suffix;
+          }
+          return;
+        } catch (_) {
+          // Continúa con legacy global solo para migración de lectura.
+        }
+      }
+    }
+
     final savedPrefix = prefs.getString(loteTramaPrefixStorageKey);
     if (savedPrefix != null && savedPrefix.trim().isNotEmpty) {
       lotePrefixController.text = LoteTramaHelper.normalizePrefix(savedPrefix);
     }
     loteFullEntryMode = prefs.getBool(loteTramaFullEntryStorageKey) ?? false;
 
-    // Restaura el último lote de trama usado para acelerar la captura.
     final savedFull = prefs.getString(loteTramaFullStorageKey);
     if (savedFull != null && savedFull.trim().isNotEmpty) {
       final full = savedFull.trim();
@@ -535,10 +945,22 @@ class AppState extends ChangeNotifier {
 
   Future<void> _saveLotePreferences() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      loteTramaPrefixStorageKey,
-      LoteTramaHelper.normalizePrefix(lotePrefixController.text),
-    );
+    final prefix = LoteTramaHelper.normalizePrefix(lotePrefixController.text);
+    final uid = _authUid;
+    if (uid != null && uid.isNotEmpty) {
+      final prefix = LoteTramaHelper.normalizePrefix(lotePrefixController.text);
+      final full = loteFullController.text.trim();
+      await prefs.setString(
+        lotePrefsKeyForUid(uid),
+        jsonEncode({
+          'prefix': prefix,
+          'fullEntry': loteFullEntryMode,
+          'full': full,
+        }),
+      );
+      return;
+    }
+    await prefs.setString(loteTramaPrefixStorageKey, prefix);
     await prefs.setBool(loteTramaFullEntryStorageKey, loteFullEntryMode);
   }
 
@@ -547,10 +969,21 @@ class AppState extends ChangeNotifier {
 
   Future<void> _saveLoteFull() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      loteTramaFullStorageKey,
-      loteFullController.text.trim(),
-    );
+    final full = loteFullController.text.trim();
+    final uid = _authUid;
+    if (uid != null && uid.isNotEmpty) {
+      final prefix = LoteTramaHelper.normalizePrefix(lotePrefixController.text);
+      await prefs.setString(
+        lotePrefsKeyForUid(uid),
+        jsonEncode({
+          'prefix': prefix,
+          'fullEntry': loteFullEntryMode,
+          'full': full,
+        }),
+      );
+      return;
+    }
+    await prefs.setString(loteTramaFullStorageKey, full);
   }
 
   void setLoteFullEntryMode(bool value) {
@@ -637,9 +1070,16 @@ class AppState extends ChangeNotifier {
 
   Future<void> reconnectCloudIfNeeded() => _cloud.ensureConnected();
 
-  Future<void> ensureCloudConnected() => _cloud.ensureConnected();
+  Future<void> ensureCloudConnected() async {
+    await _cloud.ensureConnected();
+    final uid = _authUid;
+    final generation = _authGeneration;
+    if (uid != null && uid.isNotEmpty) {
+      unawaited(_drainPendingSyncIfCurrent(uid, generation));
+    }
+  }
 
-  void _syncFabricSelection() {
+  void _syncFabricSelection({bool allowAutoSelect = true}) {
     if (fabrics.isEmpty) {
       useManualFabric = true;
       return;
@@ -648,7 +1088,11 @@ class AppState extends ChangeNotifier {
     if (useManualFabric) return;
 
     if (selectedFabric == null || !fabrics.contains(selectedFabric)) {
-      selectedFabric = fabrics.first;
+      if (allowAutoSelect && _autoFillCaptureDefaults) {
+        selectedFabric = fabrics.first;
+      } else {
+        selectedFabric = null;
+      }
     }
   }
 
@@ -712,37 +1156,87 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _persistRecord(NepRecord record) async {
-    recordsScope.upsert(record);
-    await recordsScope.persistRecord(record);
+    final uid = _authUid;
+    final generation = _authGeneration;
+    if (uid == null || uid.isEmpty) {
+      showMessage('Debe iniciar sesión para guardar registros.');
+      return;
+    }
+
+    final verified = verifiedRecordOwnerUid(record);
+    if (verified != null && verified != uid) {
+      showMessage('No puede guardar registros de otro usuario.');
+      return;
+    }
+
+    final stamped = record.createdByUid == null || record.createdByUid!.isEmpty
+        ? record.copyWith(createdByUid: uid)
+        : record;
+
+    recordsScope.upsert(stamped);
+    await recordsScope.persistRecord(stamped);
+    if (!_isAuthContextValid(generation, uid)) return;
     notifyListeners();
 
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
+      if (!_isAuthContextValid(generation, uid)) return;
       try {
-        await cloudSyncCoordinator!.upsertRecord(record);
+        await cloudSyncCoordinator!.upsertRecord(stamped);
         return;
       } catch (error, stackTrace) {
         cloudSyncEnabled = false;
         ErrorHandler.log(error, stackTrace, 'persistRecord');
+        await pendingSyncQueueService.enqueueUpsert(uid, stamped);
         showMessage(
           'No se pudo sincronizar con Firebase. Registro guardado localmente.',
         );
       }
+    } else if (cloudSyncCoordinator != null) {
+      await pendingSyncQueueService.enqueueUpsert(uid, stamped);
     }
   }
 
   Future<void> _persistRecords(List<NepRecord> updatedRecords) async {
+    final uid = _authUid;
+    final generation = _authGeneration;
+    if (uid == null || uid.isEmpty) {
+      throw StateError('Sin UID autenticado para persistir registros.');
+    }
+
+    final stamped = <NepRecord>[];
     for (final record in updatedRecords) {
+      final verified = verifiedRecordOwnerUid(record);
+      if (verified != null && verified != uid) {
+        continue;
+      }
+      stamped.add(
+        record.createdByUid == null || record.createdByUid!.isEmpty
+            ? record.copyWith(createdByUid: uid)
+            : record,
+      );
+    }
+
+    for (final record in stamped) {
       recordsScope.upsert(record);
     }
-    await recordsScope.persistMerged(updatedRecords);
+    await recordsScope.persistMerged(stamped);
+    if (!_isAuthContextValid(generation, uid)) return;
     notifyListeners();
 
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
+      if (!_isAuthContextValid(generation, uid)) return;
       try {
-        await cloudSyncCoordinator!.upsertRecords(updatedRecords);
+        await cloudSyncCoordinator!.upsertRecords(stamped);
         return;
       } catch (_) {
         cloudSyncEnabled = false;
+        for (final record in stamped) {
+          await pendingSyncQueueService.enqueueUpsert(uid, record);
+        }
+      }
+    } else if (cloudSyncCoordinator != null) {
+      for (final record in stamped) {
+        await pendingSyncQueueService.enqueueUpsert(uid, record);
       }
     }
   }
@@ -762,14 +1256,18 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _removeRecord(String recordId) async {
+    final uid = _authUid;
+    final generation = _authGeneration;
     final index = records.indexWhere((record) => record.id == recordId);
     final ownerUid = index >= 0 ? records[index].createdByUid : null;
 
     recordsScope.removeById(recordId);
     await recordsScope.persistLocally();
+    if (uid != null && !_isAuthContextValid(generation, uid)) return;
     notifyListeners();
 
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
+      if (uid != null && !_isAuthContextValid(generation, uid)) return;
       try {
         await cloudSyncCoordinator!.deleteRecord(
           recordId,
@@ -778,7 +1276,20 @@ class AppState extends ChangeNotifier {
         return;
       } catch (_) {
         cloudSyncEnabled = false;
+        if (uid != null) {
+          await pendingSyncQueueService.enqueueDelete(
+            uid,
+            recordId,
+            ownerUid: ownerUid ?? uid,
+          );
+        }
       }
+    } else if (cloudSyncCoordinator != null && uid != null) {
+      await pendingSyncQueueService.enqueueDelete(
+        uid,
+        recordId,
+        ownerUid: ownerUid ?? uid,
+      );
     }
   }
 
@@ -993,31 +1504,33 @@ class AppState extends ChangeNotifier {
     return '${two(date.day)}/${two(date.month)}/${date.year} ${two(date.hour)}:${two(date.minute)}';
   }
 
-  Future<void> saveCurrentReport(String name) async {
+  Future<void> saveCurrentReport(
+    String name, {
+    List<NepRecord>? recordsOverride,
+  }) async {
     if (!_requirePermission(canManageReports, 'guardar informes')) {
       return;
     }
-    if (records.isEmpty) {
+    final source = recordsOverride ??
+        (filters.hasActiveFilters
+            ? visibleRecords
+            : List<NepRecord>.from(records));
+
+    if (source.isEmpty) {
       showMessage('No hay registros para guardar como informe.');
-      return;
-    }
-
-    final dataToSave = filters.hasActiveFilters
-        ? visibleRecords
-        : List<NepRecord>.from(records);
-
-    if (dataToSave.isEmpty) {
-      showMessage('No hay registros visibles para guardar.');
       return;
     }
 
     try {
       final report = await reportStorageService.saveReport(
         name: name.trim().isEmpty ? 'Informe $timestamp' : name.trim(),
-        records: dataToSave,
-        appliedFilters: filters.hasActiveFilters ? filters.copy() : null,
+        records: source,
+        appliedFilters: recordsOverride == null && filters.hasActiveFilters
+            ? filters.copy()
+            : null,
         saveFiles: !kIsWeb,
         exportStyle: pdfReportStyle,
+        createdByUid: _authUid,
       );
 
       if (cloudSyncEnabled) {
@@ -1043,8 +1556,292 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Persiste de forma durable el trabajo de la sesión de captura activa.
+  /// Devuelve true solo si la persistencia local confirmó (disco).
+  Future<bool> persistActiveCaptureSession({String? reportName}) async {
+    if (!_requirePermission(canCapture, 'guardar la sesión de captura')) {
+      return false;
+    }
+
+    final uid = _authUid;
+    final generation = _authGeneration;
+    final sessionId = _activeCaptureSessionId;
+    if (uid == null || uid.isEmpty) {
+      showMessage('Debe iniciar sesión para guardar la sesión.');
+      return false;
+    }
+    if (sessionId == null || sessionId.isEmpty) {
+      showMessage('No hay sesión de captura activa.');
+      return false;
+    }
+
+    final sessionRecords = List<NepRecord>.from(captureSessionRecords);
+    if (sessionRecords.isEmpty) {
+      showMessage('No hay registros de sesión para guardar.');
+      return false;
+    }
+
+    try {
+      await _persistRecords(sessionRecords);
+      if (!_isAuthContextValid(generation, uid)) return false;
+
+      final reloaded = await recordsScope.loadFromPreferences();
+      if (!_isAuthContextValid(generation, uid)) return false;
+      final persistedIds = reloaded.map((r) => r.id).toSet();
+      final missing = sessionRecords.any((r) => !persistedIds.contains(r.id));
+      if (missing) {
+        showMessage(
+          'No se pudo confirmar el guardado en este dispositivo. '
+          'Se conservan los datos para reintentar.',
+        );
+        return false;
+      }
+
+      final archiveName = (reportName?.trim().isNotEmpty == true)
+          ? reportName!.trim()
+          : 'Sesión $timestamp';
+      final archiveId =
+          _pendingClosedPersonalArchiveId ?? generateStableId(prefix: 'pses');
+      final archive = PersonalCaptureSessionArchive(
+        id: archiveId,
+        ownerUid: uid,
+        captureSessionId: sessionId,
+        savedAt: DateTime.now(),
+        records: sessionRecords,
+        name: archiveName,
+      );
+      await personalSessionArchiveService.upsert(archive);
+      if (!_isAuthContextValid(generation, uid)) return false;
+      _pendingClosedPersonalArchiveId = archive.id;
+
+      if (canManageReports) {
+        if (_pendingClosedSessionReportId != null) {
+          final existing = SavedReport(
+            id: _pendingClosedSessionReportId!,
+            name: archiveName,
+            createdAt: DateTime.now(),
+            records: sessionRecords,
+            createdByUid: uid,
+          );
+          await reportStorageService.saveExistingReport(
+            existing,
+            saveFiles: false,
+          );
+        } else {
+          final report = await reportStorageService.saveReport(
+            name: archiveName,
+            records: sessionRecords,
+            saveFiles: false,
+            exportStyle: pdfReportStyle,
+            createdByUid: uid,
+          );
+          _pendingClosedSessionReportId = report.id;
+        }
+      }
+
+      final pendingOps = await pendingSyncQueueService.loadForUid(uid);
+      if (!_isAuthContextValid(generation, uid)) return false;
+
+      if (pendingOps.isNotEmpty || !cloudSyncEnabled) {
+        showMessage(
+          'Guardado en este dispositivo; sincronización pendiente.',
+        );
+      } else {
+        showMessage('Sesión guardada correctamente.');
+      }
+      return true;
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'persistActiveCaptureSession');
+      showMessage(
+        'No se pudo guardar la sesión: ${ErrorHandler.userMessage(error)}',
+      );
+      return false;
+    }
+  }
+
+  /// Tras un guardado exitoso: cierra la sesión lógica y abre una vacía.
+  /// No borra registros históricos ni limpia la nube.
+  Future<bool> openEmptyCaptureSessionAfterSave() {
+    return _rotateToEmptyCaptureSession(
+      successMessage: 'Nueva sesión lista. Todos los campos quedan vacíos.',
+      failureMessage: 'La sesión se guardó, pero no se pudo abrir la nueva. '
+          'Reintente sin duplicar el informe.',
+      logLabel: 'openEmptyCaptureSessionAfterSave',
+    );
+  }
+
+  /// Descarta únicamente el borrador de formulario y preferencias de sesión
+  /// del UID actual; rota a un nuevo `captureSessionId` vacío.
+  ///
+  /// Conserva registros ya guardados localmente (incl. cola de sync),
+  /// historial e informes. No usa clearAll ni afecta a otros usuarios.
+  Future<bool> discardUnsavedDraftAndOpenEmptyCaptureSession() {
+    return _rotateToEmptyCaptureSession(
+      successMessage:
+          'Cambios descartados. Nueva sesión lista con campos vacíos.',
+      failureMessage:
+          'No se pudo abrir la nueva sesión tras descartar. Reintente.',
+      logLabel: 'discardUnsavedDraftAndOpenEmptyCaptureSession',
+    );
+  }
+
+  /// Rota el ID de sesión, limpia borrador/prefs de lote y vacía el formulario.
+  /// No elimina registros persistidos ni operaciones de sync ya encoladas.
+  Future<bool> _rotateToEmptyCaptureSession({
+    required String successMessage,
+    required String failureMessage,
+    required String logLabel,
+  }) async {
+    if (!_requirePermission(canCapture, 'iniciar una nueva sesión')) {
+      return false;
+    }
+    if (_sessionTransitionBusy) return false;
+
+    final uid = _authUid;
+    final generation = _authGeneration;
+    if (uid == null || uid.isEmpty) {
+      showMessage('Debe iniciar sesión para crear una nueva captura.');
+      return false;
+    }
+
+    _sessionTransitionBusy = true;
+    notifyListeners();
+    try {
+      final newSessionId = generateStableId(prefix: 'ses');
+      await _persistActiveCaptureSessionId(uid, newSessionId);
+      if (!_isAuthContextValid(generation, uid)) return false;
+
+      _activeCaptureSessionId = newSessionId;
+      _pendingClosedSessionReportId = null;
+      _pendingClosedPersonalArchiveId = null;
+      // Evita que preferencias o restauración de borrador rellenen la sesión.
+      _autoFillCaptureDefaults = false;
+      await captureDraftStorageService.clearForUid(uid);
+      await _clearSessionLotePreferences();
+      _suppressLotePersist = true;
+      try {
+        clearCaptureFields(preserveCatalogDefaults: false);
+      } finally {
+        _suppressLotePersist = false;
+      }
+      if (!_isAuthContextValid(generation, uid)) return false;
+      notifyListeners();
+      showMessage(successMessage);
+      return true;
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, logLabel);
+      showMessage(failureMessage);
+      return false;
+    } finally {
+      _sessionTransitionBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _clearSessionLotePreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(loteTramaFullStorageKey);
+    await prefs.remove(loteTramaPrefixStorageKey);
+    await prefs.remove(loteTramaFullEntryStorageKey);
+    final uid = _authUid;
+    if (uid != null && uid.isNotEmpty) {
+      await prefs.remove(lotePrefsKeyForUid(uid));
+    }
+  }
+
+  /// Lista archivos personales del usuario autenticado (separado de informes de equipo).
+  Future<List<PersonalCaptureSessionArchive>>
+      loadPersonalSessionArchives() async {
+    final uid = _authUid;
+    if (uid == null || uid.isEmpty) return const [];
+    return personalSessionArchiveService.loadForUid(uid);
+  }
+
+  /// Abre una sesión personal guardada desde el historial de la UI.
+  Future<bool> openPersonalCaptureArchive(
+    PersonalCaptureSessionArchive archive,
+  ) async {
+    if (!_requirePermission(canCapture, 'abrir una sesión personal')) {
+      return false;
+    }
+    final uid = _authUid;
+    final generation = _authGeneration;
+    if (uid == null || uid.isEmpty) {
+      showMessage('Debe iniciar sesión para abrir el historial personal.');
+      return false;
+    }
+    if (archive.ownerUid != uid) {
+      showMessage('No puede abrir el archivo personal de otra cuenta.');
+      return false;
+    }
+    if (archive.records.isEmpty) {
+      showMessage('La sesión guardada no tiene registros.');
+      return false;
+    }
+
+    try {
+      await recordsScope.bindUser(uid);
+      if (!_isAuthContextValid(generation, uid)) return false;
+      await _persistRecords(archive.records);
+      if (!_isAuthContextValid(generation, uid)) return false;
+
+      await _persistActiveCaptureSessionId(uid, archive.captureSessionId);
+      if (!_isAuthContextValid(generation, uid)) return false;
+      _activeCaptureSessionId = archive.captureSessionId;
+
+      records = await recordsScope.loadFromPreferences();
+      if (!_isAuthContextValid(generation, uid)) return false;
+
+      _autoFillCaptureDefaults = false;
+      clearCaptureFields(preserveCatalogDefaults: false);
+      notifyListeners();
+      showMessage(
+        'Sesión "${archive.name.isEmpty ? archive.id : archive.name}" abierta '
+        '(${archive.records.length} registros).',
+      );
+      return true;
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'openPersonalCaptureArchive');
+      showMessage(
+        'No se pudo abrir la sesión: ${ErrorHandler.userMessage(error)}',
+      );
+      return false;
+    }
+  }
+
+  /// Inicia sesión vacía sin contenido que guardar (sin diálogo de guardado).
+  Future<void> startEmptyCaptureSessionIfIdle() async {
+    if (!_requirePermission(canCapture, 'iniciar una nueva sesión')) {
+      return;
+    }
+    if (hasCaptureSessionWork) return;
+    await openEmptyCaptureSessionAfterSave();
+  }
+
+  @Deprecated(
+      'Usar persistActiveCaptureSession + openEmptyCaptureSessionAfterSave')
+  Future<void> startNewCaptureSession() async {
+    if (!_requirePermission(canCapture, 'iniciar una nueva sesión')) {
+      return;
+    }
+    // Compatibilidad: ya no borra registros históricos.
+    final saved = captureSessionRecords.isEmpty
+        ? true
+        : await persistActiveCaptureSession();
+    if (!saved) return;
+    await openEmptyCaptureSessionAfterSave();
+  }
+
   Future<void> loadReport(SavedReport report) async {
     if (!_requirePermission(canManageReports, 'cargar informes en registros')) {
+      return;
+    }
+    if (!canViewSavedReport(
+      report,
+      viewerUid: _authUid,
+      canViewTeamReports: canManageReports,
+    )) {
+      showMessage('No tiene permiso para abrir este informe.');
       return;
     }
     final loadedRecords = List<NepRecord>.from(report.records);
@@ -1272,6 +2069,16 @@ class AppState extends ChangeNotifier {
       return null;
     }
 
+    // Garantiza sessionId estable aunque auth/prefs aún no hayan terminado.
+    if (_activeCaptureSessionId == null || _activeCaptureSessionId!.isEmpty) {
+      _activeCaptureSessionId = generateStableId(prefix: 'ses');
+      final uid = _authUid;
+      final sessionId = _activeCaptureSessionId!;
+      if (uid != null && uid.isNotEmpty) {
+        unawaited(_persistActiveCaptureSessionId(uid, sessionId));
+      }
+    }
+
     return NepRecord(
       telar: telar,
       neps: parseNumber(nepsText),
@@ -1285,12 +2092,15 @@ class AppState extends ChangeNotifier {
       createdByUid: _authUid,
       createdByEmail: _authUsername,
       createdByRole: _authAppRole?.code,
+      captureSessionId: _activeCaptureSessionId,
     );
   }
 
   bool isRecentDuplicate(NepRecord candidate) {
     final threshold = DateTime.now().subtract(const Duration(minutes: 2));
-    return records.any(
+    // Solo compara dentro de la sesión activa del usuario (evita falsos
+    // positivos con el mismo telar/lote de otro usuario u otra sesión).
+    return captureSessionRecords.any(
       (r) =>
           r.telar == candidate.telar &&
           r.tela == candidate.tela &&
@@ -1379,6 +2189,7 @@ class AppState extends ChangeNotifier {
     }
 
     final existing = records[index];
+    // Conserva autoría; registra quién modifica (permiso editRecords).
     final updated = existing.copyWith(
       telar: telar.trim(),
       neps: neps,
@@ -1391,6 +2202,13 @@ class AppState extends ChangeNotifier {
       accionCorrectiva: accionCorrectiva,
       revisadoPorSupervisor: revisadoPorSupervisor,
       fechaRevision: fechaRevision,
+      createdByUid: existing.createdByUid,
+      createdByEmail: existing.createdByEmail,
+      createdByRole: existing.createdByRole,
+      captureSessionId: existing.captureSessionId,
+      lastModifiedByUid: _authUid,
+      lastModifiedByEmail: _authUsername,
+      lastModifiedAt: DateTime.now(),
     );
 
     await _updateRecord(updated);
@@ -1456,25 +2274,16 @@ class AppState extends ChangeNotifier {
     showMessage('Tabla vaciada correctamente.');
   }
 
-  Future<void> startNewCaptureSession() async {
-    if (!_requirePermission(canClearAllRecords, 'iniciar una nueva sesión')) {
-      return;
-    }
-    await _clearAllRecords();
-    clearCaptureFields();
-    recordsScope.clearFilters();
-    filterPanelKey = recordsScope.filterPanelKey;
-    unawaited(_rebindRecordsIfCloudReady());
-    if (!cloudSyncEnabled) {
-      notifyListeners();
-    }
-    showMessage('Nueva sesion iniciada. Tabla vacia.');
-  }
-
-  void clearCaptureFields() {
+  void clearCaptureFields({bool preserveCatalogDefaults = false}) {
     capture.clearCaptureFields(notify: false);
     selectedFabric = null;
     useManualFabric = false;
+    if (preserveCatalogDefaults && _autoFillCaptureDefaults) {
+      _syncFabricSelection(allowAutoSelect: true);
+      _ensureDefaultLotePreview();
+    } else {
+      _syncFabricSelection(allowAutoSelect: false);
+    }
     captureFormEpoch++;
     notifyListeners();
   }

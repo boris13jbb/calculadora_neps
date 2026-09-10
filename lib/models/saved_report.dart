@@ -8,12 +8,16 @@ class SavedReport {
   List<NepRecord> records;
   RecordFilters? appliedFilters;
 
+  /// Propietario del informe (quién lo guardó). Obligatorio para aislamiento local.
+  String? createdByUid;
+
   SavedReport({
     required this.id,
     required this.name,
     required this.createdAt,
     required this.records,
     this.appliedFilters,
+    this.createdByUid,
   });
 
   Map<String, dynamic> toJson() {
@@ -22,6 +26,8 @@ class SavedReport {
       'name': name,
       'createdAt': createdAt.toIso8601String(),
       'records': records.map((e) => e.toJson()).toList(),
+      if (createdByUid != null && createdByUid!.isNotEmpty)
+        'createdByUid': createdByUid,
       'appliedFilters': appliedFilters == null
           ? null
           : {
@@ -43,30 +49,58 @@ class SavedReport {
     RecordFilters? filters;
     final rawFilters = json['appliedFilters'];
     if (rawFilters is Map) {
-      filters = RecordFilters()
-        ..tela = rawFilters['tela']?.toString()
-        ..loteTrama = rawFilters['loteTrama']?.toString()
-        ..telar = rawFilters['telar']?.toString()
-        ..nepsMin = _toDouble(rawFilters['nepsMin'])
-        ..nepsMax = _toDouble(rawFilters['nepsMax'])
-        ..mtsMin = _toDouble(rawFilters['mtsMin'])
-        ..mtsMax = _toDouble(rawFilters['mtsMax'])
-        ..dateFrom = _toDate(rawFilters['dateFrom'])
-        ..dateTo = _toDate(rawFilters['dateTo'])
-        ..searchText = rawFilters['searchText']?.toString() ?? '';
+      try {
+        final map = Map<String, dynamic>.from(rawFilters);
+        filters = RecordFilters()
+          ..tela = map['tela']?.toString()
+          ..loteTrama = map['loteTrama']?.toString()
+          ..telar = map['telar']?.toString()
+          ..nepsMin = _toDouble(map['nepsMin'])
+          ..nepsMax = _toDouble(map['nepsMax'])
+          ..mtsMin = _toDouble(map['mtsMin'])
+          ..mtsMax = _toDouble(map['mtsMax'])
+          ..dateFrom = _toDate(map['dateFrom'])
+          ..dateTo = _toDate(map['dateTo'])
+          ..searchText = map['searchText']?.toString() ?? '';
+      } catch (_) {
+        filters = null;
+      }
     }
 
-    final List recordsJson = json['records'] as List? ?? [];
+    final records = <NepRecord>[];
+    final rawRecords = json['records'];
+    if (rawRecords is List) {
+      for (final item in rawRecords) {
+        if (item is! Map) continue;
+        try {
+          records.add(
+            NepRecord.fromJson(Map<String, dynamic>.from(item)),
+          );
+        } catch (_) {
+          // Registro defectuoso: se omite; el informe sigue siendo usable.
+        }
+      }
+    }
+
     return SavedReport(
       id: json['id']?.toString() ?? '',
       name: json['name']?.toString() ?? 'Informe',
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
-          DateTime.now(),
-      records: recordsJson
-          .map((item) => NepRecord.fromJson(Map<String, dynamic>.from(item)))
-          .toList(),
+      createdAt: _toDate(json['createdAt']) ?? DateTime.now(),
+      records: records,
       appliedFilters: filters,
+      createdByUid: json['createdByUid']?.toString(),
     );
+  }
+
+  /// Parseo tolerante: null si el documento no es recuperable.
+  static SavedReport? tryFromJson(Map<String, dynamic> json) {
+    try {
+      final report = SavedReport.fromJson(json);
+      if (report.id.trim().isEmpty) return null;
+      return report;
+    } catch (_) {
+      return null;
+    }
   }
 
   static double? _toDouble(dynamic value) {

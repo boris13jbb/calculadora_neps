@@ -29,32 +29,33 @@ class AnalyticsKpiSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return KpiStrip(
       compact: compact,
-      minCardWidth: compact ? 160 : 200,
+      minCardWidth: compact ? 170 : 200,
+      maxColumns: compact ? 2 : 6,
       cards: [
         KpiCard(
           compact: compact,
-          label: 'Total registros',
+          label: compact ? 'Registros' : 'Total registros',
           value: '${summary.totalRecords}',
           icon: Icons.list_alt,
           color: AppColors.primaryBlue,
         ),
         KpiCard(
           compact: compact,
-          label: 'Promedio neps',
+          label: compact ? 'Prom. neps' : 'Promedio neps',
           value: formatNumber(summary.averageNeps),
           icon: Icons.show_chart,
           color: AppColors.primaryGreen,
         ),
         KpiCard(
           compact: compact,
-          label: 'Total neps',
+          label: compact ? 'Σ neps' : 'Total neps',
           value: formatDecimal(summary.totalNeps),
           icon: Icons.stacked_line_chart,
           color: AppColors.primaryBlue,
         ),
         KpiCard(
           compact: compact,
-          label: 'Total mts calc.',
+          label: compact ? 'Σ mts' : 'Total mts calc.',
           value: formatDecimal(summary.totalMts),
           icon: Icons.straighten,
           color: AppColors.accentDark,
@@ -62,14 +63,14 @@ class AnalyticsKpiSection extends StatelessWidget {
         ),
         KpiCard(
           compact: compact,
-          label: 'Mínimo neps',
+          label: compact ? 'Mín. neps' : 'Mínimo neps',
           value: formatDecimal(summary.minNeps),
           icon: Icons.arrow_downward,
           color: AppColors.statusNormal,
         ),
         KpiCard(
           compact: compact,
-          label: 'Máximo neps',
+          label: compact ? 'Máx. neps' : 'Máximo neps',
           value: formatDecimal(summary.maxNeps),
           icon: Icons.arrow_upward,
           color: AppColors.statusWarning,
@@ -92,7 +93,7 @@ class AnalyticsKpiSection extends StatelessWidget {
         ),
         KpiCard(
           compact: compact,
-          label: '% normales',
+          label: compact ? '% OK' : '% normales',
           value: '${summary.normalPercentage.toStringAsFixed(1)}%',
           icon: Icons.check_circle_outline,
           color: AppColors.statusNormal,
@@ -103,18 +104,17 @@ class AnalyticsKpiSection extends StatelessWidget {
             compact: compact,
             label: periodLabel == null
                 ? 'Mejor telar'
-                : 'Mejor telar ($periodLabel)',
+                : (compact ? 'Mejor telar' : 'Mejor telar ($periodLabel)'),
             value: 'T${summary.bestTelar!.key}',
             icon: Icons.emoji_events_outlined,
             color: AppColors.statusNormal,
-            subtitle:
-                '${formatNumber(summary.bestTelar!.nepsPorM2)} neps/m² · '
+            subtitle: '${formatNumber(summary.bestTelar!.nepsPorM2)} neps/m² · '
                 '${summary.bestTelar!.recordCount} reg.',
           ),
         if (summary.averageNepsPerTelar != null)
           KpiCard(
             compact: compact,
-            label: 'Prom. por telar',
+            label: compact ? 'Prom. telar' : 'Prom. por telar',
             value: formatNumber(summary.averageNepsPerTelar!),
             icon: Icons.precision_manufacturing_outlined,
             color: AppColors.primaryBlue,
@@ -123,7 +123,7 @@ class AnalyticsKpiSection extends StatelessWidget {
         if (summary.averageNepsPerTurno != null)
           KpiCard(
             compact: compact,
-            label: 'Prom. por turno',
+            label: compact ? 'Prom. turno' : 'Prom. por turno',
             value: formatNumber(summary.averageNepsPerTurno!),
             icon: Icons.schedule_outlined,
             color: AppColors.accentDark,
@@ -509,7 +509,8 @@ class _BestTelarHighlightCard extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     '${item.recordCount} registros',
-                    style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                    style:
+                        const TextStyle(fontSize: 11, color: AppColors.muted),
                   ),
                 ],
               ),
@@ -584,8 +585,10 @@ class _DesktopBestTelarsTable extends StatelessWidget {
               final item = items[index];
               return DataRow(
                 cells: [
-                  DataCell(Text('${index + 1}'), onTap: () => onSelectTelar(item)),
-                  DataCell(Text('T${item.key}'), onTap: () => onSelectTelar(item)),
+                  DataCell(Text('${index + 1}'),
+                      onTap: () => onSelectTelar(item)),
+                  DataCell(Text('T${item.key}'),
+                      onTap: () => onSelectTelar(item)),
                   DataCell(
                     Text(
                       formatNumber(item.nepsPorM2),

@@ -55,9 +55,8 @@ class CompactRecordsPanel extends StatelessWidget {
                 ? const EmptyState(
                     compact: true,
                     icon: Icons.edit_note_outlined,
-                    title: 'Sin registros en sesión',
-                    message:
-                        'Agregue el primer registro con el formulario de captura.',
+                    title: 'Sin registros en esta sesión',
+                    message: 'Agrega tu primer registro para comenzar.',
                     iconColor: AppColors.primaryGreen,
                   )
                 : LayoutBuilder(

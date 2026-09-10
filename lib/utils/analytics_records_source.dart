@@ -12,36 +12,57 @@ class AnalyticsRecordsSource {
     required this.liveRecordCount,
     required this.savedReportCount,
     required this.savedReportRecordCount,
+    this.isPartial = false,
+    this.partialMessage,
+    this.skippedReportCount = 0,
   });
 
   final List<NepRecord> records;
   final int liveRecordCount;
   final int savedReportCount;
   final int savedReportRecordCount;
+  final bool isPartial;
+  final String? partialMessage;
+  final int skippedReportCount;
 
   int get totalSourceRecords => liveRecordCount + savedReportRecordCount;
 
   bool get hasAnyData => records.isNotEmpty;
 
   String describe() {
-    if (savedReportCount == 0 && liveRecordCount == 0) {
-      return 'Sin registros ni informes guardados';
+    final base = () {
+      if (savedReportCount == 0 && liveRecordCount == 0) {
+        return 'Sin registros ni informes guardados';
+      }
+      if (savedReportCount == 0) {
+        return '$liveRecordCount registros actuales';
+      }
+      if (liveRecordCount == 0) {
+        return '${records.length} registros de $savedReportCount informes/sesiones';
+      }
+      return '${records.length} registros '
+          '($liveRecordCount actuales + $savedReportRecordCount en historial)';
+    }();
+
+    if (!isPartial) return base;
+    final detail = partialMessage?.trim();
+    if (detail != null && detail.isNotEmpty) {
+      return '$base · Resultados parciales: $detail';
     }
-    if (savedReportCount == 0) {
-      return '$liveRecordCount registros actuales';
+    if (skippedReportCount > 0) {
+      return '$base · Resultados parciales ($skippedReportCount omitidos)';
     }
-    if (liveRecordCount == 0) {
-      return '${records.length} registros de $savedReportCount informes guardados';
-    }
-    return '${records.length} registros '
-        '($liveRecordCount actuales + $savedReportRecordCount en informes)';
+    return '$base · Resultados parciales';
   }
 }
 
-/// Combina registros en vivo con los de todos los informes guardados (sin duplicar por id).
+/// Combina registros en vivo con los de informes/sesiones (sin duplicar por id).
 AnalyticsRecordsSource buildAnalyticsRecordsSource({
   required List<NepRecord> liveRecords,
   required List<SavedReport> savedReports,
+  bool isPartial = false,
+  String? partialMessage,
+  int skippedReportCount = 0,
 }) {
   final byId = <String, NepRecord>{};
   var savedReportRecordCount = 0;
@@ -65,6 +86,9 @@ AnalyticsRecordsSource buildAnalyticsRecordsSource({
     liveRecordCount: liveRecords.length,
     savedReportCount: savedReports.length,
     savedReportRecordCount: savedReportRecordCount,
+    isPartial: isPartial,
+    partialMessage: partialMessage,
+    skippedReportCount: skippedReportCount,
   );
 }
 

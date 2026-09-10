@@ -23,6 +23,7 @@ void main() {
       ),
     );
     await state.initialize();
+    await state.ensureCaptureSessionReady();
     return state;
   }
 
@@ -95,7 +96,7 @@ void main() {
       state.dispose();
     });
 
-    test('vaciar registros inicia nueva sesion', () async {
+    test('nueva sesion conserva historial y vacia captura activa', () async {
       final state = await createReadyState(role: AppUserRole.admin);
       state.useManualFabric = true;
       state.manualTelaController.text = 'BOLTON';
@@ -104,9 +105,18 @@ void main() {
       state.nepsController.text = '53';
       await state.addRecord();
       expect(state.records, hasLength(1));
+      expect(state.captureSessionRecords, hasLength(1));
+      final previousSession = state.activeCaptureSessionId;
 
       await state.startNewCaptureSession();
-      expect(state.records, isEmpty);
+      expect(state.records, hasLength(1),
+          reason: 'no debe borrar historial al abrir sesión nueva');
+      expect(state.captureSessionRecords, isEmpty);
+      expect(state.activeCaptureSessionId, isNot(previousSession));
+      expect(state.telarController.text, isEmpty);
+      expect(state.nepsController.text, isEmpty);
+      expect(state.manualTelaController.text, isEmpty);
+      expect(state.loteFullController.text, isEmpty);
       state.dispose();
     });
   });
@@ -174,16 +184,42 @@ void main() {
       state.dispose();
       reloaded.dispose();
     });
-    test('persiste lote completo en preferencias', () async {
+    test('persiste lote completo en preferencias por UID', () async {
       final state = await createReadyState();
       state.loteFullController.text = '63E264H7A';
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
 
       final reloaded = AppState();
+      reloaded.applyAuthProfile(
+        AppUser(
+          uid: 'test-uid',
+          username: 'tester',
+          role: AppUserRole.operario,
+        ),
+      );
       await reloaded.initialize();
       expect(reloaded.loteFullController.text, '63E264H7A');
       state.dispose();
       reloaded.dispose();
+    });
+
+    test('lote de otro UID no se restaura en cuenta distinta', () async {
+      final stateA = await createReadyState();
+      stateA.loteFullController.text = '63E264H7A';
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      final stateB = AppState();
+      stateB.applyAuthProfile(
+        AppUser(
+          uid: 'other-uid',
+          username: 'other',
+          role: AppUserRole.operario,
+        ),
+      );
+      await stateB.initialize();
+      expect(stateB.loteFullController.text, isNot('63E264H7A'));
+      stateA.dispose();
+      stateB.dispose();
     });
   });
 }
