@@ -1,71 +1,27 @@
 import '../../models/app_user_role.dart';
 import 'permission.dart';
+import 'role_catalog.dart';
 
 class RolePermissions {
   const RolePermissions._();
 
+  /// Deny-by-default por [roleCode] (fuente principal).
+  static bool hasCode(String? roleCode, Permission permission) {
+    return RoleCatalog.instance.hasPermission(roleCode, permission);
+  }
+
+  static Set<Permission> forRoleCode(String? roleCode) {
+    final role = RoleCatalog.instance.get(roleCode);
+    if (role == null || !role.isActive) return {};
+    return Set<Permission>.from(role.permissions);
+  }
+
+  /// Compatibilidad con callers legacy basados en enum.
   static bool has(AppUserRole role, Permission permission) {
-    return _matrix[role]?.contains(permission) ?? false;
+    return hasCode(role.code, permission);
   }
 
   static Set<Permission> forRole(AppUserRole role) {
-    return _matrix[role] ?? {};
+    return forRoleCode(role.code);
   }
-
-  static const Map<AppUserRole, Set<Permission>> _matrix = {
-    AppUserRole.superAdmin: {
-      Permission.viewDashboard,
-      Permission.captureRecords,
-      Permission.viewRecords,
-      Permission.editRecords,
-      Permission.deleteRecords,
-      Permission.clearAllRecords,
-      Permission.viewAlerts,
-      Permission.applyCorrectiveAction,
-      Permission.manageFabrics,
-      Permission.manageReports,
-      Permission.exportReports,
-      Permission.editAlertConfig,
-      Permission.manageUsers,
-      Permission.deleteUsers,
-      Permission.changeRoles,
-      Permission.viewSettings,
-      Permission.manageSettings,
-    },
-    AppUserRole.admin: {
-      Permission.viewDashboard,
-      Permission.captureRecords,
-      Permission.viewRecords,
-      Permission.editRecords,
-      Permission.deleteRecords,
-      Permission.clearAllRecords,
-      Permission.viewAlerts,
-      Permission.applyCorrectiveAction,
-      Permission.manageFabrics,
-      Permission.manageReports,
-      Permission.exportReports,
-      Permission.viewSettings,
-      Permission.manageSettings,
-    },
-    AppUserRole.supervisor: {
-      Permission.viewDashboard,
-      Permission.viewRecords,
-      Permission.editRecords,
-      Permission.viewAlerts,
-      Permission.applyCorrectiveAction,
-      Permission.exportReports,
-      Permission.manageReports,
-    },
-    AppUserRole.operario: {
-      Permission.captureRecords,
-      Permission.viewRecords,
-    },
-    AppUserRole.gerencia: {
-      Permission.viewDashboard,
-      Permission.viewRecords,
-      Permission.viewAlerts,
-      Permission.exportReports,
-      Permission.manageReports,
-    },
-  };
 }

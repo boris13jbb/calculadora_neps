@@ -1,4 +1,5 @@
 import '../core/permissions/permission.dart';
+import '../core/permissions/role_catalog.dart';
 import '../core/permissions/role_permissions.dart';
 import '../models/app_user_role.dart';
 
@@ -8,7 +9,11 @@ class PermissionsService {
 
   bool has(AppUserRole? role, Permission permission) {
     if (role == null) return false;
-    return RolePermissions.has(role, permission);
+    return RolePermissions.hasCode(role.code, permission);
+  }
+
+  bool hasCode(String? roleCode, Permission permission) {
+    return RolePermissions.hasCode(roleCode, permission);
   }
 
   bool canCapture(AppUserRole? role) => has(role, Permission.captureRecords);
@@ -17,6 +22,12 @@ class PermissionsService {
       has(role, Permission.editRecords) &&
       role != AppUserRole.operario &&
       role != AppUserRole.gerencia;
+
+  bool canImportRecordsForCode(String? roleCode) {
+    if (!hasCode(roleCode, Permission.editRecords)) return false;
+    final code = RoleCatalog.normalizeRoleCode(roleCode);
+    return code != 'operario' && code != 'gerencia';
+  }
 
   bool canDeleteRecords(AppUserRole? role) =>
       has(role, Permission.deleteRecords);
@@ -45,6 +56,13 @@ class PermissionsService {
       has(role, Permission.manageSettings);
 
   bool isReadOnly(AppUserRole? role) => role?.isGerencia ?? false;
+
+  bool isReadOnlyCode(String? roleCode) {
+    final code = RoleCatalog.normalizeRoleCode(roleCode);
+    if (code == 'gerencia') return true;
+    final def = RoleCatalog.instance.get(roleCode);
+    return def?.isReadOnly ?? false;
+  }
 
   String deniedMessage(String action) =>
       'No tiene permisos para $action. Contacte al super administrador.';

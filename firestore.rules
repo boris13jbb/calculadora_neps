@@ -50,6 +50,39 @@ service cloud.firestore {
       return isAuthenticated() && !isGerencia();
     }
 
+    // Rol del token normalizado a doc id (legacy → snake_case).
+    function roleDocId() {
+      return tokenRole() == 'ADMINISTRADOR' ? 'admin'
+        : tokenRole() == 'SUPERVISOR' ? 'supervisor'
+        : tokenRole() == 'OPERARIO' ? 'operario'
+        : tokenRole() == 'GERENCIA' ? 'gerencia'
+        : tokenRoleLower();
+    }
+
+    function roleDoc() {
+      return get(/databases/$(database)/documents/workspaces/vicunha/roles/$(roleDocId()));
+    }
+
+    function roleDocExists() {
+      return exists(/databases/$(database)/documents/workspaces/vicunha/roles/$(roleDocId()));
+    }
+
+    // Deny-by-default: sin doc de rol o inactivo → sin permiso.
+    function hasPermission(permission) {
+      return isAuthenticated()
+        && roleDocExists()
+        && roleDoc().data.isActive == true
+        && permission in roleDoc().data.permissions;
+    }
+
+    // Compatibilidad: si aún no hay roles sembrados, conservar jerarquía legacy.
+    function seesWorkspaceRecords() {
+      return isSupervisorOrAbove() || isGerencia()
+        || (roleDocExists()
+          && roleDoc().data.isActive == true
+          && roleDoc().data.seesWorkspaceRecords == true);
+    }
+
     function workspaceIdOk(workspaceId) {
       return workspaceId == 'vicunha';
     }
@@ -74,8 +107,7 @@ service cloud.firestore {
       match /users/{userId} {
         allow read: if isAuthenticated() && workspaceIdOk(workspaceId) && (
           request.auth.uid == userId ||
-          isSupervisorOrAbove() ||
-          isGerencia()
+          seesWorkspaceRecords()
         );
 
         allow create, delete: if false;
@@ -94,8 +126,7 @@ service cloud.firestore {
         match /records/{recordId} {
           allow read: if isAuthenticated() && workspaceIdOk(workspaceId) && (
             request.auth.uid == userId ||
-            isSupervisorOrAbove() ||
-            isGerencia()
+            seesWorkspaceRecords()
           );
 
           allow create: if isAuthenticated()
@@ -167,6 +198,26 @@ service cloud.firestore {
       match /audit_logs/{logId} {
         allow read: if isSuperAdmin() && workspaceIdOk(workspaceId);
         allow write: if false;
+      }
+
+      match /roles/{roleCode} {
+        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+        // super_admin puede sembrar/actualizar roles; el doc super_admin
+        // permanece no asignable y de sistema.
+        allow create, update: if isSuperAdmin()
+          && workspaceIdOk(workspaceId)
+          && request.resource.data.code == roleCode
+          && (
+            roleCode != 'super_admin' ||
+            (
+              request.resource.data.isAssignable == false &&
+              request.resource.data.isSystem == true
+            )
+          );
+        allow delete: if isSuperAdmin()
+          && workspaceIdOk(workspaceId)
+          && roleCode != 'super_admin'
+          && resource.data.isSystem != true;
       }
 
       match /user_creation_requests/{requestId} {

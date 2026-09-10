@@ -1,5 +1,6 @@
 import '../core/constants.dart';
 import '../core/permissions/permission.dart';
+import '../core/permissions/role_catalog.dart';
 import '../core/permissions/role_permissions.dart';
 import '../utils/firestore_json_helper.dart';
 import '../utils/username_auth_helper.dart';
@@ -12,7 +13,8 @@ class AppUser {
     this.internalEmail,
     this.realEmail,
     this.displayName = '',
-    required this.role,
+    String? roleCode,
+    AppUserRole? role,
     this.isActive = true,
     this.isSuperAdmin = false,
     this.phone,
@@ -22,14 +24,29 @@ class AppUser {
     this.updatedAt,
     this.lastLoginAt,
     this.deletedAt,
-  });
+  })  : roleCode = _resolveRoleCode(roleCode, role),
+        role = AppUserRole.tryParse(_resolveRoleCode(roleCode, role)) ??
+            role ??
+            AppUserRole.operario;
+
+  static String _resolveRoleCode(String? roleCode, AppUserRole? role) {
+    final normalized = RoleCatalog.normalizeRoleCode(roleCode ?? role?.code);
+    if (normalized != null && normalized.isNotEmpty) return normalized;
+    return role?.code ?? 'operario';
+  }
 
   final String uid;
   final String username;
   final String? internalEmail;
   final String? realEmail;
   final String displayName;
+
+  /// Código canónico del rol (fuente principal de permisos).
+  final String roleCode;
+
+  /// Enum legacy si el código es un rol base conocido.
   final AppUserRole role;
+
   final bool isActive;
   final bool isSuperAdmin;
   final String? phone;
@@ -40,21 +57,28 @@ class AppUser {
   final DateTime? lastLoginAt;
   final DateTime? deletedAt;
 
-  /// Compatibilidad: email de autenticación (real o interno).
+  bool get hasCustomOrUnknownRole => AppUserRole.tryParse(roleCode) == null;
+
+  bool get hasUnresolvedRole {
+    final def = RoleCatalog.instance.get(roleCode);
+    return def == null || !def.isActive;
+  }
+
+  String get roleLabel => RoleCatalog.instance.displayName(roleCode);
+
   String get email => authEmail;
 
-  /// Email usado por Firebase Auth (real para super_admin, interno para el resto).
   String get authEmail => realEmail ?? internalEmail ?? '';
 
-  /// Nombre visible; si no hay displayName, usa username.
   String get effectiveDisplayName =>
       displayName.isNotEmpty ? displayName : username;
 
-  bool get isSuperAdminRole => isSuperAdmin || role.isSuperAdmin;
-  bool get isAdminRole => role.isAdmin;
-  bool get isSupervisorRole => role.isSupervisor;
-  bool get isOperarioRole => role.isOperario;
-  bool get isGerenciaRole => role.isGerencia;
+  bool get isSuperAdminRole =>
+      isSuperAdmin || roleCode == 'super_admin' || role.isSuperAdmin;
+  bool get isAdminRole => roleCode == 'admin';
+  bool get isSupervisorRole => roleCode == 'supervisor';
+  bool get isOperarioRole => roleCode == 'operario';
+  bool get isGerenciaRole => roleCode == 'gerencia';
 
   bool get isAdmin => isAdminRole;
   bool get isSupervisor => isSupervisorRole;
@@ -64,33 +88,34 @@ class AppUser {
   bool get canManageUsers =>
       isActive &&
       isSuperAdminRole &&
-      RolePermissions.has(role, Permission.manageUsers);
+      RolePermissions.hasCode(roleCode, Permission.manageUsers);
   bool get canCreateUsers => canManageUsers;
   bool get canDeleteUsers =>
       isActive &&
       isSuperAdminRole &&
-      RolePermissions.has(role, Permission.deleteUsers);
+      RolePermissions.hasCode(roleCode, Permission.deleteUsers);
   bool get canResetPasswords => canManageUsers;
   bool get canChangeRoles =>
       isActive &&
       isSuperAdminRole &&
-      RolePermissions.has(role, Permission.changeRoles);
+      RolePermissions.hasCode(roleCode, Permission.changeRoles);
+  bool get canManageRoles => canManageUsers;
   bool get canViewDashboard =>
-      isActive && RolePermissions.has(role, Permission.viewDashboard);
+      isActive && RolePermissions.hasCode(roleCode, Permission.viewDashboard);
   bool get canCaptureRecords =>
-      isActive && RolePermissions.has(role, Permission.captureRecords);
+      isActive && RolePermissions.hasCode(roleCode, Permission.captureRecords);
   bool get canEditRecords =>
-      isActive && RolePermissions.has(role, Permission.editRecords);
+      isActive && RolePermissions.hasCode(roleCode, Permission.editRecords);
   bool get canDeleteRecords =>
-      isActive && RolePermissions.has(role, Permission.deleteRecords);
+      isActive && RolePermissions.hasCode(roleCode, Permission.deleteRecords);
   bool get canExportReports =>
-      isActive && RolePermissions.has(role, Permission.exportReports);
+      isActive && RolePermissions.hasCode(roleCode, Permission.exportReports);
   bool get canManageSettings =>
-      isActive && RolePermissions.has(role, Permission.manageSettings);
+      isActive && RolePermissions.hasCode(roleCode, Permission.manageSettings);
 
   bool hasPermission(Permission permission) {
     if (!isActive) return false;
-    return RolePermissions.has(role, permission);
+    return RolePermissions.hasCode(roleCode, permission);
   }
 
   AppUser copyWith({
@@ -99,6 +124,7 @@ class AppUser {
     String? internalEmail,
     String? realEmail,
     String? displayName,
+    String? roleCode,
     AppUserRole? role,
     bool? isActive,
     bool? isSuperAdmin,
@@ -110,13 +136,15 @@ class AppUser {
     DateTime? lastLoginAt,
     DateTime? deletedAt,
   }) {
+    final nextCode = roleCode ?? this.roleCode;
     return AppUser(
       uid: uid ?? this.uid,
       username: username ?? this.username,
       internalEmail: internalEmail ?? this.internalEmail,
       realEmail: realEmail ?? this.realEmail,
       displayName: displayName ?? this.displayName,
-      role: role ?? this.role,
+      roleCode: nextCode,
+      role: role ?? AppUserRole.tryParse(nextCode),
       isActive: isActive ?? this.isActive,
       isSuperAdmin: isSuperAdmin ?? this.isSuperAdmin,
       phone: phone ?? this.phone,
@@ -137,7 +165,7 @@ class AppUser {
         'internalEmail': internalEmail,
       if (realEmail != null && realEmail!.isNotEmpty) 'realEmail': realEmail,
       'displayName': displayName,
-      'role': role.code,
+      'role': roleCode,
       'isActive': isActive,
       'isSuperAdmin': isSuperAdminRole,
       if (phone != null && phone!.isNotEmpty) 'phone': phone,
@@ -167,7 +195,10 @@ class AppUser {
       }
     }
 
-    final role = AppUserRole.fromCode(normalized['role']?.toString());
+    final rawRole = normalized['role']?.toString();
+    final roleCode = RoleCatalog.normalizeRoleCode(rawRole) ??
+        rawRole?.trim().toLowerCase() ??
+        '';
     final username = UsernameAuthHelper.deriveUsername(
       username: normalized['username']?.toString(),
       internalEmail: internalEmail,
@@ -176,7 +207,7 @@ class AppUser {
     );
 
     final isSuperAdminFlag =
-        normalized['isSuperAdmin'] == true || role.isSuperAdmin;
+        normalized['isSuperAdmin'] == true || roleCode == 'super_admin';
 
     return AppUser(
       uid: normalized['uid']?.toString() ?? '',
@@ -184,7 +215,7 @@ class AppUser {
       internalEmail: internalEmail,
       realEmail: realEmail,
       displayName: normalized['displayName']?.toString() ?? '',
-      role: role,
+      roleCode: roleCode.isEmpty ? 'operario' : roleCode,
       isActive: normalized['isActive'] != false,
       isSuperAdmin: isSuperAdminFlag,
       phone: normalized['phone']?.toString(),

@@ -16,7 +16,9 @@ const WORKSPACE_ID = "vicunha";
 const INTERNAL_EMAIL_DOMAIN = "vicunha.local";
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
 
-const VALID_ROLES = new Set([
+/** Roles base conocidos (compatibilidad / bootstrap). La validación de
+ * asignación usa Firestore `workspaces/.../roles/{code}`. */
+const BASE_ROLES = new Set([
   "super_admin",
   "admin",
   "supervisor",
@@ -32,15 +34,79 @@ const LEGACY_ROLE_MAP = {
 };
 
 /**
+ * Normaliza códigos legacy. No asigna operario a códigos personalizados.
  * @param {string|null|undefined} raw
  * @return {string}
  */
 function normalizeRole(raw) {
-  if (!raw || typeof raw !== "string") return "operario";
+  if (!raw || typeof raw !== "string") return "";
   const trimmed = raw.trim();
+  if (!trimmed) return "";
   const lower = trimmed.toLowerCase();
-  if (VALID_ROLES.has(lower)) return lower;
-  return LEGACY_ROLE_MAP[trimmed.toUpperCase()] || "operario";
+  if (LEGACY_ROLE_MAP[trimmed.toUpperCase()]) {
+    return LEGACY_ROLE_MAP[trimmed.toUpperCase()];
+  }
+  return lower;
+}
+
+/**
+ * @param {FirebaseFirestore.Firestore} db
+ * @param {string} roleCode
+ * @param {{allowSuperAdmin?: boolean}} [opts]
+ * @return {Promise<string>}
+ */
+async function assertAssignableRole(db, roleCode, opts = {}) {
+  const allowSuperAdmin = opts.allowSuperAdmin === true;
+  const code = normalizeRole(roleCode);
+  if (!code) {
+    throw new HttpsError("invalid-argument", "Rol requerido.");
+  }
+  if (code === "super_admin" && !allowSuperAdmin) {
+    throw new HttpsError(
+        "permission-denied",
+        "No se puede asignar super_admin desde el panel.",
+    );
+  }
+
+  const snap = await db
+      .collection("workspaces")
+      .doc(WORKSPACE_ID)
+      .collection("roles")
+      .doc(code)
+      .get();
+
+  if (!snap.exists) {
+    // Compatibilidad: roles base aún no sembrados en Firestore.
+    if (BASE_ROLES.has(code) && code !== "super_admin") {
+      return code;
+    }
+    if (code === "super_admin" && allowSuperAdmin) return code;
+    throw new HttpsError(
+        "invalid-argument",
+        `El rol "${code}" no existe.`,
+    );
+  }
+
+  const data = snap.data() || {};
+  if (data.isActive === false) {
+    throw new HttpsError(
+        "failed-precondition",
+        `El rol "${code}" está inactivo.`,
+    );
+  }
+  if (data.isAssignable === false && code !== "super_admin") {
+    throw new HttpsError(
+        "failed-precondition",
+        `El rol "${code}" no es asignable.`,
+    );
+  }
+  if (code === "super_admin" && !allowSuperAdmin) {
+    throw new HttpsError(
+        "permission-denied",
+        "No se puede asignar super_admin desde el panel.",
+    );
+  }
+  return code;
 }
 
 /**
@@ -198,7 +264,7 @@ function serializeUserDoc(data) {
       result[key] = result[key].toDate().toISOString();
     }
   }
-  result.role = normalizeRole(result.role);
+  result.role = normalizeRole(result.role) || String(data.role || "").trim() || "";
   if (!result.username) {
     result.username = profileUsername(result);
   }
@@ -311,7 +377,7 @@ async function executeCreateAppUser(db, auth, params) {
   const username = normalizeUsername(params.username);
   const password = String(params.password || "");
   const displayName = String(params.displayName || "").trim();
-  const role = normalizeRole(params.role);
+  const role = await assertAssignableRole(db, params.role);
   const isActive = params.isActive !== false;
   const performedByUid = String(params.performedByUid || "");
   const performedByUsername = String(params.performedByUsername || "");
@@ -323,14 +389,6 @@ async function executeCreateAppUser(db, auth, params) {
   }
   if (password.length < 8) {
     throw new Error("La contraseña debe tener al menos 8 caracteres.");
-  }
-  if (!VALID_ROLES.has(role)) {
-    throw new Error("Rol no válido.");
-  }
-  if (role === "super_admin") {
-    throw new Error(
-        "Use el script create_super_admin.js para crear super administradores.",
-    );
   }
   if (!performedByUid) {
     throw new Error("Solicitud sin autor.");
@@ -491,12 +549,9 @@ async function executeUpdateAppUser(db, auth, params) {
 
   let roleChanged = false;
   if (params.role !== undefined && params.role !== null) {
-    const newRole = normalizeRole(params.role);
-    if (!VALID_ROLES.has(newRole)) {
-      throw new Error("Rol no válido.");
-    }
+    const newRole = await assertAssignableRole(db, params.role);
 
-    const oldRole = normalizeRole(existing.role);
+    const oldRole = normalizeRole(existing.role) || String(existing.role || "");
     if (oldRole === "super_admin" && newRole !== "super_admin") {
       const count = await countActiveSuperAdmins(db);
       if (count <= 1 && existing.isActive !== false) {
@@ -748,13 +803,10 @@ const changeUserRole = onCall(callOptions, async (request) => {
     await assertSuperAdmin(request);
 
   const targetUid = String(request.data?.uid || "");
-  const newRole = normalizeRole(request.data?.role);
+  const newRole = await assertAssignableRole(db, request.data?.role);
 
   if (!targetUid) {
     throw new HttpsError("invalid-argument", "UID requerido.");
-  }
-  if (!VALID_ROLES.has(newRole)) {
-    throw new HttpsError("invalid-argument", "Rol no válido.");
   }
 
   const userRef = db.doc(`workspaces/${WORKSPACE_ID}/users/${targetUid}`);
@@ -764,7 +816,7 @@ const changeUserRole = onCall(callOptions, async (request) => {
   }
 
   const existing = userSnap.data() || {};
-  const oldRole = normalizeRole(existing.role);
+  const oldRole = normalizeRole(existing.role) || String(existing.role || "");
 
   if (oldRole === "super_admin" && newRole !== "super_admin") {
     const count = await countActiveSuperAdmins(db);
