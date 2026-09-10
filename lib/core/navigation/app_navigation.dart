@@ -1,4 +1,5 @@
 import '../../core/permissions/permission.dart';
+import '../../core/permissions/role_catalog.dart';
 import '../../features/alerts/alerts_screen.dart';
 import '../../features/capture/capture_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
@@ -155,6 +156,7 @@ class AppNavigation {
 
   static List<AppNavItem> visibleFor(AppUser? user) {
     if (user == null || !user.isActive) return [];
+    if (!RoleCatalog.instance.authorizationReady) return [];
     return all.where((item) => user.hasPermission(item.permission)).toList();
   }
 

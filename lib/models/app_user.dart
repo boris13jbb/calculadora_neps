@@ -29,10 +29,12 @@ class AppUser {
             role ??
             AppUserRole.operario;
 
+  /// Conserva códigos personalizados. Vacío si no hay rol (sin fallback a operario).
   static String _resolveRoleCode(String? roleCode, AppUserRole? role) {
     final normalized = RoleCatalog.normalizeRoleCode(roleCode ?? role?.code);
     if (normalized != null && normalized.isNotEmpty) return normalized;
-    return role?.code ?? 'operario';
+    if (role != null) return role.code;
+    return '';
   }
 
   final String uid;
@@ -41,10 +43,11 @@ class AppUser {
   final String? realEmail;
   final String displayName;
 
-  /// Código canónico del rol (fuente principal de permisos).
+  /// Código canónico del rol (fuente principal de permisos). Puede ser ''.
   final String roleCode;
 
   /// Enum legacy si el código es un rol base conocido.
+  /// Adaptador API antigua; NO usar para autorización (usar [roleCode]).
   final AppUserRole role;
 
   final bool isActive;
@@ -57,9 +60,11 @@ class AppUser {
   final DateTime? lastLoginAt;
   final DateTime? deletedAt;
 
-  bool get hasCustomOrUnknownRole => AppUserRole.tryParse(roleCode) == null;
+  bool get hasCustomOrUnknownRole =>
+      roleCode.isNotEmpty && AppUserRole.tryParse(roleCode) == null;
 
   bool get hasUnresolvedRole {
+    if (roleCode.isEmpty) return true;
     final def = RoleCatalog.instance.get(roleCode);
     return def == null || !def.isActive;
   }
@@ -115,6 +120,7 @@ class AppUser {
 
   bool hasPermission(Permission permission) {
     if (!isActive) return false;
+    if (roleCode.isEmpty) return false;
     return RolePermissions.hasCode(roleCode, permission);
   }
 
@@ -197,8 +203,9 @@ class AppUser {
 
     final rawRole = normalized['role']?.toString();
     final roleCode = RoleCatalog.normalizeRoleCode(rawRole) ??
-        rawRole?.trim().toLowerCase() ??
-        '';
+        (rawRole?.trim().isNotEmpty == true
+            ? rawRole!.trim().toLowerCase()
+            : '');
     final username = UsernameAuthHelper.deriveUsername(
       username: normalized['username']?.toString(),
       internalEmail: internalEmail,
@@ -215,7 +222,7 @@ class AppUser {
       internalEmail: internalEmail,
       realEmail: realEmail,
       displayName: normalized['displayName']?.toString() ?? '',
-      roleCode: roleCode.isEmpty ? 'operario' : roleCode,
+      roleCode: roleCode,
       isActive: normalized['isActive'] != false,
       isSuperAdmin: isSuperAdminFlag,
       phone: normalized['phone']?.toString(),

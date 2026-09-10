@@ -1,4 +1,5 @@
 import 'package:calculadora_neps/core/theme/app_theme.dart';
+import 'package:calculadora_neps/core/permissions/role_catalog.dart';
 import 'package:calculadora_neps/features/analytics/analytics_screen.dart';
 import 'package:calculadora_neps/models/app_user.dart';
 import 'package:calculadora_neps/models/app_user_role.dart';
@@ -16,6 +17,8 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    RoleCatalog.instance.replaceAll(RoleCatalog.baseRoles);
+    RoleCatalog.instance.markAuthorizationReady();
   });
 
   testWidgets('AnalyticsScreen muestra titulo y filtros con datos',
@@ -44,6 +47,7 @@ void main() {
       role: AppUserRole.admin,
     );
     auth.status = AuthStatus.authenticated;
+    auth.authorizationReady = true;
 
     await tester.pumpWidget(
       MultiProvider(

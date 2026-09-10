@@ -6,8 +6,10 @@ import 'package:flutter/foundation.dart';
 
 import '../core/errors/error_handler.dart';
 import '../core/permissions/permission.dart';
+import '../core/permissions/role_catalog.dart';
 import '../models/app_user.dart';
 import '../models/app_user_role.dart';
+import '../repositories/role_repository.dart';
 import '../services/auth_service.dart';
 import '../services/user_admin_service.dart';
 
@@ -24,25 +26,37 @@ class AuthProvider extends ChangeNotifier {
   AuthProvider({
     AuthService? authService,
     UserAdminService? userAdminService,
+    RoleRepository? roleRepository,
   })  : _authService = authService ?? AuthService(),
-        _userAdminService = userAdminService ?? UserAdminService();
+        _userAdminService = userAdminService ?? UserAdminService(),
+        _roleRepositoryOverride = roleRepository;
 
   final AuthService _authService;
   final UserAdminService _userAdminService;
+  final RoleRepository? _roleRepositoryOverride;
+
+  /// Lazy: evita tocar FirebaseFirestore en constructores de tests de UI.
+  RoleRepository get _roleRepository =>
+      _roleRepositoryOverride ?? RoleRepository.instance;
 
   AuthStatus status = AuthStatus.unauthenticated;
   AppUser? profile;
   String? errorMessage;
+  bool authorizationReady = false;
   StreamSubscription<User?>? _authSub;
 
   User? get firebaseUser => _authService.currentFirebaseUser;
 
+  /// Adaptador legacy; preferir [profile.roleCode] + RoleCatalog.
   AppUserRole get role => profile?.role ?? AppUserRole.operario;
+
+  String get roleCode => profile?.roleCode ?? '';
 
   bool get isAuthenticated =>
       status == AuthStatus.authenticated &&
       profile != null &&
-      profile!.isActive;
+      profile!.isActive &&
+      authorizationReady;
 
   void initialize() {
     _authSub?.cancel();
@@ -57,6 +71,8 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _onAuthChanged(User? user) async {
     if (user == null) {
       profile = null;
+      authorizationReady = false;
+      RoleCatalog.instance.resetAuthorization();
       status = AuthStatus.unauthenticated;
       errorMessage = null;
       notifyListeners();
@@ -66,8 +82,16 @@ class AuthProvider extends ChangeNotifier {
     await _loadProfile(user);
   }
 
+  Future<void> _prepareAuthorization(AppUser user) async {
+    authorizationReady = false;
+    notifyListeners();
+    await _roleRepository.ensureAuthorizationForRole(user.roleCode);
+    authorizationReady = RoleCatalog.instance.authorizationReady;
+  }
+
   Future<void> _loadProfile(User user) async {
     status = AuthStatus.loadingProfile;
+    authorizationReady = false;
     errorMessage = null;
     notifyListeners();
 
@@ -97,10 +121,15 @@ class AuthProvider extends ChangeNotifier {
       }
 
       final claims = await _authService.getIdTokenClaims();
-      final claimRole = _authService.resolveRoleFromClaims(claims);
-      if (claimRole != loaded.role) {
-        loaded = loaded.copyWith(role: claimRole);
+      final claimRoleRaw = claims['role']?.toString();
+      final claimRoleCode = RoleCatalog.normalizeRoleCode(claimRoleRaw);
+      if (claimRoleCode != null &&
+          claimRoleCode.isNotEmpty &&
+          claimRoleCode != loaded.roleCode) {
+        loaded = loaded.copyWith(roleCode: claimRoleCode);
       }
+
+      await _prepareAuthorization(loaded);
 
       profile = loaded;
       status = AuthStatus.authenticated;
@@ -108,6 +137,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     } catch (error, stack) {
       ErrorHandler.log(error, stack, 'loadProfile');
+      authorizationReady = false;
       status = AuthStatus.accessDenied;
       errorMessage =
           'No se pudo cargar su perfil: ${ErrorHandler.userMessage(error)}';
@@ -122,6 +152,7 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     errorMessage = null;
     status = AuthStatus.loadingProfile;
+    authorizationReady = false;
     notifyListeners();
 
     try {
@@ -146,6 +177,8 @@ class AuthProvider extends ChangeNotifier {
   Future<void> signOut() async {
     await _authService.signOut();
     profile = null;
+    authorizationReady = false;
+    RoleCatalog.instance.resetAuthorization();
     status = AuthStatus.unauthenticated;
     errorMessage = null;
     notifyListeners();
@@ -163,6 +196,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   bool hasPermission(Permission permission) {
+    if (!authorizationReady) return false;
     return profile?.hasPermission(permission) ?? false;
   }
 

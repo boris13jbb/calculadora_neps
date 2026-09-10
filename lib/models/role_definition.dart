@@ -11,7 +11,6 @@ class RoleDefinition {
     this.isSystem = false,
     this.isAssignable = true,
     this.sortOrder = 100,
-    this.seesWorkspaceRecords = false,
     this.createdAt,
     this.updatedAt,
     this.createdBy,
@@ -25,14 +24,15 @@ class RoleDefinition {
   final bool isSystem;
   final bool isAssignable;
   final int sortOrder;
-
-  /// Si true, puede leer registros de todo el workspace (alineado con rules).
-  final bool seesWorkspaceRecords;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final String? createdBy;
 
   bool get isSuperAdmin => code == 'super_admin';
+
+  /// Derivado de [Permission.viewWorkspaceRecords] (no es un segundo sistema).
+  bool get seesWorkspaceRecords =>
+      permissions.contains(Permission.viewWorkspaceRecords);
 
   bool get isReadOnly =>
       isActive &&
@@ -55,7 +55,6 @@ class RoleDefinition {
     bool? isSystem,
     bool? isAssignable,
     int? sortOrder,
-    bool? seesWorkspaceRecords,
     DateTime? createdAt,
     DateTime? updatedAt,
     String? createdBy,
@@ -69,7 +68,6 @@ class RoleDefinition {
       isSystem: isSystem ?? this.isSystem,
       isAssignable: isAssignable ?? this.isAssignable,
       sortOrder: sortOrder ?? this.sortOrder,
-      seesWorkspaceRecords: seesWorkspaceRecords ?? this.seesWorkspaceRecords,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
@@ -86,6 +84,7 @@ class RoleDefinition {
       'isSystem': isSystem,
       'isAssignable': isAssignable,
       'sortOrder': sortOrder,
+      // Campo derivado para compatibilidad con lecturas antiguas / Rules.
       'seesWorkspaceRecords': seesWorkspaceRecords,
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
@@ -102,6 +101,10 @@ class RoleDefinition {
         if (parsed != null) perms.add(parsed);
       }
     }
+    // Migración: bool antiguo → permiso explícito.
+    if (json['seesWorkspaceRecords'] == true) {
+      perms.add(Permission.viewWorkspaceRecords);
+    }
 
     return RoleDefinition(
       code: (json['code']?.toString() ?? '').trim().toLowerCase(),
@@ -112,7 +115,6 @@ class RoleDefinition {
       isSystem: json['isSystem'] == true,
       isAssignable: json['isAssignable'] != false,
       sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 100,
-      seesWorkspaceRecords: json['seesWorkspaceRecords'] == true,
       createdAt: _parseDate(json['createdAt']),
       updatedAt: _parseDate(json['updatedAt']),
       createdBy: json['createdBy']?.toString(),
@@ -162,6 +164,7 @@ class PermissionCatalog {
     ],
     'REGISTROS': [
       Permission.viewRecords,
+      Permission.viewWorkspaceRecords,
       Permission.captureRecords,
       Permission.editRecords,
       Permission.deleteRecords,
@@ -193,7 +196,9 @@ class PermissionCatalog {
       case Permission.captureRecords:
         return 'Capturar registros';
       case Permission.viewRecords:
-        return 'Ver registros';
+        return 'Ver registros propios';
+      case Permission.viewWorkspaceRecords:
+        return 'Ver registros de todo el workspace';
       case Permission.editRecords:
         return 'Editar registros';
       case Permission.deleteRecords:

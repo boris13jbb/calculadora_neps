@@ -1246,6 +1246,59 @@ const processUserAdminRequest = onDocumentCreated({
   }
 });
 
+/**
+ * Elimina un rol personalizado sin usuarios asignados (solo super_admin).
+ * @param {import("firebase-functions/v2/https").CallableRequest} request
+ */
+const deleteRole = onCall(callOptions, async (request) => {
+  const {db} = await assertSuperAdmin(request);
+  const code = normalizeRole(request.data?.code || request.data?.roleCode);
+  if (!code) {
+    throw new HttpsError("invalid-argument", "Código de rol requerido.");
+  }
+  const systemRoles = new Set([
+    "super_admin", "admin", "supervisor", "operario", "gerencia",
+  ]);
+  if (systemRoles.has(code)) {
+    throw new HttpsError(
+        "failed-precondition",
+        "No se pueden eliminar roles de sistema.",
+    );
+  }
+
+  const roleRef = db.doc(`workspaces/${WORKSPACE_ID}/roles/${code}`);
+  const roleSnap = await roleRef.get();
+  if (!roleSnap.exists) {
+    throw new HttpsError("not-found", "Rol no encontrado.");
+  }
+  const roleData = roleSnap.data() || {};
+  if (roleData.isSystem === true) {
+    throw new HttpsError(
+        "failed-precondition",
+        "No se pueden eliminar roles de sistema.",
+    );
+  }
+
+  const usersSnap = await db
+      .collection(`workspaces/${WORKSPACE_ID}/users`)
+      .where("role", "==", code)
+      .limit(1)
+      .get();
+  const hasUsers = usersSnap.docs.some((doc) => {
+    const data = doc.data() || {};
+    return data.deletedAt === null || data.deletedAt === undefined;
+  });
+  if (hasUsers) {
+    throw new HttpsError(
+        "failed-precondition",
+        "El rol tiene usuarios asignados. Desactívelo en su lugar.",
+    );
+  }
+
+  await roleRef.delete();
+  return toCallablePayload({ok: true, code});
+});
+
 // Exportaciones con nombres nuevos
 exports.createAppUser = createAppUser;
 exports.updateAppUser = updateAppUser;
@@ -1259,6 +1312,7 @@ exports.getCurrentUserProfile = getCurrentUserProfile;
 exports.bootstrapFirstSuperAdmin = bootstrapFirstSuperAdmin;
 exports.processUserCreationRequest = processUserCreationRequest;
 exports.processUserAdminRequest = processUserAdminRequest;
+exports.deleteRole = deleteRole;
 
 // Alias legacy (compatibilidad con clientes anteriores)
 exports.createUserBySuperAdmin = createAppUser;

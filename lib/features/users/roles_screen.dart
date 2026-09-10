@@ -96,28 +96,26 @@ class _RolesScreenState extends State<RolesScreen> {
         content: Text(
           count > 0
               ? 'El rol "${role.name}" tiene $count usuario(s). '
-                  'Prefiera desactivarlo.'
-              : '¿Eliminar el rol personalizado "${role.name}"?',
+                  'No se puede eliminar; desactívelo.'
+              : '¿Eliminar el rol personalizado "${role.name}"? '
+                  'La eliminación la valida el servidor.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancelar'),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirmar'),
-          ),
+          if (count == 0)
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Eliminar'),
+            ),
         ],
       ),
     );
     if (ok != true) return;
     try {
-      if (count > 0) {
-        await _repo.deactivateRole(role.code);
-      } else {
-        await _repo.deleteRoleIfUnused(role.code, assignedUserCount: count);
-      }
+      await _repo.deleteRole(role.code);
       await _load();
     } catch (error, stack) {
       ErrorHandler.log(error, stack, 'deleteRole');
@@ -271,7 +269,6 @@ class _RoleFormDialogState extends State<_RoleFormDialog> {
   late final TextEditingController _descriptionController;
   late Set<Permission> _selected;
   late bool _isActive;
-  late bool _seesWorkspace;
   bool _loading = false;
 
   bool get _isEdit => widget.initial != null;
@@ -287,7 +284,6 @@ class _RoleFormDialogState extends State<_RoleFormDialog> {
         TextEditingController(text: initial?.description ?? '');
     _selected = Set<Permission>.from(initial?.permissions ?? {});
     _isActive = initial?.isActive ?? true;
-    _seesWorkspace = initial?.seesWorkspaceRecords ?? false;
   }
 
   @override
@@ -314,7 +310,6 @@ class _RoleFormDialogState extends State<_RoleFormDialog> {
         isSystem: widget.initial?.isSystem ?? false,
         isAssignable: widget.initial?.isAssignable ?? true,
         sortOrder: widget.initial?.sortOrder ?? 60,
-        seesWorkspaceRecords: _seesWorkspace,
       );
       final saved = _isEdit
           ? await _repo.updateRole(draft)
@@ -370,15 +365,6 @@ class _RoleFormDialogState extends State<_RoleFormDialog> {
                   onChanged: _isSystem && widget.initial?.isSuperAdmin == true
                       ? null
                       : (v) => setState(() => _isActive = v),
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Ver registros de todo el workspace'),
-                  subtitle: const Text(
-                    'Alineado con lectura amplia en Firestore',
-                  ),
-                  value: _seesWorkspace,
-                  onChanged: (v) => setState(() => _seesWorkspace = v),
                 ),
                 const SizedBox(height: 8),
                 Text(

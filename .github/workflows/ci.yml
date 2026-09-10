@@ -10,8 +10,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
-    name: Format, analyze, test y build web
+  flutter:
+    name: Flutter — format, analyze, test, build web
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -32,14 +32,10 @@ jobs:
 
       - name: Verificar formato
         # Deuda histórica: hay archivos fuera de formato en main.
-        # Se reporta como warning para no bloquear CI hasta un follow-up de format.
-        # Cuando la base esté limpia, quitar continue-on-error.
         continue-on-error: true
         run: dart format --output=none --set-exit-if-changed .
 
       - name: Analizar
-        # Reporta los ~15 info/warning históricos sin fallar el job por ellos.
-        # Los errores de análisis sí fallan el pipeline.
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Ejecutar tests
@@ -48,9 +44,85 @@ jobs:
       - name: Compilar Web release
         run: flutter build web --release
 
-      - name: Resumen
+      - name: Resumen Flutter
         run: |
-          echo "### CI (sin deploy)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Validación en pull_request a \`main\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Hosting / Firestore Rules / APK: **no** se despliegan aquí" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Flutter CI (sin deploy)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- flutter test + build web --release" >> "$GITHUB_STEP_SUMMARY"
+
+  functions:
+    name: Functions — lint y tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: functions
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Instalar dependencias
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Resumen Functions
+        run: |
+          echo "### Functions CI (sin deploy)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- npm run lint + node --test" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **No** firebase deploy" >> "$GITHUB_STEP_SUMMARY"
+
+  firestore-rules:
+    name: Firestore Rules — emulador
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: test/firestore_rules/package-lock.json
+
+      - name: Configurar Java (emulador Firestore)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Instalar Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Instalar deps de tests Rules
+        working-directory: test/firestore_rules
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Ejecutar tests con emulador
+        run: |
+          firebase emulators:exec --only firestore --project demo-vicunha-rules \
+            "npm --prefix test/firestore_rules test"
+
+      - name: Resumen Rules
+        run: |
+          echo "### Firestore Rules CI (sin deploy)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Emulator + node --test" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **No** deploy de rules/hosting/functions" >> "$GITHUB_STEP_SUMMARY"

@@ -2,14 +2,33 @@ import '../../models/role_definition.dart';
 import 'permission.dart';
 
 /// Catálogo en memoria de roles: seeds base + overlay Firestore.
-/// Deny-by-default: código desconocido o inactivo → sin permisos.
+/// Deny-by-default: código vacío, desconocido o inactivo → sin permisos.
 class RoleCatalog {
   RoleCatalog._();
 
   static final RoleCatalog instance = RoleCatalog._();
 
+  bool _authorizationReady = false;
+  bool get authorizationReady => _authorizationReady;
+
+  void markAuthorizationReady() => _authorizationReady = true;
+
+  void resetAuthorization() {
+    _authorizationReady = false;
+    replaceAll(baseRoles);
+  }
+
   final Map<String, RoleDefinition> _roles = {
     for (final role in baseRoles) role.code: role,
+  };
+
+  /// Códigos de roles base del sistema (protegidos).
+  static const Set<String> systemRoleCodes = {
+    'super_admin',
+    'admin',
+    'supervisor',
+    'operario',
+    'gerencia',
   };
 
   static List<RoleDefinition> get baseRoles => [
@@ -22,7 +41,6 @@ class RoleCatalog {
           isSystem: true,
           isAssignable: false,
           sortOrder: 0,
-          seesWorkspaceRecords: true,
         ),
         RoleDefinition(
           code: 'admin',
@@ -32,6 +50,7 @@ class RoleCatalog {
             Permission.viewDashboard,
             Permission.captureRecords,
             Permission.viewRecords,
+            Permission.viewWorkspaceRecords,
             Permission.editRecords,
             Permission.deleteRecords,
             Permission.clearAllRecords,
@@ -46,7 +65,6 @@ class RoleCatalog {
           isSystem: true,
           isAssignable: true,
           sortOrder: 10,
-          seesWorkspaceRecords: true,
         ),
         RoleDefinition(
           code: 'supervisor',
@@ -55,6 +73,7 @@ class RoleCatalog {
           permissions: {
             Permission.viewDashboard,
             Permission.viewRecords,
+            Permission.viewWorkspaceRecords,
             Permission.editRecords,
             Permission.viewAlerts,
             Permission.applyCorrectiveAction,
@@ -64,7 +83,6 @@ class RoleCatalog {
           isSystem: true,
           isAssignable: true,
           sortOrder: 20,
-          seesWorkspaceRecords: true,
         ),
         RoleDefinition(
           code: 'operario',
@@ -77,7 +95,6 @@ class RoleCatalog {
           isSystem: true,
           isAssignable: true,
           sortOrder: 30,
-          seesWorkspaceRecords: false,
         ),
         RoleDefinition(
           code: 'gerencia',
@@ -86,6 +103,7 @@ class RoleCatalog {
           permissions: {
             Permission.viewDashboard,
             Permission.viewRecords,
+            Permission.viewWorkspaceRecords,
             Permission.viewAlerts,
             Permission.exportReports,
             Permission.manageReports,
@@ -93,20 +111,20 @@ class RoleCatalog {
           isSystem: true,
           isAssignable: true,
           sortOrder: 40,
-          seesWorkspaceRecords: true,
         ),
       ];
 
-  /// Reemplaza/mezcla definiciones remotas sin borrar seeds si faltan.
+  /// Overlay remoto: si existe definición remota, sustituye al fallback base
+  /// (excepto super_admin, siempre protegido localmente).
   void replaceAll(Iterable<RoleDefinition> remote) {
     final next = <String, RoleDefinition>{
       for (final role in baseRoles) role.code: role,
     };
     for (final role in remote) {
       if (role.code.isEmpty) continue;
+      if (role.code == 'super_admin') continue;
       next[role.code] = role;
     }
-    // super_admin siempre protegido en catálogo local.
     next['super_admin'] = baseRoles.firstWhere((r) => r.code == 'super_admin');
     _roles
       ..clear()
@@ -121,6 +139,13 @@ class RoleCatalog {
       return;
     }
     _roles[role.code] = role;
+  }
+
+  /// Indica si el catálogo tiene una definición (activa o no) para [code].
+  bool hasDefinition(String? code) {
+    final normalized = normalizeRoleCode(code);
+    if (normalized == null) return false;
+    return _roles.containsKey(normalized);
   }
 
   RoleDefinition? get(String? code) {
@@ -146,15 +171,14 @@ class RoleCatalog {
   }
 
   bool hasPermission(String? roleCode, Permission permission) {
+    if (roleCode == null || roleCode.trim().isEmpty) return false;
     final role = get(roleCode);
     if (role == null || !role.isActive) return false;
     return role.hasPermission(permission);
   }
 
   bool seesWorkspaceRecords(String? roleCode) {
-    final role = get(roleCode);
-    if (role == null || !role.isActive) return false;
-    return role.seesWorkspaceRecords;
+    return hasPermission(roleCode, Permission.viewWorkspaceRecords);
   }
 
   String displayName(String? roleCode) {
@@ -171,12 +195,6 @@ class RoleCatalog {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
     final lower = trimmed.toLowerCase();
-    const legacy = {
-      'administrador': 'admin',
-      'supervisor': 'supervisor',
-      'operario': 'operario',
-      'gerencia': 'gerencia',
-    };
     final upper = trimmed.toUpperCase();
     switch (upper) {
       case 'ADMINISTRADOR':
@@ -188,7 +206,6 @@ class RoleCatalog {
       case 'GERENCIA':
         return 'gerencia';
     }
-    if (legacy.containsKey(lower)) return legacy[lower];
     return lower;
   }
 }

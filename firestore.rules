@@ -6,9 +6,7 @@ service cloud.firestore {
     }
 
     function tokenRole() {
-      return ('role' in request.auth.token)
-        ? request.auth.token.role
-        : '';
+      return ('role' in request.auth.token) ? request.auth.token.role : '';
     }
 
     function tokenRoleLower() {
@@ -23,34 +21,6 @@ service cloud.firestore {
       );
     }
 
-    function isAdminRole() {
-      return isAuthenticated() && (
-        isSuperAdmin() ||
-        tokenRoleLower() == 'admin' ||
-        tokenRole() == 'ADMINISTRADOR'
-      );
-    }
-
-    function isSupervisorOrAbove() {
-      return isAuthenticated() && (
-        isAdminRole() ||
-        tokenRoleLower() == 'supervisor' ||
-        tokenRole() == 'SUPERVISOR'
-      );
-    }
-
-    function isGerencia() {
-      return isAuthenticated() && (
-        tokenRoleLower() == 'gerencia' ||
-        tokenRole() == 'GERENCIA'
-      );
-    }
-
-    function canWriteOperational() {
-      return isAuthenticated() && !isGerencia();
-    }
-
-    // Rol del token normalizado a doc id (legacy → snake_case).
     function roleDocId() {
       return tokenRole() == 'ADMINISTRADOR' ? 'admin'
         : tokenRole() == 'SUPERVISOR' ? 'supervisor'
@@ -59,36 +29,113 @@ service cloud.firestore {
         : tokenRoleLower();
     }
 
-    function roleDoc() {
-      return get(/databases/$(database)/documents/workspaces/vicunha/roles/$(roleDocId()));
+    function rolePath() {
+      return /databases/$(database)/documents/workspaces/vicunha/roles/$(roleDocId());
     }
 
-    function roleDocExists() {
-      return exists(/databases/$(database)/documents/workspaces/vicunha/roles/$(roleDocId()));
+    function roleExists() {
+      return roleDocId() != '' && exists(rolePath());
     }
 
-    // Deny-by-default: sin doc de rol o inactivo → sin permiso.
+    function roleData() {
+      return get(rolePath()).data;
+    }
+
+    function isBaseRole() {
+      return roleDocId() in ['super_admin', 'admin', 'supervisor', 'operario', 'gerencia'];
+    }
+
+    // Doc remoto activo: SOLO isActive + permissions.
+    // Sin doc: fallback legacy SOLO roles base (migración).
+    // Rol inactivo con doc: DENY (sin bypass por nombre).
     function hasPermission(permission) {
-      return isAuthenticated()
-        && roleDocExists()
-        && roleDoc().data.isActive == true
-        && permission in roleDoc().data.permissions;
+      return isSuperAdmin()
+        || (isAuthenticated() && roleExists()
+            && roleData().isActive == true
+            && permission in roleData().permissions)
+        || (isAuthenticated() && !roleExists() && isBaseRole()
+            && legacyHas(permission));
     }
 
-    // Compatibilidad: si aún no hay roles sembrados, conservar jerarquía legacy.
-    function seesWorkspaceRecords() {
-      return isSupervisorOrAbove() || isGerencia()
-        || (roleDocExists()
-          && roleDoc().data.isActive == true
-          && roleDoc().data.seesWorkspaceRecords == true);
+    // Listas compactas para no superar el límite de expresiones.
+    function legacyHas(permission) {
+      return (roleDocId() == 'operario'
+          && permission in ['captureRecords', 'viewRecords'])
+        || (roleDocId() == 'supervisor'
+          && permission in [
+            'viewDashboard', 'viewRecords', 'viewWorkspaceRecords',
+            'editRecords', 'viewAlerts', 'applyCorrectiveAction',
+            'exportReports', 'manageReports'
+          ])
+        || (roleDocId() == 'admin'
+          && permission in [
+            'viewDashboard', 'captureRecords', 'viewRecords',
+            'viewWorkspaceRecords', 'editRecords', 'deleteRecords',
+            'clearAllRecords', 'viewAlerts', 'applyCorrectiveAction',
+            'manageFabrics', 'manageReports', 'exportReports',
+            'viewSettings', 'manageSettings'
+          ])
+        || (roleDocId() == 'gerencia'
+          && permission in [
+            'viewDashboard', 'viewRecords', 'viewWorkspaceRecords',
+            'viewAlerts', 'exportReports', 'manageReports'
+          ])
+        || (roleDocId() == 'super_admin');
+    }
+
+    // Lectura de registros: un solo camino (evita doble hasPermission + límite 1000).
+    function canReadRecord(ownerUid) {
+      return isSuperAdmin()
+        || (isAuthenticated() && roleExists() && roleData().isActive == true && (
+          'viewWorkspaceRecords' in roleData().permissions
+          || ('viewRecords' in roleData().permissions && request.auth.uid == ownerUid)
+        ))
+        || (isAuthenticated() && !roleExists() && isBaseRole() && (
+          roleDocId() in ['admin', 'supervisor', 'gerencia', 'super_admin']
+          || (roleDocId() == 'operario' && request.auth.uid == ownerUid)
+        ));
+    }
+
+    function canEditRecord(ownerUid) {
+      return isSuperAdmin()
+        || (isAuthenticated() && roleExists() && roleData().isActive == true
+            && 'editRecords' in roleData().permissions
+            && (
+              'viewWorkspaceRecords' in roleData().permissions
+              || request.auth.uid == ownerUid
+            ))
+        || (isAuthenticated() && !roleExists() && isBaseRole()
+            && roleDocId() in ['admin', 'supervisor', 'super_admin']
+            && (
+              roleDocId() != 'operario'
+              || request.auth.uid == ownerUid
+            ));
+    }
+
+    function canDeleteRecord(ownerUid) {
+      return isSuperAdmin()
+        || (isAuthenticated() && roleExists() && roleData().isActive == true
+            && 'deleteRecords' in roleData().permissions
+            && (
+              'viewWorkspaceRecords' in roleData().permissions
+              || request.auth.uid == ownerUid
+            ))
+        || (isAuthenticated() && !roleExists() && isBaseRole()
+            && roleDocId() in ['admin', 'super_admin']);
+    }
+
+    function canCapture() {
+      return isSuperAdmin()
+        || (isAuthenticated() && roleExists() && roleData().isActive == true
+            && 'captureRecords' in roleData().permissions)
+        || (isAuthenticated() && !roleExists()
+            && roleDocId() in ['admin', 'operario', 'super_admin']);
     }
 
     function workspaceIdOk(workspaceId) {
       return workspaceId == 'vicunha';
     }
 
-    // ownerUid y createdByUid son inmutables tras el create.
-    // Supervisor puede editar campos operativos / borrar, nunca autoría ni dueño.
     function ownershipUnchanged() {
       return request.resource.data.ownerUid == resource.data.ownerUid
         && (
@@ -98,16 +145,21 @@ service cloud.firestore {
         && !('captureSessionId' in request.resource.data.diff(resource.data).affectedKeys());
     }
 
+    function systemRoleCodes() {
+      return ['super_admin', 'admin', 'supervisor', 'operario', 'gerencia'];
+    }
+
     match /workspaces/{workspaceId} {
       allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
-      allow create: if isAuthenticated() && workspaceIdOk(workspaceId);
-      allow update: if isSupervisorOrAbove() && workspaceIdOk(workspaceId);
-      allow delete: if isAdminRole() && workspaceIdOk(workspaceId);
+      allow create: if isSuperAdmin() && workspaceIdOk(workspaceId);
+      allow update: if hasPermission('manageSettings') && workspaceIdOk(workspaceId);
+      allow delete: if isSuperAdmin() && workspaceIdOk(workspaceId);
 
       match /users/{userId} {
         allow read: if isAuthenticated() && workspaceIdOk(workspaceId) && (
           request.auth.uid == userId ||
-          seesWorkspaceRecords()
+          hasPermission('viewWorkspaceRecords') ||
+          hasPermission('manageUsers')
         );
 
         allow create, delete: if false;
@@ -124,15 +176,14 @@ service cloud.firestore {
           ]);
 
         match /records/{recordId} {
-          allow read: if isAuthenticated() && workspaceIdOk(workspaceId) && (
-            request.auth.uid == userId ||
-            seesWorkspaceRecords()
-          );
+          allow read: if isAuthenticated()
+            && workspaceIdOk(workspaceId)
+            && canReadRecord(userId);
 
           allow create: if isAuthenticated()
             && workspaceIdOk(workspaceId)
             && request.auth.uid == userId
-            && canWriteOperational()
+            && canCapture()
             && request.resource.data.ownerUid == request.auth.uid
             && (
               !('createdByUid' in request.resource.data) ||
@@ -141,57 +192,70 @@ service cloud.firestore {
 
           allow update: if isAuthenticated()
             && workspaceIdOk(workspaceId)
-            && canWriteOperational()
-            && (request.auth.uid == userId || isSupervisorOrAbove())
+            && canEditRecord(userId)
             && ownershipUnchanged();
 
           allow delete: if isAuthenticated()
             && workspaceIdOk(workspaceId)
-            && canWriteOperational()
-            && (request.auth.uid == userId || isSupervisorOrAbove());
+            && canDeleteRecord(userId);
         }
       }
 
       match /reports/{reportId} {
-        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+        allow read: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && (
+            hasPermission('manageReports') ||
+            hasPermission('exportReports') ||
+            hasPermission('viewRecords')
+          );
         allow create: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && canWriteOperational()
+          && hasPermission('manageReports')
           && (
             !('createdByUid' in request.resource.data) ||
             request.resource.data.createdByUid == request.auth.uid
           );
         allow update: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && canWriteOperational()
+          && hasPermission('manageReports')
           && (
             !('createdByUid' in request.resource.data.diff(resource.data).affectedKeys()) ||
             request.resource.data.createdByUid == resource.data.createdByUid
           );
         allow delete: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && isSupervisorOrAbove();
+          && hasPermission('manageReports');
       }
 
       match /meta/fabrics {
         allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
         allow write: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && isSupervisorOrAbove();
+          && hasPermission('manageFabrics');
       }
 
       match /meta/config {
-        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+        allow read: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && (
+            hasPermission('viewSettings') ||
+            hasPermission('manageSettings') ||
+            hasPermission('editAlertConfig')
+          );
         allow write: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && isAdminRole();
+          && (
+            hasPermission('manageSettings') ||
+            hasPermission('editAlertConfig')
+          );
       }
 
       match /meta/{docId} {
         allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
         allow write: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && isSupervisorOrAbove()
+          && hasPermission('manageSettings')
           && docId != 'config';
       }
 
@@ -202,22 +266,46 @@ service cloud.firestore {
 
       match /roles/{roleCode} {
         allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
-        // super_admin puede sembrar/actualizar roles; el doc super_admin
-        // permanece no asignable y de sistema.
-        allow create, update: if isSuperAdmin()
+
+        allow create: if isSuperAdmin()
           && workspaceIdOk(workspaceId)
           && request.resource.data.code == roleCode
+          && (
+            (
+              request.resource.data.isSystem == false
+              && !(roleCode in systemRoleCodes())
+            )
+            || (
+              roleCode in systemRoleCodes()
+              && request.resource.data.isSystem == true
+              && (
+                roleCode != 'super_admin' ||
+                (
+                  request.resource.data.isAssignable == false &&
+                  request.resource.data.isActive == true
+                )
+              )
+            )
+          );
+
+        allow update: if isSuperAdmin()
+          && workspaceIdOk(workspaceId)
+          && request.resource.data.code == roleCode
+          && request.resource.data.code == resource.data.code
+          && (
+            resource.data.isSystem != true ||
+            request.resource.data.isSystem == true
+          )
           && (
             roleCode != 'super_admin' ||
             (
               request.resource.data.isAssignable == false &&
-              request.resource.data.isSystem == true
+              request.resource.data.isSystem == true &&
+              request.resource.data.isActive == true
             )
           );
-        allow delete: if isSuperAdmin()
-          && workspaceIdOk(workspaceId)
-          && roleCode != 'super_admin'
-          && resource.data.isSystem != true;
+
+        allow delete: if false;
       }
 
       match /user_creation_requests/{requestId} {
@@ -276,33 +364,24 @@ service cloud.firestore {
       }
 
       match /records/{recordId} {
-        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+        allow read: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && canReadRecord(resource.data.ownerUid);
         allow create: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && canWriteOperational()
-          && (
-            isSupervisorOrAbove() ||
-            request.resource.data.ownerUid == request.auth.uid
-          )
+          && canCapture()
+          && request.resource.data.ownerUid == request.auth.uid
           && (
             !('createdByUid' in request.resource.data) ||
             request.resource.data.createdByUid == request.auth.uid
           );
         allow update: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && canWriteOperational()
-          && (
-            isSupervisorOrAbove() ||
-            resource.data.ownerUid == request.auth.uid
-          )
+          && canEditRecord(resource.data.ownerUid)
           && ownershipUnchanged();
         allow delete: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && canWriteOperational()
-          && (
-            isSupervisorOrAbove() ||
-            resource.data.ownerUid == request.auth.uid
-          );
+          && canDeleteRecord(resource.data.ownerUid);
       }
     }
   }

@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 import '../core/constants.dart';
 import '../core/permissions/role_catalog.dart';
@@ -14,7 +16,8 @@ class RoleRepository {
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
         _auth = auth ?? FirebaseAuth.instance;
 
-  static final RoleRepository instance = RoleRepository();
+  static RoleRepository? _singleton;
+  static RoleRepository get instance => _singleton ??= RoleRepository();
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
@@ -61,23 +64,54 @@ class RoleRepository {
     return role;
   }
 
-  Future<void> ensureBaseRoles() async {
-    final batch = _firestore.batch();
-    final now = DateTime.now().toUtc();
-    for (final role in RoleCatalog.baseRoles) {
-      final ref = _rolesRef.doc(role.code);
-      batch.set(
-        ref,
-        {
-          ...role.toJson(),
-          'createdAt':
-              role.createdAt?.toIso8601String() ?? now.toIso8601String(),
-          'updatedAt': now.toIso8601String(),
-        },
-        SetOptions(merge: true),
-      );
+  /// Carga la definición del rol autenticado antes de evaluar permisos.
+  /// Roles base: fallback local si aún no hay doc. Custom: deny si no existe.
+  Future<void> ensureAuthorizationForRole(String roleCode) async {
+    final normalized = RoleCatalog.normalizeRoleCode(roleCode) ?? '';
+    try {
+      if (normalized.isEmpty) {
+        RoleCatalog.instance.markAuthorizationReady();
+        return;
+      }
+
+      final remote = await getRole(normalized);
+      if (remote != null) {
+        RoleCatalog.instance.upsert(remote);
+      } else if (!RoleCatalog.systemRoleCodes.contains(normalized)) {
+        // Custom desconocido: no conceder permisos de base.
+        RoleCatalog.instance.replaceAll(
+          RoleCatalog.instance.listAll().where((r) => r.code != normalized),
+        );
+      }
+      RoleCatalog.instance.markAuthorizationReady();
+    } catch (_) {
+      // Sin red: base local solo para system roles; custom → deny.
+      if (!RoleCatalog.systemRoleCodes.contains(normalized)) {
+        RoleCatalog.instance.replaceAll(RoleCatalog.baseRoles);
+      }
+      RoleCatalog.instance.markAuthorizationReady();
     }
-    await batch.commit();
+  }
+
+  Future<void> ensureBaseRoles() async {
+    final now = DateTime.now().toUtc();
+    final existing = await _rolesRef.get();
+    final existingIds = existing.docs.map((d) => d.id).toSet();
+    final batch = _firestore.batch();
+    var writes = 0;
+    for (final role in RoleCatalog.baseRoles) {
+      if (existingIds.contains(role.code)) continue;
+      final ref = _rolesRef.doc(role.code);
+      batch.set(ref, {
+        ...role.toJson(),
+        'createdAt': now.toIso8601String(),
+        'updatedAt': now.toIso8601String(),
+      });
+      writes++;
+    }
+    if (writes > 0) {
+      await batch.commit();
+    }
     RoleCatalog.instance.replaceAll(RoleCatalog.baseRoles);
   }
 
@@ -87,6 +121,9 @@ class RoleRepository {
       throw StateError(codeError);
     }
     final code = role.code.trim().toLowerCase();
+    if (RoleCatalog.systemRoleCodes.contains(code)) {
+      throw StateError('No se pueden crear roles de sistema');
+    }
     final existing = await _rolesRef.doc(code).get();
     if (existing.exists) {
       throw StateError('Ya existe un rol con código "$code"');
@@ -122,7 +159,6 @@ class RoleRepository {
     final toSave = role.copyWith(
       code: code,
       isSystem: current.isSystem,
-      // System roles keep system flag; name/permissions editable.
       updatedAt: now,
       createdAt: current.createdAt,
       createdBy: current.createdBy ?? uid,
@@ -159,23 +195,18 @@ class RoleRepository {
     return updated;
   }
 
-  /// Soft-delete preferido: desactivar. Eliminación física solo si no es system
-  /// y [assignedUserCount] == 0.
-  Future<void> deleteRoleIfUnused(String code,
-      {required int assignedUserCount}) async {
+  /// Eliminación vía Cloud Function (Rules niegan delete directo).
+  Future<void> deleteRole(String code) async {
     final normalized = RoleCatalog.normalizeRoleCode(code);
     if (normalized == null) throw StateError('Código de rol inválido');
-    final current = await getRole(normalized);
-    if (current == null) return;
-    if (current.isSystem || current.isSuperAdmin) {
+    if (RoleCatalog.systemRoleCodes.contains(normalized)) {
       throw StateError('No se pueden eliminar roles de sistema');
     }
-    if (assignedUserCount > 0) {
-      throw StateError(
-        'El rol tiene usuarios asignados. Desactívelo en su lugar.',
-      );
-    }
-    await _rolesRef.doc(normalized).delete();
+    final callable = FirebaseFunctions.instanceFor(
+      app: Firebase.app(),
+      region: 'us-central1',
+    ).httpsCallable('deleteRole');
+    await callable.call(<String, dynamic>{'code': normalized});
     await listRoles(ensureBase: false);
   }
 
