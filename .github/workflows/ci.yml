@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Format, analyze, test y build web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.4"
+          channel: stable
+          cache: true
+
+      - name: Descargar dependencias
+        run: flutter pub get
+
+      - name: Verificar formato
+        # Deuda histórica: hay archivos fuera de formato en main.
+        # Se reporta como warning para no bloquear CI hasta un follow-up de format.
+        # Cuando la base esté limpia, quitar continue-on-error.
+        continue-on-error: true
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analizar
+        # Reporta los ~15 info/warning históricos sin fallar el job por ellos.
+        # Los errores de análisis sí fallan el pipeline.
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Ejecutar tests
+        run: flutter test
+
+      - name: Compilar Web release
+        run: flutter build web --release
+
+      - name: Resumen
+        run: |
+          echo "### CI (sin deploy)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Validación en pull_request a \`main\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Hosting / Firestore Rules / APK: **no** se despliegan aquí" >> "$GITHUB_STEP_SUMMARY"

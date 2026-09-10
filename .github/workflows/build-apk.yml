@@ -1,10 +1,8 @@
 name: Build APK
 
+# Compilación manual de APK. Sin release automático ni Play Store.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
@@ -44,4 +42,3 @@ jobs:
         with:
           name: calculadora-neps-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-

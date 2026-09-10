@@ -1,0 +1,50 @@
+name: Deploy Firestore Rules
+
+# Publicación manual de reglas. Separada de Hosting para evitar
+# desplegar rules al fusionar cambios de aplicación.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-firestore-rules-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-rules:
+    name: Deploy firestore:rules
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Verificar secret de Firebase
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "::error::Falta el secret FIREBASE_SERVICE_ACCOUNT en GitHub (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Autenticar en Firebase
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Instalar Firebase CLI
+        run: npm install -g firebase-tools@15.22.2
+
+      - name: Desplegar reglas Firestore
+        run: |
+          firebase deploy \
+            --only firestore:rules \
+            --project vicunha-calculadora-neps \
+            --non-interactive
+
+      - name: Resumen
+        run: |
+          echo "### Firestore Rules desplegadas (manual)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Proyecto:** vicunha-calculadora-neps" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commit:** \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
