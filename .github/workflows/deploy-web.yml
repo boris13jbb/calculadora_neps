@@ -1,18 +1,17 @@
 name: Deploy Web Firebase
 
+# Deploy de Hosting únicamente, bajo demanda.
+# No se dispara en push a main. Firestore Rules tiene workflow aparte.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 concurrency:
-  group: firebase-deploy-${{ github.ref }}
-  cancel-in-progress: true
+  group: firebase-hosting-deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Build Web y deploy Firebase
+    name: Build Web y deploy Hosting
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -69,38 +68,12 @@ jobs:
             exit "$CODE"
           fi
 
-      - name: Desplegar reglas Firestore
-        id: deploy_rules
-        continue-on-error: true
-        run: |
-          set +e
-          OUTPUT=$(firebase deploy \
-            --only firestore:rules \
-            --project vicunha-calculadora-neps \
-            --non-interactive 2>&1)
-          CODE=$?
-          echo "$OUTPUT"
-          if [ "$CODE" -ne 0 ]; then
-            if echo "$OUTPUT" | grep -q "Permission denied to get service"; then
-              echo "::warning::La service account no tiene rol Service Usage Consumer."
-              echo "Agregue roles/serviceusage.serviceUsageConsumer a firebase-adminsdk-fbsvc@vicunha-calculadora-neps.iam.gserviceaccount.com"
-              echo "Ver docs/CI_FIREBASE_DEPLOY.md"
-              exit 0
-            fi
-            if echo "$OUTPUT" | grep -q "already up to date"; then
-              echo "Reglas Firestore sin cambios."
-              exit 0
-            fi
-            echo "::warning::No se pudieron publicar reglas Firestore desde CI."
-            exit "$CODE"
-          fi
-
       - name: Resumen del despliegue
         run: |
-          echo "### Despliegue completado" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Hosting desplegado (manual)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Web:** https://vicunha-calculadora-neps.web.app" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Proyecto:** vicunha-calculadora-neps" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Commit:** \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Hosting:** ${{ steps.deploy_hosting.outcome }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Firestore rules:** ${{ steps.deploy_rules.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Firestore rules:** no incluidas en este workflow" >> "$GITHUB_STEP_SUMMARY"
