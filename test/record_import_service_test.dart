@@ -125,6 +125,10 @@ NRO,FECHA,LOTE DE TRAMA,NOMBRE DE TELA,TELAR,NEPS,MTS CALCULADOS
         role: AppUserRole.supervisor,
       ),
     );
+    // Enlaza storage al UID antes de persistir (aislamiento multiusuario).
+    await appState.initialize();
+    await appState.ensureCaptureSessionReady();
+    appState.recordsScope.clear();
     appState.records = [
       NepRecord(
         id: 'r1',
@@ -132,6 +136,7 @@ NRO,FECHA,LOTE DE TRAMA,NOMBRE DE TELA,TELAR,NEPS,MTS CALCULADOS
         neps: 75,
         tela: 'DENIM',
         loteTrama: '63E264H15F',
+        createdByUid: 'supervisor-uid',
       ),
     ];
 
@@ -148,5 +153,6 @@ NRO,FECHA,LOTE DE TRAMA,NOMBRE DE TELA,TELAR,NEPS,MTS CALCULADOS
     expect(updated.responsableRevision, 'Ana López');
     expect(updated.historialAcciones, hasLength(1));
     expect(updated.historialAcciones.single.responsable, 'Ana López');
+    appState.dispose();
   });
 }

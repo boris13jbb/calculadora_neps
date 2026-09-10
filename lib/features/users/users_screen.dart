@@ -205,7 +205,7 @@ class _UsersScreenState extends State<UsersScreen> {
     final ok = await _confirm(
       'Eliminar usuario',
       '¿Eliminar a ${user.effectiveDisplayName}? '
-      'La cuenta quedará desactivada y no podrá iniciar sesión.',
+          'La cuenta quedará desactivada y no podrá iniciar sesión.',
     );
     if (!ok) return;
 
@@ -757,7 +757,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       }
       if (mounted) Navigator.pop(context, result);
     } catch (error, stack) {
-      ErrorHandler.log(error, stack, 'toggleActive');
+      ErrorHandler.log(error, stack, 'userFormSubmit');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(ErrorHandler.userMessage(error))),
@@ -928,7 +928,7 @@ class _ResetPasswordDialogState extends State<_ResetPasswordDialog> {
       );
       if (mounted) Navigator.pop(context, true);
     } catch (error, stack) {
-      ErrorHandler.log(error, stack, 'toggleActive');
+      ErrorHandler.log(error, stack, 'resetPasswordSubmit');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(ErrorHandler.userMessage(error))),

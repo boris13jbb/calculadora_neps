@@ -4,6 +4,9 @@ const {defineString} = require("firebase-functions/params");
 const {getAuth} = require("firebase-admin/auth");
 const {getFirestore, FieldValue} = require("firebase-admin/firestore");
 const {logger} = require("firebase-functions");
+const {
+  readCreationSecretPassword,
+} = require("./read_creation_secret_password");
 
 const callOptions = {region: "us-central1", invoker: "public"};
 
@@ -1058,12 +1061,12 @@ const processUserCreationRequest = onDocumentCreated({
       throw new Error("Cuenta del solicitante desactivada.");
     }
 
-    const secretSnap = await secretRef.get();
-    const secretPassword = String(secretSnap.data()?.password || "");
+    // Solo desde el secreto temporal (nunca desde el request público).
+    const secretPassword = await readCreationSecretPassword(secretRef);
 
     const user = await executeCreateAppUser(db, auth, {
       username: data.username,
-      password: secretPassword || data.password,
+      password: secretPassword,
       displayName: data.displayName,
       role: data.role,
       isActive: data.isActive,

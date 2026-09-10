@@ -11,6 +11,7 @@ import '../models/app_user_role.dart';
 import '../services/user_admin_service.dart';
 import '../utils/firestore_json_helper.dart';
 import '../utils/username_auth_helper.dart';
+import 'user_creation_queue_payload.dart';
 
 /// Repositorio de administración de usuarios.
 ///
@@ -205,23 +206,13 @@ class UserAdminRepository {
     required AppUserRole role,
     required bool isActive,
   }) async {
-    final requestRef = await _writeRequest(
-      _creationRequestsPath,
-      {
-        'type': 'create',
-        'username': username,
-        if (displayName != null && displayName.trim().isNotEmpty)
-          'displayName': displayName.trim(),
-        'role': role.code,
-        'isActive': isActive,
-      },
+    final requestRef = await _writeUserCreationRequestWithSecret(
+      username: username,
+      password: password,
+      displayName: displayName,
+      role: role,
+      isActive: isActive,
     );
-
-    await _firestore.doc('$_creationSecretsPath/${requestRef.id}').set({
-      'password': password,
-      'requestedByUid': _auth.currentUser!.uid,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
 
     final data = await _awaitRequestCompletion(
       requestRef,
@@ -231,6 +222,52 @@ class UserAdminRepository {
       data,
       incompleteMessage: 'Respuesta incompleta al crear el usuario.',
     );
+  }
+
+  /// Escribe request + secreto en un único [WriteBatch] para evitar la carrera
+  /// donde el trigger procesa el request antes de que exista el secreto.
+  Future<DocumentReference<Map<String, dynamic>>>
+      _writeUserCreationRequestWithSecret({
+    required String username,
+    required String password,
+    String? displayName,
+    required AppUserRole role,
+    required bool isActive,
+  }) async {
+    final currentUser = await _requireAuthenticatedUser();
+    final performerUsername = await _resolvePerformerUsername(currentUser);
+
+    // ID anticipado: ambos docs comparten el mismo requestId sin escribir aún.
+    final requestRef = _firestore.collection(_creationRequestsPath).doc();
+    final secretRef = _firestore.doc('$_creationSecretsPath/${requestRef.id}');
+
+    final createdAt = FieldValue.serverTimestamp();
+    final requestData = UserCreationQueuePayload.buildRequestData(
+      username: username,
+      displayName: displayName,
+      roleCode: role.code,
+      isActive: isActive,
+      requestedByUid: currentUser.uid,
+      requestedByUsername: performerUsername,
+      createdAt: createdAt,
+    );
+    final secretData = UserCreationQueuePayload.buildSecretData(
+      password: password,
+      requestedByUid: currentUser.uid,
+      createdAt: createdAt,
+    );
+
+    assert(
+      !UserCreationQueuePayload.requestContainsPassword(requestData),
+      'user_creation_requests no debe contener password',
+    );
+
+    final batch = _firestore.batch();
+    batch.set(requestRef, requestData);
+    batch.set(secretRef, secretData);
+    await batch.commit();
+
+    return requestRef;
   }
 
   /// Escribe una solicitud de administración genérica y espera su resultado.
@@ -245,17 +282,21 @@ class UserAdminRepository {
     );
   }
 
+  Future<User> _requireAuthenticatedUser() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      throw Exception('Debe iniciar sesión nuevamente.');
+    }
+    await currentUser.getIdToken(true);
+    return currentUser;
+  }
+
   /// Crea el documento de solicitud con los metadatos del solicitante.
   Future<DocumentReference<Map<String, dynamic>>> _writeRequest(
     String collectionPath,
     Map<String, dynamic> payload,
   ) async {
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) {
-      throw Exception('Debe iniciar sesión nuevamente.');
-    }
-
-    await currentUser.getIdToken(true);
+    final currentUser = await _requireAuthenticatedUser();
     final performerUsername = await _resolvePerformerUsername(currentUser);
 
     return _firestore.collection(collectionPath).add({
