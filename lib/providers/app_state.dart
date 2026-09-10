@@ -2216,14 +2216,29 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _updateRecord(NepRecord record) async {
+    final uid = _authUid;
+    final generation = _authGeneration;
+    if (uid == null || uid.isEmpty) {
+      showMessage('Debe iniciar sesión para modificar registros.');
+      return;
+    }
+
+    // Evita escribir en storage sin UID (carrera post-login o fixture incompleto).
+    if (recordLocalStorageService.boundUid != uid) {
+      await recordsScope.bindUser(uid);
+      if (!_isAuthContextValid(generation, uid)) return;
+    }
+
     records = [
       for (final item in records)
         if (item.id == record.id) record else item,
     ];
     await recordsScope.persistRecord(record);
+    if (!_isAuthContextValid(generation, uid)) return;
     notifyListeners();
 
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
+      if (!_isAuthContextValid(generation, uid)) return;
       try {
         await cloudSyncCoordinator!.upsertRecord(record);
         return;

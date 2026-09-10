@@ -114,39 +114,166 @@ NRO,FECHA,LOTE DE TRAMA,NOMBRE DE TELA,TELAR,NEPS,MTS CALCULADOS
     expect(restored.requiereSeguimiento, isFalse);
   });
 
-  test('AppState.applyCorrectiveAction agrega historial y marca revisado',
-      () async {
-    SharedPreferences.setMockInitialValues({});
-    final appState = AppState();
-    appState.applyAuthProfile(
-      AppUser(
+  group('AppState.applyCorrectiveAction y aislamiento por UID', () {
+    Future<AppState> createBoundState({
+      required String uid,
+      required AppUserRole role,
+      String username = 'user',
+    }) async {
+      final appState = AppState();
+      appState.applyAuthProfile(
+        AppUser(uid: uid, username: username, role: role),
+      );
+      await appState.initialize();
+      await appState.ensureCaptureSessionReady();
+      appState.recordsScope.clear();
+      return appState;
+    }
+
+    test('con usuario autenticado agrega historial y marca revisado', () async {
+      SharedPreferences.setMockInitialValues({});
+      final appState = await createBoundState(
         uid: 'supervisor-uid',
-        username: 'supervisor',
         role: AppUserRole.supervisor,
-      ),
-    );
-    appState.records = [
-      NepRecord(
-        id: 'r1',
-        telar: '10',
-        neps: 75,
-        tela: 'DENIM',
-        loteTrama: '63E264H15F',
-      ),
-    ];
+        username: 'supervisor',
+      );
+      appState.records = [
+        NepRecord(
+          id: 'r1',
+          telar: '10',
+          neps: 75,
+          tela: 'DENIM',
+          loteTrama: '63E264H15F',
+          createdByUid: 'supervisor-uid',
+        ),
+      ];
 
-    await appState.applyCorrectiveAction(
-      recordId: 'r1',
-      accion: 'Se limpió mecanismo.',
-      responsable: 'Ana López',
-      marcarRevisado: true,
-    );
+      await appState.applyCorrectiveAction(
+        recordId: 'r1',
+        accion: 'Se limpió mecanismo.',
+        responsable: 'Ana López',
+        marcarRevisado: true,
+      );
 
-    final updated = appState.records.single;
-    expect(updated.revisadoPorSupervisor, isTrue);
-    expect(updated.accionCorrectiva, 'Se limpió mecanismo.');
-    expect(updated.responsableRevision, 'Ana López');
-    expect(updated.historialAcciones, hasLength(1));
-    expect(updated.historialAcciones.single.responsable, 'Ana López');
+      final updated = appState.records.single;
+      expect(updated.revisadoPorSupervisor, isTrue);
+      expect(updated.accionCorrectiva, 'Se limpió mecanismo.');
+      expect(updated.responsableRevision, 'Ana López');
+      expect(updated.historialAcciones, hasLength(1));
+      expect(updated.historialAcciones.single.responsable, 'Ana López');
+      appState.dispose();
+    });
+
+    test('sin usuario no escribe ni atribuye acción a otro UID', () async {
+      SharedPreferences.setMockInitialValues({});
+      final appState = AppState();
+      appState.records = [
+        NepRecord(
+          id: 'r-orphan',
+          telar: '10',
+          neps: 75,
+          tela: 'DENIM',
+          loteTrama: '63E264H15F',
+          createdByUid: 'otro-uid',
+        ),
+      ];
+
+      await appState.applyCorrectiveAction(
+        recordId: 'r-orphan',
+        accion: 'No debe persistirse',
+        responsable: 'Nadie',
+        marcarRevisado: true,
+      );
+
+      final record = appState.records.single;
+      expect(record.historialAcciones, isEmpty);
+      expect(record.revisadoPorSupervisor, isFalse);
+      expect(record.accionCorrectiva, isEmpty);
+      appState.dispose();
+    });
+
+    test('usuario B no lee la acción correctiva local de A', () async {
+      SharedPreferences.setMockInitialValues({});
+      final a = await createBoundState(
+        uid: 'uid-a',
+        role: AppUserRole.supervisor,
+        username: 'supA',
+      );
+      a.records = [
+        NepRecord(
+          id: 'rec-a',
+          telar: '11',
+          neps: 80,
+          tela: 'DENIM',
+          loteTrama: '63E264H15F',
+          createdByUid: 'uid-a',
+        ),
+      ];
+      await a.applyCorrectiveAction(
+        recordId: 'rec-a',
+        accion: 'Acción de A',
+        responsable: 'Supervisor A',
+        marcarRevisado: true,
+      );
+      expect(a.records.single.historialAcciones, hasLength(1));
+
+      final b = await createBoundState(
+        uid: 'uid-b',
+        role: AppUserRole.supervisor,
+        username: 'supB',
+      );
+      expect(b.records, isEmpty);
+      expect(
+        b.records.any((r) => r.historialAcciones.isNotEmpty),
+        isFalse,
+      );
+
+      a.dispose();
+      b.dispose();
+    });
+
+    test('cambio de usuario reenlaza storage sin mezclar acciones', () async {
+      SharedPreferences.setMockInitialValues({});
+      final state = await createBoundState(
+        uid: 'uid-first',
+        role: AppUserRole.supervisor,
+        username: 'first',
+      );
+      state.records = [
+        NepRecord(
+          id: 'rec-first',
+          telar: '20',
+          neps: 70,
+          tela: 'DENIM',
+          loteTrama: '63E264H15F',
+          createdByUid: 'uid-first',
+        ),
+      ];
+      await state.applyCorrectiveAction(
+        recordId: 'rec-first',
+        accion: 'Acción primer usuario',
+        responsable: 'Primero',
+        marcarRevisado: true,
+      );
+
+      state.applyAuthProfile(
+        AppUser(
+          uid: 'uid-second',
+          username: 'second',
+          role: AppUserRole.supervisor,
+        ),
+      );
+      await state.ensureCaptureSessionReady();
+      expect(state.authUid, 'uid-second');
+      // Tras rebind, la UI/local del segundo usuario no hereda el historial de A.
+      expect(
+        state.records.any(
+          (r) => r.historialAcciones
+              .any((e) => e.accion == 'Acción primer usuario'),
+        ),
+        isFalse,
+      );
+      state.dispose();
+    });
   });
 }
