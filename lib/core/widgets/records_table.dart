@@ -21,6 +21,7 @@ class RecordsTable extends StatelessWidget {
     this.totalSourceCount,
     this.onClearFilters,
     this.onGoToCapture,
+    this.onGoToImport,
   });
 
   final AppState appState;
@@ -30,6 +31,7 @@ class RecordsTable extends StatelessWidget {
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
+  final VoidCallback? onGoToImport;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +57,7 @@ class RecordsTable extends StatelessWidget {
                     totalSourceCount: totalSourceCount,
                     onClearFilters: onClearFilters,
                     onGoToCapture: onGoToCapture,
+                    onGoToImport: onGoToImport,
                   )
                 : _DesktopRecordsTable(
                     appState: appState,
@@ -64,6 +67,7 @@ class RecordsTable extends StatelessWidget {
                     totalSourceCount: totalSourceCount,
                     onClearFilters: onClearFilters,
                     onGoToCapture: onGoToCapture,
+                    onGoToImport: onGoToImport,
                   ),
           ),
         );
@@ -81,6 +85,7 @@ class _MobileRecordsList extends StatelessWidget {
     this.totalSourceCount,
     this.onClearFilters,
     this.onGoToCapture,
+    this.onGoToImport,
   });
 
   final AppState appState;
@@ -90,6 +95,7 @@ class _MobileRecordsList extends StatelessWidget {
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
+  final VoidCallback? onGoToImport;
 
   bool get _isFilteredEmpty {
     final total = totalSourceCount;
@@ -103,7 +109,7 @@ class _MobileRecordsList extends StatelessWidget {
         isFiltered: _isFilteredEmpty,
         onClearFilters: onClearFilters,
         onGoToCapture: onGoToCapture,
-        onGoToImport: () => appState.setNavigationIndex(2),
+        onGoToImport: onGoToImport,
         compact: true,
       );
     }
@@ -246,6 +252,7 @@ class _DesktopRecordsTable extends StatefulWidget {
     this.totalSourceCount,
     this.onClearFilters,
     this.onGoToCapture,
+    this.onGoToImport,
   });
 
   final AppState appState;
@@ -255,6 +262,7 @@ class _DesktopRecordsTable extends StatefulWidget {
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
+  final VoidCallback? onGoToImport;
 
   @override
   State<_DesktopRecordsTable> createState() => _DesktopRecordsTableState();
@@ -283,7 +291,7 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
         isFiltered: _isFilteredEmpty,
         onClearFilters: widget.onClearFilters,
         onGoToCapture: widget.onGoToCapture,
-        onGoToImport: () => appState.setNavigationIndex(2),
+        onGoToImport: widget.onGoToImport,
       );
     }
 

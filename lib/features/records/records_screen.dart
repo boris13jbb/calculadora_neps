@@ -118,30 +118,32 @@ class _RecordsScreenState extends State<RecordsScreen> {
         compactPadding: true,
         denseOnPhone: true,
         actions: [
-          _ActionChip(
-            compact: phone,
-            color: AppColors.primaryGreen,
-            onPressed: () => _downloadTemplate(appState),
-            icon: Icons.download,
-            label: phone ? 'Plantilla' : 'Descargar plantilla',
-          ),
-          _ActionChip(
-            compact: phone,
-            color: AppColors.primaryBlue,
-            onPressed: isImporting ? null : () => _importRecords(appState),
-            icon: isImporting ? null : Icons.upload_file,
-            loading: isImporting,
-            label: phone ? 'Importar' : 'Importar CSV/Excel',
-          ),
-          _ActionChip(
-            compact: phone,
-            color: AppColors.danger,
-            onPressed: !appState.canClearAllRecords || appState.records.isEmpty
-                ? null
-                : () => _clearTable(appState),
-            icon: Icons.delete_sweep,
-            label: phone ? 'Vaciar' : 'Vaciar tabla',
-          ),
+          if (appState.canImportRecords) ...[
+            _ActionChip(
+              compact: phone,
+              color: AppColors.primaryGreen,
+              onPressed: () => _downloadTemplate(appState),
+              icon: Icons.download,
+              label: phone ? 'Plantilla' : 'Descargar plantilla',
+            ),
+            _ActionChip(
+              compact: phone,
+              color: AppColors.primaryBlue,
+              onPressed: isImporting ? null : () => _importRecords(appState),
+              icon: isImporting ? null : Icons.upload_file,
+              loading: isImporting,
+              label: phone ? 'Importar' : 'Importar CSV/Excel',
+            ),
+          ],
+          if (appState.canClearAllRecords)
+            _ActionChip(
+              compact: phone,
+              color: AppColors.danger,
+              onPressed:
+                  appState.records.isEmpty ? null : () => _clearTable(appState),
+              icon: Icons.delete_sweep,
+              label: phone ? 'Vaciar' : 'Vaciar tabla',
+            ),
         ],
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -245,10 +247,20 @@ class _RecordsScreenState extends State<RecordsScreen> {
                 appState: appState,
                 records: visible,
                 onDelete: appState.deleteRecord,
-                onEdit: (record) => _editRecord(appState, record),
+                onEdit: appState.canEditRecords
+                    ? (record) => _editRecord(appState, record)
+                    : null,
                 totalSourceCount: appState.records.length,
                 onClearFilters: appState.clearFilters,
-                onGoToCapture: () => appState.setNavigationIndex(1),
+                onGoToCapture: appState.canCapture
+                    ? () => AppNavigation.navigateIfAllowed(
+                          context,
+                          AppNavId.capture,
+                        )
+                    : null,
+                onGoToImport: appState.canImportRecords
+                    ? () => _importRecords(appState)
+                    : null,
               ),
             ),
           ],
