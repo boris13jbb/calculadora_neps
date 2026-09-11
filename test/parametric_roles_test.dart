@@ -287,13 +287,71 @@ void main() {
       final migrated = RoleDefinition.fromJson({
         'code': 'legacy_auditor',
         'name': 'Legacy',
-        'permissions': ['viewRecords'],
         'seesWorkspaceRecords': true,
       });
       expect(
         migrated.permissions.contains(Permission.viewWorkspaceRecords),
         isTrue,
       );
+    });
+
+    test('permissions moderno es autoritativo frente al flag legacy', () {
+      final role = RoleDefinition.fromJson({
+        'code': 'operario',
+        'name': 'Operario',
+        'permissions': ['captureRecords', 'viewRecords'],
+        'seesWorkspaceRecords': true,
+      });
+
+      expect(role.permissions.contains(Permission.captureRecords), isTrue);
+      expect(role.permissions.contains(Permission.viewRecords), isTrue);
+      expect(
+        role.permissions.contains(Permission.viewWorkspaceRecords),
+        isFalse,
+      );
+    });
+
+    test('sin arreglo permissions el flag legacy sigue concediendo alcance',
+        () {
+      final role = RoleDefinition.fromJson({
+        'code': 'legacy',
+        'name': 'Legacy',
+        'seesWorkspaceRecords': true,
+      });
+
+      expect(
+        role.permissions.contains(Permission.viewWorkspaceRecords),
+        isTrue,
+      );
+    });
+
+    test('flag false no quita viewWorkspaceRecords del arreglo moderno', () {
+      final role = RoleDefinition.fromJson({
+        'code': 'supervisor',
+        'name': 'Supervisor',
+        'permissions': ['viewRecords', 'viewWorkspaceRecords'],
+        'seesWorkspaceRecords': false,
+      });
+
+      expect(
+        role.permissions.contains(Permission.viewWorkspaceRecords),
+        isTrue,
+      );
+    });
+
+    test('toJson deriva seesWorkspaceRecords del permiso', () {
+      final operario = RoleCatalog.baseRoles
+          .firstWhere((role) => role.code == 'operario')
+          .toJson();
+      final supervisor = RoleCatalog.baseRoles
+          .firstWhere((role) => role.code == 'supervisor')
+          .toJson();
+
+      expect(operario['permissions'], contains('captureRecords'));
+      expect(operario['permissions'], contains('viewRecords'));
+      expect(operario['permissions'], isNot(contains('viewWorkspaceRecords')));
+      expect(operario['seesWorkspaceRecords'], isFalse);
+      expect(supervisor['seesWorkspaceRecords'], isTrue);
     });
   });
 
