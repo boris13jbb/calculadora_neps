@@ -258,6 +258,59 @@ void main() {
     );
   });
 
+  test('M) operario remoto con capture+edit puede importar', () {
+    RoleCatalog.instance.upsert(
+      RoleDefinition(
+        code: 'operario',
+        name: 'Operario',
+        permissions: {
+          Permission.captureRecords,
+          Permission.viewRecords,
+          Permission.editRecords,
+        },
+        isActive: true,
+        isSystem: true,
+        isAssignable: true,
+        sortOrder: 30,
+      ),
+    );
+    expect(permissionsService.canImportRecordsForCode('operario'), isTrue);
+    RoleCatalog.instance.replaceAll([
+      ...RoleCatalog.baseRoles,
+      _auditorRole(),
+      _editorSinCapturaRole(),
+      _capturaSinEdicionRole(),
+      _importadorPruebaRole(),
+    ]);
+  });
+
+  test('N) gerencia remota con capture+edit puede importar', () {
+    RoleCatalog.instance.upsert(
+      RoleDefinition(
+        code: 'gerencia',
+        name: 'Gerencia',
+        permissions: {
+          Permission.viewDashboard,
+          Permission.viewRecords,
+          Permission.captureRecords,
+          Permission.editRecords,
+        },
+        isActive: true,
+        isSystem: true,
+        isAssignable: true,
+        sortOrder: 40,
+      ),
+    );
+    expect(permissionsService.canImportRecordsForCode('gerencia'), isTrue);
+    RoleCatalog.instance.replaceAll([
+      ...RoleCatalog.baseRoles,
+      _auditorRole(),
+      _editorSinCapturaRole(),
+      _capturaSinEdicionRole(),
+      _importadorPruebaRole(),
+    ]);
+  });
+
   testWidgets('L) UI: edit sin capture muestra Plantilla y oculta Importar',
       (tester) async {
     final user = _userWithRole('editor_sin_captura');
