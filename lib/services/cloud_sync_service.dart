@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/errors/error_handler.dart';
@@ -374,14 +375,65 @@ class CloudSyncService implements CloudSyncPort {
 
   @override
   Future<void> deleteRecord(String recordId, {String? ownerUid}) async {
-    final currentUid = await _requireUserId();
-    final targetUid =
-        ownerUid?.trim().isNotEmpty == true ? ownerUid! : currentUid;
+    await _requireUserId();
+
+    var resolvedOwner = ownerUid?.trim();
+    var legacyResolution = 'provided';
+    if (resolvedOwner == null || resolvedOwner.isEmpty) {
+      legacyResolution = 'unresolved';
+      try {
+        final snap = await _workspaceRecords.doc(recordId).get();
+        if (snap.exists) {
+          final resolved = resolveOwnerUidForDelete(
+            providedOwnerUid: null,
+            workspaceDocData: snap.data(),
+          );
+          if (resolved != null) {
+            resolvedOwner = resolved;
+            final data = snap.data();
+            final fromOwner = data?['ownerUid']?.toString().trim();
+            legacyResolution = (fromOwner != null && fromOwner.isNotEmpty)
+                ? 'workspace.ownerUid'
+                : 'workspace.createdByUid';
+          }
+        } else {
+          legacyResolution = 'workspace_missing';
+        }
+      } catch (error, stackTrace) {
+        ErrorHandler.log(error, stackTrace, 'resolveDeleteOwnerUid');
+      }
+    }
+
+    if (kDebugMode) {
+      debugPrint(
+        '[deleteRecord] LEGACY_OWNER_RESOLUTION=$legacyResolution '
+        'owner=${resolvedOwner ?? '(none)'} recordId=$recordId',
+      );
+    }
 
     final batch = _firestore.batch();
-    batch.delete(_userRecords(targetUid).doc(recordId));
+    // Workspace siempre; espejo de usuario solo con owner verificable.
     batch.delete(_workspaceRecords.doc(recordId));
+    if (resolvedOwner != null && resolvedOwner.isNotEmpty) {
+      batch.delete(_userRecords(resolvedOwner).doc(recordId));
+    }
     await batch.commit();
+  }
+
+  /// Resuelve el dueño para borrar sin asumir el UID del actor autenticado.
+  @visibleForTesting
+  static String? resolveOwnerUidForDelete({
+    required String? providedOwnerUid,
+    Map<String, dynamic>? workspaceDocData,
+  }) {
+    final provided = providedOwnerUid?.trim();
+    if (provided != null && provided.isNotEmpty) return provided;
+    if (workspaceDocData == null) return null;
+    final owner = workspaceDocData['ownerUid']?.toString().trim();
+    if (owner != null && owner.isNotEmpty) return owner;
+    final created = workspaceDocData['createdByUid']?.toString().trim();
+    if (created != null && created.isNotEmpty) return created;
+    return null;
   }
 
   @override

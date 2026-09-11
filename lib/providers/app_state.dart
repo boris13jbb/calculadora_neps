@@ -2,9 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+    show
+        TargetPlatform,
+        debugPrint,
+        defaultTargetPlatform,
+        kIsWeb,
+        visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/navigation/app_navigation.dart';
@@ -19,6 +25,7 @@ import '../models/corrective_action_entry.dart';
 import '../models/export_column.dart';
 import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
+import '../models/record_delete_outcome.dart';
 import '../models/record_filters.dart';
 import '../models/record_import_result.dart';
 import '../models/saved_report.dart';
@@ -518,12 +525,10 @@ class AppState extends ChangeNotifier {
         break;
       }
       final op = pending[i];
-      if (op.ownerUid != uid) {
-        continue;
-      }
       try {
         switch (op.type) {
           case PendingSyncOpType.upsert:
+            if (op.ownerUid != uid) continue;
             final record = op.record;
             if (record == null) continue;
             final owner = verifiedRecordOwnerUid(record);
@@ -532,9 +537,10 @@ class AppState extends ChangeNotifier {
           case PendingSyncOpType.delete:
             final recordId = op.recordId;
             if (recordId == null || recordId.isEmpty) continue;
+            final deleteOwner = op.ownerUid.trim().isEmpty ? null : op.ownerUid;
             await cloudSyncCoordinator!.deleteRecord(
               recordId,
-              ownerUid: op.ownerUid,
+              ownerUid: deleteOwner,
             );
         }
       } catch (_) {
@@ -1261,43 +1267,9 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _removeRecord(String recordId) async {
-    final uid = _authUid;
-    final generation = _authGeneration;
-    final index = records.indexWhere((record) => record.id == recordId);
-    final ownerUid = index >= 0 ? records[index].createdByUid : null;
-
-    recordsScope.removeById(recordId);
-    await recordsScope.persistLocally();
-    if (uid != null && !_isAuthContextValid(generation, uid)) return;
-    notifyListeners();
-
-    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
-      if (uid != null && !_isAuthContextValid(generation, uid)) return;
-      try {
-        await cloudSyncCoordinator!.deleteRecord(
-          recordId,
-          ownerUid: ownerUid,
-        );
-        return;
-      } catch (_) {
-        cloudSyncEnabled = false;
-        if (uid != null) {
-          await pendingSyncQueueService.enqueueDelete(
-            uid,
-            recordId,
-            ownerUid: ownerUid ?? uid,
-          );
-        }
-      }
-    } else if (cloudSyncCoordinator != null && uid != null) {
-      await pendingSyncQueueService.enqueueDelete(
-        uid,
-        recordId,
-        ownerUid: ownerUid ?? uid,
-      );
-    }
-  }
+  /// Resultado de la última eliminación (útil en pruebas).
+  @visibleForTesting
+  RecordDeleteOutcome? lastDeleteOutcome;
 
   Future<void> _clearAllRecords() async {
     recordsScope.clear();
@@ -2259,26 +2231,163 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> deleteRecord(String recordId) async {
+  Future<RecordDeleteOutcome> deleteRecord(String recordId) async {
+    lastDeleteOutcome = null;
     if (!_requirePermission(canDeleteRecords, 'eliminar registros')) {
-      return;
+      lastDeleteOutcome = RecordDeleteOutcome.permissionDeniedLocal;
+      return lastDeleteOutcome!;
     }
 
+    final index = records.indexWhere((r) => r.id == recordId);
+    if (index < 0) {
+      showMessage('Registro no encontrado.');
+      lastDeleteOutcome = RecordDeleteOutcome.notFound;
+      return lastDeleteOutcome!;
+    }
+
+    final record = records[index];
+    final verifiedOwner = verifiedRecordOwnerUid(record);
+
+    debugPrint(
+      '[deleteRecord] authRoleCode=$authRoleCode '
+      'canDeleteRecords=$canDeleteRecords '
+      'record.id=${record.id} '
+      'record.createdByUid=${record.createdByUid ?? '(null)'} '
+      'cloudSyncEnabled=$cloudSyncEnabled',
+    );
+
     if (authRoleCode == 'operario' && _authUid != null) {
-      final index = records.indexWhere((r) => r.id == recordId);
-      if (index >= 0) {
-        final record = records[index];
-        if (record.createdByUid != null && record.createdByUid != _authUid) {
-          showMessage('Solo puede eliminar registros propios.');
-          return;
-        }
+      if (record.createdByUid != null && record.createdByUid != _authUid) {
+        showMessage('Solo puede eliminar registros propios.');
+        lastDeleteOutcome = RecordDeleteOutcome.permissionDeniedLocal;
+        return lastDeleteOutcome!;
       }
     }
 
-    await _removeRecord(recordId);
-    if (!cloudSyncEnabled) {
-      notifyListeners();
+    final uid = _authUid;
+    final generation = _authGeneration;
+
+    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
+      if (uid != null && !_isAuthContextValid(generation, uid)) {
+        lastDeleteOutcome = RecordDeleteOutcome.notFound;
+        return lastDeleteOutcome!;
+      }
+      try {
+        await cloudSyncCoordinator!.deleteRecord(
+          recordId,
+          ownerUid: verifiedOwner,
+        );
+        debugPrint('[deleteRecord] resultado cloud=ok');
+        if (uid != null && !_isAuthContextValid(generation, uid)) {
+          lastDeleteOutcome = RecordDeleteOutcome.deletedRemote;
+          return lastDeleteOutcome!;
+        }
+        recordsScope.removeById(recordId);
+        await recordsScope.persistLocally();
+        notifyListeners();
+        showMessage('Registro eliminado correctamente.');
+        lastDeleteOutcome = RecordDeleteOutcome.deletedRemote;
+        return lastDeleteOutcome!;
+      } on FirebaseException catch (error, stackTrace) {
+        ErrorHandler.log(error, stackTrace, 'deleteRecord');
+        debugPrint(
+          '[deleteRecord] FirebaseException code=${error.code} '
+          'DELETE_PERMISSION_DENIED=${error.code == 'permission-denied'} '
+          'authRoleCode=$authRoleCode canDeleteRecords=$canDeleteRecords',
+        );
+        if (error.code == 'permission-denied') {
+          showMessage('No tiene permiso para eliminar este registro.');
+          lastDeleteOutcome = RecordDeleteOutcome.permissionDenied;
+          return lastDeleteOutcome!;
+        }
+        if (_isOfflineLikeFirebaseError(error)) {
+          return _deleteLocalPendingSync(
+            recordId: recordId,
+            actorUid: uid,
+            recordOwnerUid: verifiedOwner,
+            generation: generation,
+          );
+        }
+        showMessage(
+          'No se pudo eliminar el registro: ${ErrorHandler.userMessage(error)}',
+        );
+        lastDeleteOutcome = RecordDeleteOutcome.firebaseError;
+        return lastDeleteOutcome!;
+      } catch (error, stackTrace) {
+        ErrorHandler.log(error, stackTrace, 'deleteRecord');
+        if (_isOfflineLikeError(error)) {
+          return _deleteLocalPendingSync(
+            recordId: recordId,
+            actorUid: uid,
+            recordOwnerUid: verifiedOwner,
+            generation: generation,
+          );
+        }
+        showMessage(
+          'No se pudo eliminar el registro: ${ErrorHandler.userMessage(error)}',
+        );
+        lastDeleteOutcome = RecordDeleteOutcome.firebaseError;
+        return lastDeleteOutcome!;
+      }
     }
+
+    if (cloudSyncCoordinator != null) {
+      return _deleteLocalPendingSync(
+        recordId: recordId,
+        actorUid: uid,
+        recordOwnerUid: verifiedOwner,
+        generation: generation,
+      );
+    }
+
+    recordsScope.removeById(recordId);
+    await recordsScope.persistLocally();
+    notifyListeners();
+    showMessage('Registro eliminado correctamente.');
+    lastDeleteOutcome = RecordDeleteOutcome.deletedLocalPendingSync;
+    return lastDeleteOutcome!;
+  }
+
+  Future<RecordDeleteOutcome> _deleteLocalPendingSync({
+    required String recordId,
+    required String? actorUid,
+    required String? recordOwnerUid,
+    required int generation,
+  }) async {
+    recordsScope.removeById(recordId);
+    await recordsScope.persistLocally();
+    if (actorUid != null && !_isAuthContextValid(generation, actorUid)) {
+      lastDeleteOutcome = RecordDeleteOutcome.deletedLocalPendingSync;
+      return lastDeleteOutcome!;
+    }
+    notifyListeners();
+
+    if (actorUid != null) {
+      await pendingSyncQueueService.enqueueDelete(
+        actorUid,
+        recordId,
+        ownerUid: recordOwnerUid ?? '',
+      );
+    }
+    showMessage(
+      'Registro eliminado localmente. Eliminación pendiente de sincronizar.',
+    );
+    lastDeleteOutcome = RecordDeleteOutcome.deletedLocalPendingSync;
+    return lastDeleteOutcome!;
+  }
+
+  bool _isOfflineLikeFirebaseError(FirebaseException error) {
+    return error.code == 'unavailable' ||
+        error.code == 'deadline-exceeded' ||
+        error.code == 'network-request-failed';
+  }
+
+  bool _isOfflineLikeError(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('socketexception') ||
+        text.contains('network') ||
+        text.contains('failed to fetch') ||
+        text.contains('clientexception');
   }
 
   Future<void> clearTable() async {
