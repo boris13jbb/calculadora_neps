@@ -99,9 +99,11 @@ class CloudSyncService implements CloudSyncPort {
 
   CollectionReference<Map<String, dynamic>> _recordsCollectionForRole(
     AppUserRole viewerRole,
-    String userId,
-  ) {
-    if (canViewWorkspaceRecords(viewerRole)) {
+    String userId, {
+    String? viewerRoleCode,
+  }) {
+    final code = viewerRoleCode ?? viewerRole.code;
+    if (canViewWorkspaceRecordsForCode(code)) {
       return _workspaceRecords;
     }
     return _userRecords(userId);
@@ -113,18 +115,27 @@ class CloudSyncService implements CloudSyncPort {
   @override
   Stream<List<NepRecord>> watchRecords({
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
   }) {
-    return watchRecentRecords(viewerRole: viewerRole, limit: recordsMaxPageSize)
-        .map((page) => page.records);
+    return watchRecentRecords(
+      viewerRole: viewerRole,
+      viewerRoleCode: viewerRoleCode,
+      limit: recordsMaxPageSize,
+    ).map((page) => page.records);
   }
 
   @override
   Stream<RecordsPageResult> watchRecentRecords({
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = recordsInitialPageSize,
   }) {
     return Stream.fromFuture(_requireUserId()).asyncExpand((userId) {
-      final collection = _recordsCollectionForRole(viewerRole, userId);
+      final collection = _recordsCollectionForRole(
+        viewerRole,
+        userId,
+        viewerRoleCode: viewerRoleCode,
+      );
       final query = FirestoreRecordQueryBuilder.build(
         collection: collection,
         limit: limit,
@@ -138,6 +149,7 @@ class CloudSyncService implements CloudSyncPort {
     required DateTime from,
     required DateTime to,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = recordsInitialPageSize,
   }) {
     final filters = RecordFilters()
@@ -146,6 +158,7 @@ class CloudSyncService implements CloudSyncPort {
     return watchRecordsByFilters(
       filters: filters,
       viewerRole: viewerRole,
+      viewerRoleCode: viewerRoleCode,
       limit: limit,
     );
   }
@@ -154,10 +167,15 @@ class CloudSyncService implements CloudSyncPort {
   Stream<RecordsPageResult> watchRecordsByFilters({
     required RecordFilters filters,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = recordsInitialPageSize,
   }) {
     return Stream.fromFuture(_requireUserId()).asyncExpand((userId) {
-      final collection = _recordsCollectionForRole(viewerRole, userId);
+      final collection = _recordsCollectionForRole(
+        viewerRole,
+        userId,
+        viewerRoleCode: viewerRoleCode,
+      );
       final query = FirestoreRecordQueryBuilder.build(
         collection: collection,
         filters: filters,
@@ -171,10 +189,15 @@ class CloudSyncService implements CloudSyncPort {
   Future<RecordsPageResult> fetchRecordsByFilters({
     required RecordFilters filters,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = reportExportRecordLimit,
   }) async {
     final userId = await _requireUserId();
-    final collection = _recordsCollectionForRole(viewerRole, userId);
+    final collection = _recordsCollectionForRole(
+      viewerRole,
+      userId,
+      viewerRoleCode: viewerRoleCode,
+    );
     final query = FirestoreRecordQueryBuilder.build(
       collection: collection,
       filters: filters,

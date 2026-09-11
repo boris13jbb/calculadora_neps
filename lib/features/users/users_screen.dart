@@ -11,9 +11,11 @@ import '../../core/widgets/empty_state.dart';
 import '../../core/widgets/kpi_card.dart';
 import '../../core/widgets/permission_gate.dart';
 import '../../models/app_user.dart';
-import '../../models/app_user_role.dart';
+import '../../models/role_definition.dart';
 import '../../providers/auth_provider.dart';
+import '../../repositories/role_repository.dart';
 import '../../repositories/user_admin_repository.dart';
+import '../../core/permissions/role_catalog.dart';
 import '../../utils/username_auth_helper.dart';
 
 class UsersScreen extends StatefulWidget {
@@ -78,7 +80,7 @@ class _UsersScreenState extends State<UsersScreen> {
   int get _activeCount => _users.where((u) => u.isActive).length;
   int get _inactiveCount => _users.length - _activeCount;
   int get _operarioCount =>
-      _users.where((u) => u.role == AppUserRole.operario).length;
+      _users.where((u) => u.roleCode == 'operario').length;
 
   Future<void> _showResetPasswordDialog(AppUser user) async {
     final ok = await showDialog<bool>(
@@ -340,12 +342,12 @@ class _UsersScreenState extends State<UsersScreen> {
             items: [
               const DropdownMenuItem(
                   value: null, child: Text('Todos los roles')),
-              ...AppUserRole.values.map(
-                (role) => DropdownMenuItem(
-                  value: role.code,
-                  child: Text(role.label),
-                ),
-              ),
+              ...RoleCatalog.instance.listAll().map(
+                    (role) => DropdownMenuItem(
+                      value: role.code,
+                      child: Text(role.name),
+                    ),
+                  ),
             ],
             onChanged: (value) {
               setState(() => _roleFilter = value);
@@ -433,7 +435,7 @@ class _UsersScreenState extends State<UsersScreen> {
                   return DataRow(cells: [
                     DataCell(Text(user.username)),
                     DataCell(Text(user.effectiveDisplayName)),
-                    DataCell(_RoleBadge(role: user.role)),
+                    DataCell(_RoleBadge(roleCode: user.roleCode)),
                     DataCell(_StatusBadge(active: user.isActive)),
                     DataCell(Text(dateFormat(user.lastLoginAt))),
                     DataCell(
@@ -512,7 +514,7 @@ class _UsersScreenState extends State<UsersScreen> {
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
-                    _RoleBadge(role: user.role),
+                    _RoleBadge(roleCode: user.roleCode),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -589,22 +591,24 @@ class _UsersScreenState extends State<UsersScreen> {
 }
 
 class _RoleBadge extends StatelessWidget {
-  const _RoleBadge({required this.role});
+  const _RoleBadge({required this.roleCode});
 
-  final AppUserRole role;
+  final String roleCode;
 
   Color get _color {
-    switch (role) {
-      case AppUserRole.superAdmin:
+    switch (roleCode) {
+      case 'super_admin':
         return Colors.deepPurple;
-      case AppUserRole.admin:
+      case 'admin':
         return Colors.blue;
-      case AppUserRole.supervisor:
+      case 'supervisor':
         return Colors.green;
-      case AppUserRole.operario:
+      case 'operario':
         return Colors.grey;
-      case AppUserRole.gerencia:
+      case 'gerencia':
         return const Color(0xFFB8860B);
+      default:
+        return Colors.teal;
     }
   }
 
@@ -617,7 +621,7 @@ class _RoleBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        role.label,
+        RoleCatalog.instance.displayName(roleCode),
         style: TextStyle(
           color: _color,
           fontWeight: FontWeight.w700,
@@ -698,13 +702,16 @@ class _DialogFormField extends StatelessWidget {
 class _UserFormDialogState extends State<_UserFormDialog> {
   final _formKey = GlobalKey<FormState>();
   final _adminRepo = UserAdminRepository.instance;
+  final _roleRepo = RoleRepository.instance;
   late final TextEditingController _usernameController;
   late final TextEditingController _nameController;
   late final TextEditingController _passwordController;
   late final TextEditingController _confirmPasswordController;
-  late AppUserRole _role;
+  late String _roleCode;
   late bool _isActive;
   bool _loading = false;
+  bool _loadingRoles = true;
+  List<RoleDefinition> _assignableRoles = const [];
 
   @override
   void initState() {
@@ -714,8 +721,32 @@ class _UserFormDialogState extends State<_UserFormDialog> {
         TextEditingController(text: widget.initial?.displayName ?? '');
     _passwordController = TextEditingController();
     _confirmPasswordController = TextEditingController();
-    _role = widget.initial?.role ?? AppUserRole.operario;
+    _roleCode = widget.initial?.roleCode ?? 'operario';
     _isActive = widget.initial?.isActive ?? true;
+    _loadAssignableRoles();
+  }
+
+  Future<void> _loadAssignableRoles() async {
+    try {
+      await _roleRepo.listRoles(ensureBase: true);
+      final roles = RoleCatalog.instance.listAssignable();
+      if (!mounted) return;
+      setState(() {
+        _assignableRoles = roles;
+        _loadingRoles = false;
+        if (!_assignableRoles.any((r) => r.code == _roleCode) &&
+            _assignableRoles.isNotEmpty) {
+          _roleCode = _assignableRoles.first.code;
+        }
+      });
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'loadAssignableRoles');
+      if (!mounted) return;
+      setState(() {
+        _assignableRoles = RoleCatalog.instance.listAssignable();
+        _loadingRoles = false;
+      });
+    }
   }
 
   @override
@@ -727,14 +758,16 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     super.dispose();
   }
 
-  List<AppUserRole> get _assignableRoles {
-    return AppUserRole.values
-        .where((role) => role != AppUserRole.superAdmin)
-        .toList();
-  }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_roleCode == 'super_admin') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se puede asignar super_admin desde el panel.'),
+        ),
+      );
+      return;
+    }
 
     setState(() => _loading = true);
     try {
@@ -744,14 +777,14 @@ class _UserFormDialogState extends State<_UserFormDialog> {
           username: _usernameController.text,
           password: _passwordController.text,
           displayName: _nameController.text,
-          role: _role,
+          roleCode: _roleCode,
           isActive: _isActive,
         );
       } else {
         result = await _adminRepo.updateUser(
           uid: widget.initial!.uid,
           displayName: _nameController.text,
-          role: _role,
+          roleCode: _roleCode,
           isActive: _isActive,
         );
       }
@@ -846,20 +879,26 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                 const SizedBox(height: 12),
                 _DialogFormField(
                   label: 'Rol',
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _assignableRoles.map((role) {
-                      final selected = _role == role;
-                      return ChoiceChip(
-                        label: Text(role.label),
-                        selected: selected,
-                        onSelected: _loading
-                            ? null
-                            : (_) => setState(() => _role = role),
-                      );
-                    }).toList(),
-                  ),
+                  child: _loadingRoles
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: LinearProgressIndicator(),
+                        )
+                      : Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _assignableRoles.map((role) {
+                            final selected = _roleCode == role.code;
+                            return ChoiceChip(
+                              label: Text(role.name),
+                              selected: selected,
+                              onSelected: _loading
+                                  ? null
+                                  : (_) =>
+                                      setState(() => _roleCode = role.code),
+                            );
+                          }).toList(),
+                        ),
                 ),
                 AppMaterialSwitchListTile(
                   contentPadding: EdgeInsets.zero,

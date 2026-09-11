@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../core/errors/app_exception.dart';
 import '../models/app_user.dart';
-import '../models/app_user_role.dart';
 import '../services/user_admin_service.dart';
 import '../utils/firestore_json_helper.dart';
 import '../utils/username_auth_helper.dart';
@@ -45,7 +44,7 @@ class UserAdminRepository {
     required String username,
     required String password,
     String? displayName,
-    required AppUserRole role,
+    required String roleCode,
     bool isActive = true,
   }) async {
     final normalizedUsername = UsernameAuthHelper.normalizeUsername(username);
@@ -55,7 +54,7 @@ class UserAdminRepository {
         username: normalizedUsername,
         password: password,
         displayName: displayName,
-        role: role,
+        roleCode: roleCode,
         isActive: isActive,
       );
     } on UserAdminException {
@@ -66,7 +65,7 @@ class UserAdminRepository {
         username: normalizedUsername,
         password: password,
         displayName: displayName,
-        role: role,
+        roleCode: roleCode,
         isActive: isActive,
       );
     }
@@ -75,7 +74,7 @@ class UserAdminRepository {
   Future<AppUser> updateUser({
     required String uid,
     String? displayName,
-    AppUserRole? role,
+    String? roleCode,
     bool? isActive,
   }) async {
     try {
@@ -84,7 +83,7 @@ class UserAdminRepository {
           'type': 'update',
           'uid': uid,
           if (displayName != null) 'displayName': displayName.trim(),
-          if (role != null) 'role': role.code,
+          if (roleCode != null) 'role': roleCode,
           if (isActive != null) 'isActive': isActive,
         },
         failureFallbackMessage: 'No se pudo actualizar el usuario.',
@@ -100,7 +99,7 @@ class UserAdminRepository {
       return _service.updateUser(
         uid: uid,
         displayName: displayName,
-        role: role,
+        roleCode: roleCode,
         isActive: isActive,
       );
     }
@@ -203,14 +202,14 @@ class UserAdminRepository {
     required String username,
     required String password,
     String? displayName,
-    required AppUserRole role,
+    required String roleCode,
     required bool isActive,
   }) async {
     final requestRef = await _writeUserCreationRequestWithSecret(
       username: username,
       password: password,
       displayName: displayName,
-      role: role,
+      roleCode: roleCode,
       isActive: isActive,
     );
 
@@ -231,7 +230,7 @@ class UserAdminRepository {
     required String username,
     required String password,
     String? displayName,
-    required AppUserRole role,
+    required String roleCode,
     required bool isActive,
   }) async {
     final currentUser = await _requireAuthenticatedUser();
@@ -245,7 +244,7 @@ class UserAdminRepository {
     final requestData = UserCreationQueuePayload.buildRequestData(
       username: username,
       displayName: displayName,
-      roleCode: role.code,
+      roleCode: roleCode,
       isActive: isActive,
       requestedByUid: currentUser.uid,
       requestedByUsername: performerUsername,

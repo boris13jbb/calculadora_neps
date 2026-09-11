@@ -75,6 +75,7 @@ class CloudSyncCoordinator {
     required void Function(RecordsPageResult page) onRecords,
     required void Function(List<String> fabrics) onFabrics,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     RecordFilters? filters,
     int limit = 50,
     bool waitForFirstSnapshot = false,
@@ -94,10 +95,12 @@ class CloudSyncCoordinator {
         ? _cloud.watchRecordsByFilters(
             filters: filters!,
             viewerRole: viewerRole,
+            viewerRoleCode: viewerRoleCode,
             limit: limit,
           )
         : _cloud.watchRecentRecords(
             viewerRole: viewerRole,
+            viewerRoleCode: viewerRoleCode,
             limit: limit,
           );
 
@@ -140,6 +143,7 @@ class CloudSyncCoordinator {
   Future<void> rebindRecordsOnly({
     required void Function(RecordsPageResult page) onRecords,
     required AppUserRole viewerRole,
+    String? viewerRoleCode,
     RecordFilters? filters,
     required int limit,
   }) async {
@@ -152,10 +156,12 @@ class CloudSyncCoordinator {
         ? _cloud.watchRecordsByFilters(
             filters: filters!,
             viewerRole: viewerRole,
+            viewerRoleCode: viewerRoleCode,
             limit: limit,
           )
         : _cloud.watchRecentRecords(
             viewerRole: viewerRole,
+            viewerRoleCode: viewerRoleCode,
             limit: limit,
           );
 

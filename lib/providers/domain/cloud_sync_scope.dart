@@ -19,6 +19,7 @@ import '../../utils/firebase_session_helper.dart';
 class CloudSyncHost {
   const CloudSyncHost({
     required this.getAuthRole,
+    required this.getAuthRoleCode,
     required this.loadLocalRecords,
     required this.loadLocalFabrics,
     required this.applyRecordsPage,
@@ -36,6 +37,7 @@ class CloudSyncHost {
   });
 
   final AppUserRole Function() getAuthRole;
+  final String Function() getAuthRoleCode;
   final Future<List<NepRecord>> Function() loadLocalRecords;
   final Future<List<String>> Function() loadLocalFabrics;
   final void Function(RecordsPageResult page) applyRecordsPage;
@@ -238,6 +240,7 @@ class CloudSyncScope {
 
     await coord.rebindRecordsOnly(
       viewerRole: host.getAuthRole(),
+      viewerRoleCode: host.getAuthRoleCode(),
       filters: useRemote ? filters : null,
       limit: limit,
       onRecords: (page) {
@@ -263,6 +266,7 @@ class CloudSyncScope {
     await coord.bindSubscriptions(
       waitForFirstSnapshot: waitForFirstSnapshot,
       viewerRole: host.getAuthRole(),
+      viewerRoleCode: host.getAuthRoleCode(),
       filters: useRemote ? filters : null,
       limit: limit,
       onConnectionError: handleStreamDisconnected,

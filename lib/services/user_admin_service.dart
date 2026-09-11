@@ -7,7 +7,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 
 import '../models/app_user.dart';
-import '../models/app_user_role.dart';
 import '../utils/callable_http_client.dart';
 import '../utils/firebase_session_helper.dart';
 import '../utils/firestore_json_helper.dart';
@@ -44,7 +43,7 @@ class UserAdminService {
     required String username,
     required String password,
     String? displayName,
-    required AppUserRole role,
+    required String roleCode,
     bool isActive = true,
   }) async {
     final normalizedUsername = UsernameAuthHelper.normalizeUsername(username);
@@ -53,7 +52,7 @@ class UserAdminService {
       'password': password,
       if (displayName != null && displayName.trim().isNotEmpty)
         'displayName': displayName.trim(),
-      'role': role.code,
+      'role': roleCode,
       'isActive': isActive,
     };
 
@@ -93,12 +92,12 @@ class UserAdminService {
   Future<AppUser> updateUser({
     required String uid,
     String? displayName,
-    AppUserRole? role,
+    String? roleCode,
     bool? isActive,
   }) async {
     final payload = <String, dynamic>{'uid': uid};
     if (displayName != null) payload['displayName'] = displayName.trim();
-    if (role != null) payload['role'] = role.code;
+    if (roleCode != null) payload['role'] = roleCode;
     if (isActive != null) payload['isActive'] = isActive;
 
     try {
@@ -112,12 +111,12 @@ class UserAdminService {
 
   Future<AppUser> updateUserRole({
     required String uid,
-    required AppUserRole role,
+    required String roleCode,
   }) async {
     try {
       final result = await _call('changeUserRole', {
         'uid': uid,
-        'role': role.code,
+        'role': roleCode,
       });
       return _userFromResult(result);
     } catch (error) {

@@ -1,8 +1,11 @@
-/// Permisos granulares del sistema.
+/// Permisos granulares del sistema (catálogo técnico; no creados desde la UI).
 enum Permission {
   viewDashboard,
   captureRecords,
   viewRecords,
+
+  /// Lectura de registros de todo el workspace (no solo propios).
+  viewWorkspaceRecords,
   editRecords,
   deleteRecords,
   clearAllRecords,

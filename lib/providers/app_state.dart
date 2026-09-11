@@ -113,6 +113,7 @@ class AppState extends ChangeNotifier {
       service: initialCloudService,
       host: CloudSyncHost(
         getAuthRole: () => authRole,
+        getAuthRoleCode: () => authRoleCode,
         loadLocalRecords: () => recordsScope.loadFromPreferences(),
         loadLocalFabrics: () => fabricCatalogService.loadFabrics(),
         applyRecordsPage: (page) {
@@ -176,6 +177,7 @@ class AppState extends ChangeNotifier {
   String? _authUid;
   String? _authUsername;
   AppUserRole? _authAppRole;
+  String? _authRoleCode;
 
   /// Generación de autenticación: se incrementa al cambiar de cuenta o cerrar sesión.
   /// Evita aplicar respuestas asíncronas tardías de la cuenta anterior.
@@ -298,10 +300,12 @@ class AppState extends ChangeNotifier {
 
   AppUserRole get authRole => _authAppRole ?? AppUserRole.operario;
 
+  String get authRoleCode => _authRoleCode ?? _authAppRole?.code ?? '';
+
   bool get canCapture => _hasPermission(Permission.captureRecords);
 
   bool get canImportRecords =>
-      permissionsService.canImportRecords(_authAppRole);
+      permissionsService.canImportRecordsForCode(authRoleCode);
 
   bool get canDeleteRecords => _hasPermission(Permission.deleteRecords);
 
@@ -322,10 +326,10 @@ class AppState extends ChangeNotifier {
 
   bool get canManageSettings => _hasPermission(Permission.manageSettings);
 
-  bool get isReadOnlyUser => permissionsService.isReadOnly(_authAppRole);
+  bool get isReadOnlyUser => permissionsService.isReadOnlyCode(authRoleCode);
 
   bool _hasPermission(Permission permission) {
-    return RolePermissions.has(authRole, permission);
+    return RolePermissions.hasCode(authRoleCode, permission);
   }
 
   void applyAuthProfile(AppUser user) {
@@ -342,7 +346,8 @@ class AppState extends ChangeNotifier {
     _authUid = user.uid;
     _authUsername =
         user.username.isNotEmpty ? user.username : user.effectiveDisplayName;
-    _authAppRole = user.role;
+    _authAppRole = AppUserRole.tryParse(user.roleCode) ?? user.role;
+    _authRoleCode = user.roleCode;
 
     if (switched || firstLogin) {
       _authGeneration++;
@@ -372,6 +377,7 @@ class AppState extends ChangeNotifier {
     _authUid = null;
     _authUsername = null;
     _authAppRole = null;
+    _authRoleCode = null;
     _activeCaptureSessionId = null;
     _pendingClosedSessionReportId = null;
     _pendingClosedPersonalArchiveId = null;
@@ -2091,7 +2097,8 @@ class AppState extends ChangeNotifier {
       accionCorrectiva: accionInmediataController.text.trim(),
       createdByUid: _authUid,
       createdByEmail: _authUsername,
-      createdByRole: _authAppRole?.code,
+      createdByRole:
+          authRoleCode.isNotEmpty ? authRoleCode : _authAppRole?.code,
       captureSessionId: _activeCaptureSessionId,
     );
   }
@@ -2257,7 +2264,7 @@ class AppState extends ChangeNotifier {
       return;
     }
 
-    if (_authAppRole == AppUserRole.operario && _authUid != null) {
+    if (authRoleCode == 'operario' && _authUid != null) {
       final index = records.indexWhere((r) => r.id == recordId);
       if (index >= 0) {
         final record = records[index];

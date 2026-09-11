@@ -12,11 +12,13 @@ abstract class CloudSyncPort {
   /// Suscripción legacy (compatibilidad). Preferir [watchRecentRecords].
   Stream<List<NepRecord>> watchRecords({
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
   });
 
   /// Últimos registros paginados en tiempo real.
   Stream<RecordsPageResult> watchRecentRecords({
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = 50,
   });
 
@@ -25,6 +27,7 @@ abstract class CloudSyncPort {
     required DateTime from,
     required DateTime to,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = 50,
   });
 
@@ -32,6 +35,7 @@ abstract class CloudSyncPort {
   Stream<RecordsPageResult> watchRecordsByFilters({
     required RecordFilters filters,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = 50,
   });
 
@@ -39,6 +43,7 @@ abstract class CloudSyncPort {
   Future<RecordsPageResult> fetchRecordsByFilters({
     required RecordFilters filters,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = reportExportRecordLimit,
   });
 

@@ -21,6 +21,7 @@ class FakeCloudSyncPort implements CloudSyncPort {
   @override
   Stream<List<NepRecord>> watchRecords({
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
   }) {
     lastViewerRole = viewerRole;
     return Stream.value(const []);
@@ -29,6 +30,7 @@ class FakeCloudSyncPort implements CloudSyncPort {
   @override
   Stream<RecordsPageResult> watchRecentRecords({
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = 50,
   }) {
     lastViewerRole = viewerRole;
@@ -41,6 +43,7 @@ class FakeCloudSyncPort implements CloudSyncPort {
     required DateTime from,
     required DateTime to,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = 50,
   }) {
     lastViewerRole = viewerRole;
@@ -52,6 +55,7 @@ class FakeCloudSyncPort implements CloudSyncPort {
   Stream<RecordsPageResult> watchRecordsByFilters({
     required RecordFilters filters,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = 50,
   }) {
     lastViewerRole = viewerRole;
@@ -115,6 +119,7 @@ class FakeCloudSyncPort implements CloudSyncPort {
   Future<RecordsPageResult> fetchRecordsByFilters({
     required RecordFilters filters,
     AppUserRole viewerRole = AppUserRole.operario,
+    String? viewerRoleCode,
     int limit = 50,
   }) async {
     lastViewerRole = viewerRole;

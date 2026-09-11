@@ -1,4 +1,5 @@
 import '../../core/permissions/permission.dart';
+import '../../core/permissions/role_catalog.dart';
 import '../../features/alerts/alerts_screen.dart';
 import '../../features/capture/capture_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
@@ -9,6 +10,7 @@ import '../../features/reports/reports_screen.dart';
 import '../../features/reports/professional/widgets/report_builder_screen.dart';
 import '../../features/settings/settings_screen.dart';
 import '../../features/users/users_screen.dart';
+import '../../features/users/roles_screen.dart';
 import '../../features/analytics/analytics_screen.dart';
 import '../../models/app_user.dart';
 import 'package:flutter/material.dart';
@@ -28,6 +30,7 @@ enum AppNavId {
   reportBuilder,
   export,
   users,
+  roles,
   settings,
 }
 
@@ -134,6 +137,14 @@ class AppNavigation {
       screen: UsersScreen(),
     ),
     AppNavItem(
+      id: AppNavId.roles,
+      label: 'Roles',
+      icon: Icons.security_outlined,
+      selectedIcon: Icons.security,
+      permission: Permission.manageUsers,
+      screen: RolesScreen(),
+    ),
+    AppNavItem(
       id: AppNavId.settings,
       label: 'Config',
       icon: Icons.settings_outlined,
@@ -145,6 +156,7 @@ class AppNavigation {
 
   static List<AppNavItem> visibleFor(AppUser? user) {
     if (user == null || !user.isActive) return [];
+    if (!RoleCatalog.instance.authorizationReady) return [];
     return all.where((item) => user.hasPermission(item.permission)).toList();
   }
 

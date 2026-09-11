@@ -1,9 +1,15 @@
 import '../../models/app_user_role.dart';
 import '../../models/nep_record.dart';
+import 'role_catalog.dart';
 
 /// Roles que pueden leer registros de todos los operarios (alineado con firestore.rules).
 bool canViewWorkspaceRecords(AppUserRole role) {
-  return role.isSupervisorOrAbove || role.isGerencia;
+  return canViewWorkspaceRecordsForCode(role.code);
+}
+
+/// Variante por roleCode (roles parametrizables). Deny-by-default.
+bool canViewWorkspaceRecordsForCode(String? roleCode) {
+  return RoleCatalog.instance.seesWorkspaceRecords(roleCode);
 }
 
 /// Criterio de propiedad verificable.

@@ -153,10 +153,36 @@ node scripts/create_super_admin.js --email admin@empresa.com
 
 Alternativa: crear usuario en Firebase Console y ejecutar el script con `--uid`.
 
+## Roles parametrizables
+
+Fuente de autorización operativa:
+
+`workspaces/vicunha/roles/{roleCode}` → `isActive` + `permissions[]`
+
+- `super_admin` permanece excepción protegida (claims + Rules).
+- Si el documento de rol **existe**, manda Firestore (también si está inactivo → DENY).
+- Si el documento **no existe**, hay fallback legacy solo para roles base (`admin`, `supervisor`, `operario`, `gerencia`, `super_admin`) durante la migración inicial.
+- Permiso `viewWorkspaceRecords`: lectura de registros de todo el workspace.
+  `viewRecords` solo alcanza registros propios.
+- Eliminación física de roles: callable `deleteRole` (Admin SDK). Rules: `allow delete: if false`.
+- Al iniciar sesión, `AuthProvider` carga `RoleDefinition` vía `RoleRepository.ensureAuthorizationForRole` antes de marcar `authorizationReady`.
+
+### Orden de despliegue (después del merge; NO ejecutar en este PR)
+
+1. Cloud Functions compatibles con roles parametrizados (incl. `deleteRole`, `assertAssignableRole`).
+2. Firestore Rules nuevas (backward-compatible con fallback sin seed).
+3. Hosting (app Flutter).
+4. Entrar como `super_admin`.
+5. Sembrar / verificar roles base (`ensureBaseRoles`).
+6. Crear rol de prueba (p. ej. `auditor`).
+7. Asignar usuario de prueba y validar permisos.
+
+Producción actual puede no tener aún Rules para `/roles`: respetar este orden para no romper clientes antiguos.
+
 ## Seguridad
 
 - No confiar solo en ocultar botones del menú.
-- `PermissionGate` bloquea pantallas.
-- Firestore Rules validan `request.auth.token.role`.
-- Cloud Functions validan `super_admin` antes de mutaciones.
+- `PermissionGate` bloquea pantallas; nav respeta `authorizationReady`.
+- Firestore Rules usan `hasPermission(...)` sobre `roles/{roleCode}` (no bypass por nombre de rol si el doc existe).
+- Cloud Functions validan `super_admin` y roles asignables antes de mutaciones.
 - No dejar `bootstrapFirstSuperAdmin` activo en producción sin secreto fuerte.
