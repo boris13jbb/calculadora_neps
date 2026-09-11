@@ -18,12 +18,16 @@ class PermissionsService {
 
   bool canCapture(AppUserRole? role) => has(role, Permission.captureRecords);
 
+  /// Importar escribe registros: exige captura y edición.
+  /// operario/gerencia siguen excluidos por política (aunque el catálogo cambie).
   bool canImportRecords(AppUserRole? role) =>
+      has(role, Permission.captureRecords) &&
       has(role, Permission.editRecords) &&
       role != AppUserRole.operario &&
       role != AppUserRole.gerencia;
 
   bool canImportRecordsForCode(String? roleCode) {
+    if (!hasCode(roleCode, Permission.captureRecords)) return false;
     if (!hasCode(roleCode, Permission.editRecords)) return false;
     final code = RoleCatalog.normalizeRoleCode(roleCode);
     return code != 'operario' && code != 'gerencia';

@@ -1921,8 +1921,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> downloadImportTemplate() async {
-    if (!_requirePermission(
-        canImportRecords, 'descargar plantillas de importación')) {
+    // Solo lectura/export local: no exige capture+edit (sí ver registros).
+    if (!_requirePermission(_hasPermission(Permission.viewRecords),
+        'descargar plantillas de importación')) {
       return;
     }
     try {

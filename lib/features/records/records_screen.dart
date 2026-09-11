@@ -118,14 +118,15 @@ class _RecordsScreenState extends State<RecordsScreen> {
         compactPadding: true,
         denseOnPhone: true,
         actions: [
-          if (appState.canImportRecords) ...[
-            _ActionChip(
-              compact: phone,
-              color: AppColors.primaryGreen,
-              onPressed: () => _downloadTemplate(appState),
-              icon: Icons.download,
-              label: phone ? 'Plantilla' : 'Descargar plantilla',
-            ),
+          // Plantilla solo genera archivo local; visible a quien puede ver Registros.
+          _ActionChip(
+            compact: phone,
+            color: AppColors.primaryGreen,
+            onPressed: () => _downloadTemplate(appState),
+            icon: Icons.download,
+            label: phone ? 'Plantilla' : 'Descargar plantilla',
+          ),
+          if (appState.canImportRecords)
             _ActionChip(
               compact: phone,
               color: AppColors.primaryBlue,
@@ -134,7 +135,6 @@ class _RecordsScreenState extends State<RecordsScreen> {
               loading: isImporting,
               label: phone ? 'Importar' : 'Importar CSV/Excel',
             ),
-          ],
           if (appState.canClearAllRecords)
             _ActionChip(
               compact: phone,

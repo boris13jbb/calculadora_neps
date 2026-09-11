@@ -5,13 +5,17 @@ import 'package:calculadora_neps/core/permissions/record_visibility.dart';
 import 'package:calculadora_neps/core/permissions/role_catalog.dart';
 import 'package:calculadora_neps/core/theme/app_theme.dart';
 import 'package:calculadora_neps/core/widgets/records_table.dart';
+import 'package:calculadora_neps/features/records/records_screen.dart';
 import 'package:calculadora_neps/models/app_user.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
 import 'package:calculadora_neps/models/role_definition.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
+import 'package:calculadora_neps/providers/auth_provider.dart';
 import 'package:calculadora_neps/services/cloud_sync_service.dart';
+import 'package:calculadora_neps/services/permissions_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 RoleDefinition _auditorRole() {
   return RoleDefinition(
@@ -30,12 +34,68 @@ RoleDefinition _auditorRole() {
   );
 }
 
+RoleDefinition _editorSinCapturaRole() {
+  return RoleDefinition(
+    code: 'editor_sin_captura',
+    name: 'Editor Sin Captura',
+    permissions: {
+      Permission.viewRecords,
+      Permission.editRecords,
+    },
+    isActive: true,
+    isSystem: false,
+    isAssignable: true,
+    sortOrder: 70,
+  );
+}
+
+RoleDefinition _capturaSinEdicionRole() {
+  return RoleDefinition(
+    code: 'captura_sin_edicion',
+    name: 'Captura Sin Edición',
+    permissions: {
+      Permission.viewRecords,
+      Permission.captureRecords,
+    },
+    isActive: true,
+    isSystem: false,
+    isAssignable: true,
+    sortOrder: 71,
+  );
+}
+
+RoleDefinition _importadorPruebaRole() {
+  return RoleDefinition(
+    code: 'importador_prueba',
+    name: 'Importador Prueba',
+    permissions: {
+      Permission.viewRecords,
+      Permission.captureRecords,
+      Permission.editRecords,
+    },
+    isActive: true,
+    isSystem: false,
+    isAssignable: true,
+    sortOrder: 72,
+  );
+}
+
 AppUser _auditorUser() {
   return AppUser(
     uid: 'qa-auditor-uid',
     username: '373255',
     displayName: 'jbb',
     roleCode: 'auditor_prueba',
+    isActive: true,
+  );
+}
+
+AppUser _userWithRole(String roleCode) {
+  return AppUser(
+    uid: 'uid-$roleCode',
+    username: roleCode,
+    displayName: roleCode,
+    roleCode: roleCode,
     isActive: true,
   );
 }
@@ -57,6 +117,9 @@ void main() {
     RoleCatalog.instance.replaceAll([
       ...RoleCatalog.baseRoles,
       _auditorRole(),
+      _editorSinCapturaRole(),
+      _capturaSinEdicionRole(),
+      _importadorPruebaRole(),
     ]);
     RoleCatalog.instance.markAuthorizationReady();
   });
@@ -92,6 +155,8 @@ void main() {
   testWidgets('C/D) sin captureRecords no aparece Importar ni Ir a Captura',
       (tester) async {
     final appState = AppState()..applyAuthProfile(_auditorUser());
+    expect(appState.canImportRecords, isFalse);
+    expect(appState.canCapture, isFalse);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -102,8 +167,8 @@ void main() {
             records: const [],
             onDelete: (_) async {},
             onEdit: null,
-            onGoToCapture: null,
-            onGoToImport: null,
+            onGoToCapture: appState.canCapture ? () {} : null,
+            onGoToImport: appState.canImportRecords ? () {} : null,
           ),
         ),
       ),
@@ -129,7 +194,7 @@ void main() {
               appState: appState,
               records: [_sampleRecord()],
               onDelete: (_) async {},
-              onEdit: null,
+              onEdit: appState.canEditRecords ? (_) async {} : null,
             ),
           ),
         ),
@@ -170,5 +235,71 @@ void main() {
     );
     expect(canViewWorkspaceRecordsForCode('auditor_local'), isFalse);
     expect(canViewWorkspaceRecordsForCode('operario'), isFalse);
+  });
+
+  test('I) editor_sin_captura no puede importar (edit sin capture)', () {
+    expect(
+      permissionsService.canImportRecordsForCode('editor_sin_captura'),
+      isFalse,
+    );
+  });
+
+  test('J) captura_sin_edicion no puede importar (capture sin edit)', () {
+    expect(
+      permissionsService.canImportRecordsForCode('captura_sin_edicion'),
+      isFalse,
+    );
+  });
+
+  test('K) importador_prueba puede importar (capture + edit)', () {
+    expect(
+      permissionsService.canImportRecordsForCode('importador_prueba'),
+      isTrue,
+    );
+  });
+
+  testWidgets('L) UI: edit sin capture muestra Plantilla y oculta Importar',
+      (tester) async {
+    final user = _userWithRole('editor_sin_captura');
+    final appState = AppState()..applyAuthProfile(user);
+    final auth = AuthProvider()
+      ..profile = user
+      ..authorizationReady = true;
+
+    expect(appState.canImportRecords, isFalse);
+    expect(appState.canEditRecords, isTrue);
+    expect(appState.canCapture, isFalse);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AppState>.value(value: appState),
+          ChangeNotifierProvider<AuthProvider>.value(value: auth),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.build(),
+          home: const Scaffold(
+            body: SizedBox(
+              width: 1100,
+              height: 800,
+              child: RecordsScreen(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      find.textContaining('Plantilla'),
+      findsWidgets,
+      reason: 'Plantilla debe verse sin permiso de importación',
+    );
+    expect(find.text('Importar'), findsNothing);
+    expect(find.text('Importar CSV/Excel'), findsNothing);
+    expect(find.text('Importar datos'), findsNothing);
+
+    appState.dispose();
   });
 }
