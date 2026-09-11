@@ -4,6 +4,7 @@ const {getFirestore} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
 const {logger} = require("firebase-functions");
 const adminUsers = require("./admin_users");
+const {collectCriticalAlertTokens} = require("./alert_recipients");
 
 initializeApp();
 
@@ -25,7 +26,8 @@ async function getWarningMaxNeps(db) {
 }
 
 /**
- * Notifica a supervisores/administradores cuando se crea un registro crítico.
+ * Notifica a roles con viewAlerts cuando se crea un registro crítico.
+ * RoleDefinition manda si existe; sin seed usa fallback legacy.
  */
 exports.onCriticalRecordCreated = onDocumentCreated(
     {
@@ -46,23 +48,10 @@ exports.onCriticalRecordCreated = onDocumentCreated(
         return;
       }
 
-      const supervisorsSnap = await db
-          .collection(`workspaces/${WORKSPACE_ID}/users`)
-          .where("role", "in", [
-            "supervisor",
-            "admin",
-            "super_admin",
-            "SUPERVISOR",
-            "ADMINISTRADOR",
-          ])
-          .get();
-
-      const tokens = supervisorsSnap.docs
-          .map((doc) => doc.data().fcmToken)
-          .filter((token) => typeof token === "string" && token.length > 0);
+      const tokens = await collectCriticalAlertTokens(db, WORKSPACE_ID);
 
       if (tokens.length === 0) {
-        logger.warn("Sin tokens FCM de supervisores para alerta crítica");
+        logger.warn("Sin tokens FCM elegibles para alerta crítica");
         return;
       }
 
