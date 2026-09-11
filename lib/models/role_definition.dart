@@ -95,14 +95,14 @@ class RoleDefinition {
   factory RoleDefinition.fromJson(Map<String, dynamic> json) {
     final rawPerms = json['permissions'];
     final perms = <Permission>{};
+    // Si existe el arreglo moderno, es la única fuente de verdad.
+    // El bool legacy no puede añadir permisos por encima de ese arreglo.
     if (rawPerms is Iterable) {
       for (final item in rawPerms) {
         final parsed = PermissionCatalog.tryParse(item?.toString());
         if (parsed != null) perms.add(parsed);
       }
-    }
-    // Migración: bool antiguo → permiso explícito.
-    if (json['seesWorkspaceRecords'] == true) {
+    } else if (json['seesWorkspaceRecords'] == true) {
       perms.add(Permission.viewWorkspaceRecords);
     }
 

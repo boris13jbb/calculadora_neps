@@ -711,6 +711,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   late bool _isActive;
   bool _loading = false;
   bool _loadingRoles = true;
+  bool _rolesUnavailable = false;
   List<RoleDefinition> _assignableRoles = const [];
 
   @override
@@ -728,11 +729,15 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
   Future<void> _loadAssignableRoles() async {
     try {
-      await _roleRepo.listRoles(ensureBase: true);
-      final roles = RoleCatalog.instance.listAssignable();
+      final remote = await _roleRepo.listRoles();
+      final roles = remote
+          .where((role) =>
+              role.isActive && role.isAssignable && !role.isSuperAdmin)
+          .toList();
       if (!mounted) return;
       setState(() {
         _assignableRoles = roles;
+        _rolesUnavailable = roles.isEmpty;
         _loadingRoles = false;
         if (!_assignableRoles.any((r) => r.code == _roleCode) &&
             _assignableRoles.isNotEmpty) {
@@ -743,7 +748,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
       ErrorHandler.log(error, stack, 'loadAssignableRoles');
       if (!mounted) return;
       setState(() {
-        _assignableRoles = RoleCatalog.instance.listAssignable();
+        _assignableRoles = const [];
+        _rolesUnavailable = true;
         _loadingRoles = false;
       });
     }
@@ -760,6 +766,17 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_rolesUnavailable ||
+        !_assignableRoles.any((role) => role.code == _roleCode)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No hay roles configurados. Inicialice los roles desde Roles y permisos.',
+          ),
+        ),
+      );
+      return;
+    }
     if (_roleCode == 'super_admin') {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -884,21 +901,27 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: LinearProgressIndicator(),
                         )
-                      : Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _assignableRoles.map((role) {
-                            final selected = _roleCode == role.code;
-                            return ChoiceChip(
-                              label: Text(role.name),
-                              selected: selected,
-                              onSelected: _loading
-                                  ? null
-                                  : (_) =>
-                                      setState(() => _roleCode = role.code),
-                            );
-                          }).toList(),
-                        ),
+                      : _rolesUnavailable
+                          ? const Text(
+                              'No hay roles configurados. Inicialice los roles desde Roles y permisos.',
+                              style: TextStyle(color: AppColors.danger),
+                            )
+                          : Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: _assignableRoles.map((role) {
+                                final selected = _roleCode == role.code;
+                                return ChoiceChip(
+                                  label: Text(role.name),
+                                  selected: selected,
+                                  onSelected: _loading
+                                      ? null
+                                      : (_) => setState(
+                                            () => _roleCode = role.code,
+                                          ),
+                                );
+                              }).toList(),
+                            ),
                 ),
                 AppMaterialSwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -919,7 +942,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
           child: const Text('Cancelar'),
         ),
         FilledButton(
-          onPressed: _loading ? null : _submit,
+          onPressed:
+              _loading || _loadingRoles || _rolesUnavailable ? null : _submit,
           child: _loading
               ? const SizedBox(
                   width: 20,
