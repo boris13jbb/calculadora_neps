@@ -13,14 +13,18 @@ import '../../repositories/role_repository.dart';
 
 /// Administración de roles parametrizables (solo super_admin).
 class RolesScreen extends StatefulWidget {
-  const RolesScreen({super.key});
+  const RolesScreen({super.key, this.repository});
+
+  /// Inyección de pruebas. En producción usa el singleton.
+  final RoleRepository? repository;
 
   @override
   State<RolesScreen> createState() => _RolesScreenState();
 }
 
 class _RolesScreenState extends State<RolesScreen> {
-  final _repo = RoleRepository.instance;
+  late final RoleRepository _repo =
+      widget.repository ?? RoleRepository.instance;
   List<RoleDefinition> _roles = [];
   final Map<String, int> _userCounts = {};
   bool _loading = true;
@@ -38,7 +42,7 @@ class _RolesScreenState extends State<RolesScreen> {
       _error = null;
     });
     try {
-      final roles = await _repo.listRoles(ensureBase: true);
+      final roles = await _repo.listRoles();
       final counts = <String, int>{};
       for (final role in roles) {
         counts[role.code] = await _repo.countUsersWithRole(role.code);
@@ -58,6 +62,41 @@ class _RolesScreenState extends State<RolesScreen> {
         _error = ErrorHandler.userMessage(error);
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _confirmInitializeBaseRoles() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Inicializar roles base'),
+        content: const Text(
+          'Se crearán los roles base del sistema:\n'
+          'super_admin, admin, supervisor, operario y gerencia.\n\n'
+          'Esta acción escribe esos documentos y no se ejecuta sola.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Inicializar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await _repo.ensureBaseRoles();
+      await _load();
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'initializeBaseRoles');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(ErrorHandler.userMessage(error))),
+      );
     }
   }
 
@@ -113,7 +152,7 @@ class _RolesScreenState extends State<RolesScreen> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !mounted) return;
     try {
       await _repo.deleteRole(role.code);
       await _load();
@@ -182,11 +221,18 @@ class _RolesScreenState extends State<RolesScreen> {
                   ),
                 )
               else if (_roles.isEmpty)
-                const Expanded(
+                Expanded(
                   child: EmptyState(
                     icon: Icons.security_outlined,
                     title: 'Sin roles',
                     message: 'No hay roles configurados.',
+                    actions: [
+                      if (profile?.canManageRoles == true)
+                        EmptyStateAction(
+                          label: 'Inicializar roles base',
+                          onPressed: _confirmInitializeBaseRoles,
+                        ),
+                    ],
                   ),
                 )
               else

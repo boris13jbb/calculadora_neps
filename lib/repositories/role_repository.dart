@@ -6,66 +6,59 @@ import 'package:firebase_core/firebase_core.dart';
 import '../core/constants.dart';
 import '../core/permissions/role_catalog.dart';
 import '../models/role_definition.dart';
-import '../utils/firestore_json_helper.dart';
+import 'role_collection_gateway.dart';
 
 /// Persistencia de roles en `workspaces/{id}/roles/{roleCode}`.
 class RoleRepository {
   RoleRepository({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+    RoleCollectionGateway? roles,
+    Future<int> Function(String roleCode)? countUsersWithRole,
+  })  : _firestore = firestore,
+        _auth = auth,
+        _roles = roles ??
+            FirestoreRoleCollectionGateway(
+              firestore ?? FirebaseFirestore.instance,
+            ),
+        _countUsersWithRole = countUsersWithRole;
 
   static RoleRepository? _singleton;
   static RoleRepository get instance => _singleton ??= RoleRepository();
 
-  final FirebaseFirestore _firestore;
-  final FirebaseAuth _auth;
+  final FirebaseFirestore? _firestore;
+  final FirebaseAuth? _auth;
+  final RoleCollectionGateway _roles;
+  final Future<int> Function(String roleCode)? _countUsersWithRole;
 
-  CollectionReference<Map<String, dynamic>> get _rolesRef => _firestore
-      .collection('workspaces')
-      .doc(cloudWorkspaceId)
-      .collection('roles');
-
-  /// Carga roles remotos al [RoleCatalog]. Si no hay docs, siembra bases.
-  Future<List<RoleDefinition>> listRoles({bool ensureBase = true}) async {
-    final snap = await _rolesRef.get();
-    if (snap.docs.isEmpty && ensureBase) {
-      await ensureBaseRoles();
-      final seeded = await _rolesRef.get();
-      return _mapAndCache(seeded.docs);
-    }
-    return _mapAndCache(snap.docs);
-  }
-
-  List<RoleDefinition> _mapAndCache(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final roles = docs.map((doc) {
-      final data = FirestoreJsonHelper.normalizeMap(doc.data());
-      data['code'] ??= doc.id;
-      return RoleDefinition.fromJson(data);
-    }).toList();
+  /// Lee roles remotos. Una lectura nunca crea documentos.
+  Future<List<RoleDefinition>> listRoles() async {
+    final docs = await _roles.listDocuments();
+    final roles = docs.map(RoleDefinition.fromJson).toList()
+      ..sort((a, b) {
+        final byOrder = a.sortOrder.compareTo(b.sortOrder);
+        if (byOrder != 0) return byOrder;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
     RoleCatalog.instance.replaceAll(roles);
-    return RoleCatalog.instance.listAll();
+    return roles;
   }
 
   Future<RoleDefinition?> getRole(String code) async {
     final normalized = RoleCatalog.normalizeRoleCode(code);
     if (normalized == null) return null;
-    final doc = await _rolesRef.doc(normalized).get();
-    if (!doc.exists || doc.data() == null) {
+    final data = await _roles.getDocument(normalized);
+    if (data == null) {
       return RoleCatalog.instance.get(normalized);
     }
-    final data = FirestoreJsonHelper.normalizeMap(doc.data()!);
-    data['code'] ??= doc.id;
     final role = RoleDefinition.fromJson(data);
     RoleCatalog.instance.upsert(role);
     return role;
   }
 
   /// Carga la definición del rol autenticado antes de evaluar permisos.
-  /// Roles base: fallback local si aún no hay doc. Custom: deny si no existe.
+  /// Solo lectura: roles base usan fallback local si no hay documento.
+  /// Un rol custom inexistente se niega y no se crea.
   Future<void> ensureAuthorizationForRole(String roleCode) async {
     final normalized = RoleCatalog.normalizeRoleCode(roleCode) ?? '';
     try {
@@ -93,24 +86,21 @@ class RoleRepository {
     }
   }
 
+  /// Crea los 5 roles base solo si faltan. Idempotente. No es una lectura.
   Future<void> ensureBaseRoles() async {
     final now = DateTime.now().toUtc();
-    final existing = await _rolesRef.get();
-    final existingIds = existing.docs.map((d) => d.id).toSet();
-    final batch = _firestore.batch();
-    var writes = 0;
+    final existing = await _roles.listDocuments();
+    final existingIds = existing
+        .map((doc) => (doc['code'] ?? '').toString())
+        .where((code) => code.isNotEmpty)
+        .toSet();
     for (final role in RoleCatalog.baseRoles) {
       if (existingIds.contains(role.code)) continue;
-      final ref = _rolesRef.doc(role.code);
-      batch.set(ref, {
+      await _roles.setDocument(role.code, {
         ...role.toJson(),
         'createdAt': now.toIso8601String(),
         'updatedAt': now.toIso8601String(),
       });
-      writes++;
-    }
-    if (writes > 0) {
-      await batch.commit();
     }
     RoleCatalog.instance.replaceAll(RoleCatalog.baseRoles);
   }
@@ -124,12 +114,12 @@ class RoleRepository {
     if (RoleCatalog.systemRoleCodes.contains(code)) {
       throw StateError('No se pueden crear roles de sistema');
     }
-    final existing = await _rolesRef.doc(code).get();
-    if (existing.exists) {
+    final existing = await _roles.getDocument(code);
+    if (existing != null) {
       throw StateError('Ya existe un rol con código "$code"');
     }
 
-    final uid = _auth.currentUser?.uid;
+    final uid = _auth?.currentUser?.uid;
     final now = DateTime.now().toUtc();
     final toSave = role.copyWith(
       code: code,
@@ -139,7 +129,7 @@ class RoleRepository {
       updatedAt: now,
       createdBy: uid,
     );
-    await _rolesRef.doc(code).set(toSave.toJson());
+    await _roles.setDocument(code, toSave.toJson());
     RoleCatalog.instance.upsert(toSave);
     return toSave;
   }
@@ -154,7 +144,7 @@ class RoleRepository {
     final current = await getRole(code);
     if (current == null) throw StateError('Rol no encontrado');
 
-    final uid = _auth.currentUser?.uid;
+    final uid = _auth?.currentUser?.uid;
     final now = DateTime.now().toUtc();
     final toSave = role.copyWith(
       code: code,
@@ -163,7 +153,7 @@ class RoleRepository {
       createdAt: current.createdAt,
       createdBy: current.createdBy ?? uid,
     );
-    await _rolesRef.doc(code).set(toSave.toJson(), SetOptions(merge: true));
+    await _roles.setDocument(code, toSave.toJson(), merge: true);
     RoleCatalog.instance.upsert(toSave);
     return toSave;
   }
@@ -188,9 +178,7 @@ class RoleRepository {
       isActive: active,
       updatedAt: DateTime.now().toUtc(),
     );
-    await _rolesRef
-        .doc(normalized)
-        .set(updated.toJson(), SetOptions(merge: true));
+    await _roles.setDocument(normalized, updated.toJson(), merge: true);
     RoleCatalog.instance.upsert(updated);
     return updated;
   }
@@ -207,13 +195,16 @@ class RoleRepository {
       region: 'us-central1',
     ).httpsCallable('deleteRole');
     await callable.call(<String, dynamic>{'code': normalized});
-    await listRoles(ensureBase: false);
+    await listRoles();
   }
 
   Future<int> countUsersWithRole(String code) async {
     final normalized = RoleCatalog.normalizeRoleCode(code);
     if (normalized == null) return 0;
-    final snap = await _firestore
+    final override = _countUsersWithRole;
+    if (override != null) return override(normalized);
+    final firestore = _firestore ?? FirebaseFirestore.instance;
+    final snap = await firestore
         .collection('workspaces')
         .doc(cloudWorkspaceId)
         .collection('users')
