@@ -126,7 +126,9 @@ class PendingSyncQueueService {
   }
 
   Future<void> replaceAll(String uid, List<PendingSyncOp> ops) async {
-    await _save(uid, ops.where((op) => op.ownerUid == uid).toList());
+    // Conserva todas las ops restantes de la cola del actor (incluye deletes
+    // de registros ajenos encolados por roles con permiso global).
+    await _save(uid, List<PendingSyncOp>.from(ops));
   }
 
   Future<void> clear(String uid) async {

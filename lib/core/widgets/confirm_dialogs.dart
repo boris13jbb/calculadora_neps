@@ -20,7 +20,10 @@ Future<bool> confirmDeleteRecord(BuildContext context) async {
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Eliminar registro'),
-      content: const Text('Desea eliminar este registro?'),
+      content: const Text(
+        '¿Desea eliminar este registro?\n'
+        'Esta acción eliminará el registro sincronizado y no se puede deshacer.',
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
