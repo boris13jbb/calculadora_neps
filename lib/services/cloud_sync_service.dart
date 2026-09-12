@@ -70,19 +70,16 @@ class CloudSyncService implements CloudSyncPort {
       throw StateError('Usuario no autenticado. Inicie sesión primero.');
     }
 
+    // Solo enlaza sesión. No escribe workspaces/{id}: roles de solo lectura
+    // (p. ej. auditor_prueba) no tienen manageSettings y Rules denegarían el set.
     _userId = currentUser.uid;
-
-    await _workspace.set(
-      {
-        'name': 'VICUNHA',
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-
     _bootstrapped = true;
     _bootstrapFuture = null;
   }
+
+  /// El bootstrap de sync es read-only: no toca el documento workspace.
+  @visibleForTesting
+  static const bool touchesWorkspaceOnBootstrap = false;
 
   Future<String> _requireUserId() async {
     await bootstrap();

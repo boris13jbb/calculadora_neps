@@ -266,7 +266,7 @@ class _UserChip extends StatelessWidget {
         width >= AppBreakpoints.tablet && !isPhoneLayout(context);
 
     final name = profile?.effectiveDisplayName ?? 'Invitado';
-    final roleLabel = profile?.role.label ?? '';
+    final roleLabel = profile?.roleLabel ?? '';
 
     final avatar = CircleAvatar(
       radius: 16,
