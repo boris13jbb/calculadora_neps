@@ -261,6 +261,11 @@ class _DesktopCaptureLayout extends StatelessWidget {
           records: appState.captureSessionRecords,
           onDelete: appState.deleteRecord,
           onEdit: (record) => _editCaptureRecord(context, appState, record),
+          onShare: (record) => showShareReportMenu(
+            context,
+            appState,
+            initiallySelectedRecord: record,
+          ),
           onClearAll: () => promptNewCaptureSession(context, appState),
         );
 
@@ -385,6 +390,11 @@ class _MobileCaptureLayout extends StatelessWidget {
                 onDelete: appState.deleteRecord,
                 onEdit: (record) =>
                     _editCaptureRecord(context, appState, record),
+                onShare: (record) => showShareReportMenu(
+                  context,
+                  appState,
+                  initiallySelectedRecord: record,
+                ),
                 onClearAll: () => promptNewCaptureSession(context, appState),
               ),
             ],

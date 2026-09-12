@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/export_column.dart';
+import '../../models/nep_record.dart';
 import '../../models/pdf_report_style.dart';
 import '../../providers/app_state.dart';
 import '../theme/app_theme.dart';
@@ -119,79 +120,163 @@ class _ShareReportResult {
     required this.format,
     required this.columns,
     required this.style,
+    required this.selectedRecords,
   });
 
   final String format;
   final Set<ExportColumn> columns;
   final PdfReportStyle style;
+  final List<NepRecord> selectedRecords;
 }
 
+/// Compartir desde Captura: solo registros de hoy del usuario, por selección.
+///
+/// [initiallySelectedRecord] fija la selección inicial (p. ej. fila Compartir).
+/// Si es null, se selecciona únicamente [AppState.latestTodayCaptureRecord].
 Future<void> showShareReportMenu(
   BuildContext context,
-  AppState appState,
-) async {
-  if (appState.visibleRecords.isEmpty) {
-    appState.showMessage('No hay datos para compartir.');
+  AppState appState, {
+  NepRecord? initiallySelectedRecord,
+}) async {
+  final eligible = appState.todayCaptureRecords;
+  if (eligible.isEmpty) {
+    appState.showMessage('No hay registros de hoy para compartir.');
     return;
   }
 
   if (appState.isExporting) return;
 
+  final defaultRecord =
+      initiallySelectedRecord ?? appState.latestTodayCaptureRecord;
+
   final result = await showDialog<_ShareReportResult>(
     context: context,
-    builder: (context) => _ShareReportDialog(
-      recordCount: appState.visibleRecords.length,
+    builder: (context) => ShareCaptureRecordsDialog(
+      eligibleRecords: eligible,
+      initialSelectedId: defaultRecord?.id,
       initialColumns: appState.exportColumns,
       initialStyle: appState.pdfReportStyle,
+      formatDateTime: appState.formatDateTime,
+      formatNeps: appState.formatDecimal,
     ),
   );
 
   if (!context.mounted || result == null) return;
+  if (result.selectedRecords.isEmpty) {
+    appState.showMessage('Seleccione al menos un registro.');
+    return;
+  }
 
   appState.setExportColumns(result.columns);
   appState.setPdfReportStyle(result.style);
 
   switch (result.format) {
     case 'csv':
-      await appState.exportCsv(columns: result.columns, style: result.style);
+      await appState.exportCsv(
+        columns: result.columns,
+        style: result.style,
+        sourceRecords: result.selectedRecords,
+      );
     case 'excel':
-      await appState.exportExcel(columns: result.columns, style: result.style);
+      await appState.exportExcel(
+        columns: result.columns,
+        style: result.style,
+        sourceRecords: result.selectedRecords,
+      );
     case 'pdf':
-      await appState.exportPdf(columns: result.columns, style: result.style);
+      await appState.exportPdf(
+        columns: result.columns,
+        style: result.style,
+        sourceRecords: result.selectedRecords,
+      );
   }
 }
 
 bool captureActionsEnabled(AppState appState) =>
     appState.captureSessionRecords.isNotEmpty && !appState.isExporting;
 
-class _ShareReportDialog extends StatefulWidget {
-  const _ShareReportDialog({
-    required this.recordCount,
+/// Diálogo de selección explícita para Captura → Compartir.
+///
+/// Público para pruebas de widget; los checkboxes son solo estado temporal.
+class ShareCaptureRecordsDialog extends StatefulWidget {
+  const ShareCaptureRecordsDialog({
+    super.key,
+    required this.eligibleRecords,
     required this.initialColumns,
     required this.initialStyle,
+    required this.formatDateTime,
+    required this.formatNeps,
+    this.initialSelectedId,
   });
 
-  final int recordCount;
+  final List<NepRecord> eligibleRecords;
+  final String? initialSelectedId;
   final Set<ExportColumn> initialColumns;
   final PdfReportStyle initialStyle;
+  final String Function(DateTime date) formatDateTime;
+  final String Function(double neps) formatNeps;
 
   @override
-  State<_ShareReportDialog> createState() => _ShareReportDialogState();
+  State<ShareCaptureRecordsDialog> createState() =>
+      ShareCaptureRecordsDialogState();
 }
 
-class _ShareReportDialogState extends State<_ShareReportDialog> {
-  late Set<ExportColumn> _selected;
+class ShareCaptureRecordsDialogState extends State<ShareCaptureRecordsDialog> {
+  late Set<String> _selectedIds;
+  late Set<ExportColumn> _selectedColumns;
   late PdfReportStyle _style;
 
   @override
   void initState() {
     super.initState();
-    _selected = Set<ExportColumn>.from(widget.initialColumns);
+    final initialId = widget.initialSelectedId;
+    final hasInitial = initialId != null &&
+        widget.eligibleRecords.any((record) => record.id == initialId);
+    _selectedIds = hasInitial ? {initialId!} : <String>{};
+    _selectedColumns = Set<ExportColumn>.from(widget.initialColumns);
     _style = widget.initialStyle;
   }
 
+  List<NepRecord> get selectedRecords => widget.eligibleRecords
+      .where((record) => _selectedIds.contains(record.id))
+      .toList(growable: false);
+
+  int get selectedCount => _selectedIds.length;
+
+  bool get canShare =>
+      selectedCount > 0 && ExportColumn.isValidSelection(_selectedColumns);
+
+  void selectAllToday() {
+    setState(() {
+      _selectedIds = widget.eligibleRecords.map((r) => r.id).toSet();
+    });
+  }
+
+  void clearSelection() {
+    setState(() => _selectedIds = <String>{});
+  }
+
+  void toggleRecord(String id, bool? checked) {
+    setState(() {
+      if (checked == true) {
+        _selectedIds.add(id);
+      } else {
+        _selectedIds.remove(id);
+      }
+    });
+  }
+
   void _share(String format) {
-    if (!ExportColumn.isValidSelection(_selected)) {
+    if (selectedCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Seleccione al menos un registro.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (!ExportColumn.isValidSelection(_selectedColumns)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Seleccione al menos una columna.'),
@@ -203,31 +288,125 @@ class _ShareReportDialogState extends State<_ShareReportDialog> {
 
     Navigator.pop(
       context,
-      _ShareReportResult(format: format, columns: _selected, style: _style),
+      _ShareReportResult(
+        format: format,
+        columns: _selectedColumns,
+        style: _style,
+        selectedRecords: selectedRecords,
+      ),
     );
+  }
+
+  String _shareCountLabel() {
+    final count = selectedCount;
+    if (count == 1) return 'Compartir 1 registro';
+    return 'Compartir $count registros';
+  }
+
+  String _rowLabel(NepRecord record) {
+    final time = widget.formatDateTime(record.createdAt).split(' ').last;
+    return '$time | Telar ${record.telar} | Tela ${record.tela} | '
+        'Lote ${record.loteTrama} | Neps ${widget.formatNeps(record.neps)}';
   }
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.sizeOf(context);
+    final maxListHeight = (media.height * 0.35).clamp(140.0, 280.0);
+
     return AlertDialog(
       title: const Text('Compartir registros'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       content: SizedBox(
-        width: 480,
+        width: 520,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Compartir ${widget.recordCount} registro(s). '
-                'Elija las columnas y el formato.',
-                style: const TextStyle(fontSize: 13),
+                _shareCountLabel(),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'El registro más reciente está seleccionado.\n'
+                'Puedes elegir otros registros de hoy si deseas compartirlos juntos.',
+                style: TextStyle(fontSize: 12.5, color: AppColors.muted),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton(
+                    onPressed: selectAllToday,
+                    child: const Text('Seleccionar todos los de hoy'),
+                  ),
+                  OutlinedButton(
+                    onPressed: clearSelection,
+                    child: const Text('Limpiar selección'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (selectedCount == 0)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Seleccione al menos un registro.',
+                    style: TextStyle(
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxListHeight),
+                child: Material(
+                  color: AppColors.surfaceAlt,
+                  borderRadius: BorderRadius.circular(10),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: widget.eligibleRecords.length,
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1, indent: 12, endIndent: 12),
+                    itemBuilder: (context, index) {
+                      final record = widget.eligibleRecords[index];
+                      final checked = _selectedIds.contains(record.id);
+                      return CheckboxListTile(
+                        dense: true,
+                        value: checked,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 0,
+                        ),
+                        title: Text(
+                          _rowLabel(record),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onChanged: (value) => toggleRecord(record.id, value),
+                      );
+                    },
+                  ),
+                ),
               ),
               const SizedBox(height: 14),
               ExportColumnSelector(
                 compact: true,
-                selected: _selected,
-                onChanged: (columns) => setState(() => _selected = columns),
+                selected: _selectedColumns,
+                onChanged: (columns) =>
+                    setState(() => _selectedColumns = columns),
               ),
               const SizedBox(height: 14),
               ReportStyleSelector(
@@ -252,18 +431,18 @@ class _ShareReportDialogState extends State<_ShareReportDialog> {
                     _ShareFormatButton(
                       label: 'CSV',
                       color: AppColors.primaryGreen,
-                      onPressed: () => _share('csv'),
+                      onPressed: canShare ? () => _share('csv') : null,
                     ),
                     _ShareFormatButton(
                       label: 'Excel',
                       color: AppColors.primaryGreen,
-                      onPressed: () => _share('excel'),
+                      onPressed: canShare ? () => _share('excel') : null,
                     ),
                     _ShareFormatButton(
                       label: 'PDF',
                       color: AppColors.accent,
                       foreground: AppColors.textDark,
-                      onPressed: () => _share('pdf'),
+                      onPressed: canShare ? () => _share('pdf') : null,
                     ),
                   ];
 
@@ -378,7 +557,7 @@ class _ShareFormatButton extends StatelessWidget {
   final String label;
   final Color color;
   final Color foreground;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -386,6 +565,8 @@ class _ShareFormatButton extends StatelessWidget {
       style: FilledButton.styleFrom(
         backgroundColor: color,
         foregroundColor: foreground,
+        disabledBackgroundColor: color.withValues(alpha: 0.35),
+        disabledForegroundColor: foreground.withValues(alpha: 0.7),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       ),
       onPressed: onPressed,

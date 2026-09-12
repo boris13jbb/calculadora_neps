@@ -57,6 +57,7 @@ import '../utils/filter_description_helper.dart';
 import '../utils/analytics_records_source.dart';
 import '../utils/lote_trama_helper.dart';
 import '../utils/stable_id.dart';
+import '../utils/today_capture_records.dart';
 import '../services/capture_draft_storage_service.dart';
 import '../services/pending_sync_queue_service.dart';
 import '../services/personal_session_archive_service.dart';
@@ -258,6 +259,25 @@ class AppState extends ChangeNotifier {
       return true;
     }).toList(growable: false);
   }
+
+  /// Registros creados hoy (día local) por el usuario autenticado.
+  ///
+  /// Fuente exclusiva de Captura → Compartir. Excluye otros días, otros
+  /// usuarios y ownership ambiguo.
+  List<NepRecord> get todayCaptureRecords => filterTodayCaptureRecords(
+        records: records,
+        authUid: _authUid,
+      );
+
+  /// Último registro de [todayCaptureRecords] (por `createdAt`), o null.
+  NepRecord? get latestTodayCaptureRecord => resolveLatestTodayCaptureRecord(
+        records: records,
+        authUid: _authUid,
+      );
+
+  /// Resuelve qué lista se exporta: selección explícita o [visibleRecords].
+  List<NepRecord> resolveExportRecords(List<NepRecord>? sourceRecords) =>
+      sourceRecords ?? visibleRecords;
 
   /// Hay texto o selecciones pendientes en el formulario de captura.
   bool get hasCaptureFormDraft {
@@ -1381,12 +1401,14 @@ class AppState extends ChangeNotifier {
   Future<void> exportCsv({
     Set<ExportColumn>? columns,
     PdfReportStyle? style,
+    List<NepRecord>? sourceRecords,
   }) async {
     final selected = columns ?? exportColumns;
     final reportStyle = style ?? pdfReportStyle;
+    final toExport = resolveExportRecords(sourceRecords);
     await runExport(() async {
       await recordExportCoordinator.shareCsv(
-        records: visibleRecords,
+        records: toExport,
         columns: selected,
         style: reportStyle,
         fileTimestamp: timestamp,
@@ -1398,12 +1420,14 @@ class AppState extends ChangeNotifier {
   Future<void> exportExcel({
     Set<ExportColumn>? columns,
     PdfReportStyle? style,
+    List<NepRecord>? sourceRecords,
   }) async {
     final selected = columns ?? exportColumns;
     final reportStyle = style ?? pdfReportStyle;
+    final toExport = resolveExportRecords(sourceRecords);
     await runExport(() async {
       await recordExportCoordinator.shareExcel(
-        records: visibleRecords,
+        records: toExport,
         columns: selected,
         style: reportStyle,
         fileTimestamp: timestamp,
@@ -1415,9 +1439,10 @@ class AppState extends ChangeNotifier {
   Future<Uint8List> buildPdfBytes({
     Set<ExportColumn>? columns,
     PdfReportStyle? style,
+    List<NepRecord>? sourceRecords,
   }) {
     return recordExportCoordinator.buildPdfBytes(
-      records: visibleRecords,
+      records: resolveExportRecords(sourceRecords),
       columns: columns ?? exportColumns,
       style: style ?? pdfReportStyle,
       filtersDescription: filters.hasActiveFilters
@@ -1429,12 +1454,14 @@ class AppState extends ChangeNotifier {
   Future<void> exportPdf({
     Set<ExportColumn>? columns,
     PdfReportStyle? style,
+    List<NepRecord>? sourceRecords,
   }) async {
     final selected = columns ?? exportColumns;
     final reportStyle = style ?? pdfReportStyle;
+    final toExport = resolveExportRecords(sourceRecords);
     await runExport(() async {
       await recordExportCoordinator.sharePdf(
-        records: visibleRecords,
+        records: toExport,
         columns: selected,
         style: reportStyle,
         fileTimestamp: timestamp,

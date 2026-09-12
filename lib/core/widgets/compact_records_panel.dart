@@ -14,6 +14,7 @@ class CompactRecordsPanel extends StatelessWidget {
     required this.records,
     required this.onDelete,
     this.onEdit,
+    this.onShare,
     this.onClearAll,
   });
 
@@ -21,6 +22,7 @@ class CompactRecordsPanel extends StatelessWidget {
   final List<NepRecord> records;
   final Future<void> Function(String id) onDelete;
   final Future<void> Function(NepRecord record)? onEdit;
+  final void Function(NepRecord record)? onShare;
   final VoidCallback? onClearAll;
 
   @override
@@ -68,6 +70,7 @@ class CompactRecordsPanel extends StatelessWidget {
                           records: sorted,
                           onDelete: onDelete,
                           onEdit: onEdit,
+                          onShare: onShare,
                           minWidth: constraints.maxWidth,
                         );
                       }
@@ -85,6 +88,7 @@ class CompactRecordsPanel extends StatelessWidget {
                             appState: appState,
                             onDelete: onDelete,
                             onEdit: onEdit,
+                            onShare: onShare,
                           );
                         },
                       );
@@ -222,12 +226,14 @@ class _WideRecordsTable extends StatefulWidget {
     required this.onDelete,
     required this.minWidth,
     this.onEdit,
+    this.onShare,
   });
 
   final AppState appState;
   final List<NepRecord> records;
   final Future<void> Function(String id) onDelete;
   final Future<void> Function(NepRecord record)? onEdit;
+  final void Function(NepRecord record)? onShare;
   final double minWidth;
 
   @override
@@ -260,6 +266,7 @@ class _WideRecordsTableState extends State<_WideRecordsTable> {
                 records: widget.records,
                 onDelete: widget.onDelete,
                 onEdit: widget.onEdit,
+                onShare: widget.onShare,
               ),
             ),
           ),
@@ -275,12 +282,14 @@ class _CompactDataTable extends StatelessWidget {
     required this.records,
     required this.onDelete,
     this.onEdit,
+    this.onShare,
   });
 
   final AppState appState;
   final List<NepRecord> records;
   final Future<void> Function(String id) onDelete;
   final Future<void> Function(NepRecord record)? onEdit;
+  final void Function(NepRecord record)? onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -339,6 +348,20 @@ class _CompactDataTable extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (onShare != null)
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints:
+                          const BoxConstraints(minWidth: 32, minHeight: 32),
+                      tooltip: 'Compartir',
+                      icon: const Icon(
+                        Icons.ios_share,
+                        size: 18,
+                        color: AppColors.primaryGreen,
+                      ),
+                      onPressed: () => onShare!(item),
+                    ),
                   if (onEdit != null)
                     IconButton(
                       visualDensity: VisualDensity.compact,
@@ -387,6 +410,7 @@ class _CompactRecordTile extends StatelessWidget {
     required this.appState,
     required this.onDelete,
     this.onEdit,
+    this.onShare,
   });
 
   final int index;
@@ -394,6 +418,7 @@ class _CompactRecordTile extends StatelessWidget {
   final AppState appState;
   final Future<void> Function(String id) onDelete;
   final Future<void> Function(NepRecord record)? onEdit;
+  final void Function(NepRecord record)? onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -430,6 +455,19 @@ class _CompactRecordTile extends StatelessWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (onShare != null)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              tooltip: 'Compartir',
+              icon: const Icon(
+                Icons.ios_share,
+                color: AppColors.primaryGreen,
+                size: 18,
+              ),
+              onPressed: () => onShare!(item),
+            ),
           if (onEdit != null)
             IconButton(
               visualDensity: VisualDensity.compact,
