@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/errors/error_handler.dart';
@@ -69,19 +70,16 @@ class CloudSyncService implements CloudSyncPort {
       throw StateError('Usuario no autenticado. Inicie sesión primero.');
     }
 
+    // Solo enlaza sesión. No escribe workspaces/{id}: roles de solo lectura
+    // (p. ej. auditor_prueba) no tienen manageSettings y Rules denegarían el set.
     _userId = currentUser.uid;
-
-    await _workspace.set(
-      {
-        'name': 'VICUNHA',
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
-
     _bootstrapped = true;
     _bootstrapFuture = null;
   }
+
+  /// El bootstrap de sync es read-only: no toca el documento workspace.
+  @visibleForTesting
+  static const bool touchesWorkspaceOnBootstrap = false;
 
   Future<String> _requireUserId() async {
     await bootstrap();
