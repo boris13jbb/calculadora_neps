@@ -21,6 +21,7 @@ class RecordsTable extends StatelessWidget {
     this.totalSourceCount,
     this.onClearFilters,
     this.onGoToCapture,
+    this.onGoToImport,
   });
 
   final AppState appState;
@@ -30,6 +31,7 @@ class RecordsTable extends StatelessWidget {
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
+  final VoidCallback? onGoToImport;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +57,7 @@ class RecordsTable extends StatelessWidget {
                     totalSourceCount: totalSourceCount,
                     onClearFilters: onClearFilters,
                     onGoToCapture: onGoToCapture,
+                    onGoToImport: onGoToImport,
                   )
                 : _DesktopRecordsTable(
                     appState: appState,
@@ -64,6 +67,7 @@ class RecordsTable extends StatelessWidget {
                     totalSourceCount: totalSourceCount,
                     onClearFilters: onClearFilters,
                     onGoToCapture: onGoToCapture,
+                    onGoToImport: onGoToImport,
                   ),
           ),
         );
@@ -81,6 +85,7 @@ class _MobileRecordsList extends StatelessWidget {
     this.totalSourceCount,
     this.onClearFilters,
     this.onGoToCapture,
+    this.onGoToImport,
   });
 
   final AppState appState;
@@ -90,6 +95,7 @@ class _MobileRecordsList extends StatelessWidget {
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
+  final VoidCallback? onGoToImport;
 
   bool get _isFilteredEmpty {
     final total = totalSourceCount;
@@ -103,7 +109,7 @@ class _MobileRecordsList extends StatelessWidget {
         isFiltered: _isFilteredEmpty,
         onClearFilters: onClearFilters,
         onGoToCapture: onGoToCapture,
-        onGoToImport: () => appState.setNavigationIndex(2),
+        onGoToImport: onGoToImport,
         compact: true,
       );
     }
@@ -211,23 +217,14 @@ class _MobileRecordsList extends StatelessWidget {
                   ),
                   onPressed: () => onEdit!(item),
                 ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                tooltip: 'Eliminar',
-                icon: const Icon(
-                  Icons.delete_outline,
-                  color: AppColors.danger,
-                  size: 18,
-                ),
-                onPressed: appState.canDeleteRecords
-                    ? () async {
-                        if (await confirmDeleteRecord(context)) {
-                          await onDelete(item.id);
-                        }
-                      }
-                    : null,
+              _DeleteRecordIconButton(
+                canDelete: appState.canDeleteRecords,
+                compact: true,
+                onConfirmDelete: () async {
+                  if (await confirmDeleteRecord(context)) {
+                    await onDelete(item.id);
+                  }
+                },
               ),
             ],
           ),
@@ -246,6 +243,7 @@ class _DesktopRecordsTable extends StatefulWidget {
     this.totalSourceCount,
     this.onClearFilters,
     this.onGoToCapture,
+    this.onGoToImport,
   });
 
   final AppState appState;
@@ -255,6 +253,7 @@ class _DesktopRecordsTable extends StatefulWidget {
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
+  final VoidCallback? onGoToImport;
 
   @override
   State<_DesktopRecordsTable> createState() => _DesktopRecordsTableState();
@@ -283,7 +282,7 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
         isFiltered: _isFilteredEmpty,
         onClearFilters: widget.onClearFilters,
         onGoToCapture: widget.onGoToCapture,
-        onGoToImport: () => appState.setNavigationIndex(2),
+        onGoToImport: widget.onGoToImport,
       );
     }
 
@@ -400,21 +399,13 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
                                     color: AppColors.primaryBlue,
                                   ),
                                 ),
-                              IconButton(
-                                tooltip: 'Eliminar',
-                                onPressed: appState.canDeleteRecords
-                                    ? () async {
-                                        if (await confirmDeleteRecord(
-                                          context,
-                                        )) {
-                                          await widget.onDelete(item.id);
-                                        }
-                                      }
-                                    : null,
-                                icon: const Icon(
-                                  Icons.delete,
-                                  color: AppColors.danger,
-                                ),
+                              _DeleteRecordIconButton(
+                                canDelete: appState.canDeleteRecords,
+                                onConfirmDelete: () async {
+                                  if (await confirmDeleteRecord(context)) {
+                                    await widget.onDelete(item.id);
+                                  }
+                                },
                               ),
                             ],
                           ),
@@ -626,6 +617,37 @@ class _RecordsEmptyState extends StatelessWidget {
             onPressed: onGoToImport!,
           ),
       ],
+    );
+  }
+}
+
+/// Papelera con estado visual coherente: rojo solo si hay permiso de borrar.
+class _DeleteRecordIconButton extends StatelessWidget {
+  const _DeleteRecordIconButton({
+    required this.canDelete,
+    required this.onConfirmDelete,
+    this.compact = false,
+  });
+
+  final bool canDelete;
+  final Future<void> Function() onConfirmDelete;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabledColor = Theme.of(context).disabledColor;
+    return IconButton(
+      visualDensity: compact ? VisualDensity.compact : null,
+      padding: compact ? EdgeInsets.zero : null,
+      constraints:
+          compact ? const BoxConstraints(minWidth: 32, minHeight: 32) : null,
+      tooltip: canDelete ? 'Eliminar' : 'Sin permiso para eliminar',
+      onPressed: canDelete ? () => onConfirmDelete() : null,
+      icon: Icon(
+        compact ? Icons.delete_outline : Icons.delete,
+        size: compact ? 18 : null,
+        color: canDelete ? AppColors.danger : disabledColor,
+      ),
     );
   }
 }

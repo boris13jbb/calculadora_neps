@@ -112,7 +112,7 @@ class _AppShellState extends State<AppShell> {
                       () => _sidebarExtendedPreference = !extended,
                     ),
                     userName: auth.profile?.effectiveDisplayName,
-                    userRole: auth.profile?.role.label,
+                    userRole: auth.profile?.roleLabel,
                     onSignOut: auth.signOut,
                   ),
                   const VerticalDivider(width: 1, thickness: 1),
