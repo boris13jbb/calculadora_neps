@@ -414,6 +414,8 @@ class AppState extends ChangeNotifier {
         _pendingClosedPersonalArchiveId = null;
         _activeCaptureSessionId = null;
         _savedCaptureRecordIds.clear();
+        // Vista temporal de informe: no sobrevive al cambio de UID.
+        viewingSavedReport = null;
       }
       unawaited(_bootstrapUserLocalState(user.uid, generation));
     }
@@ -437,6 +439,7 @@ class AppState extends ChangeNotifier {
     _pendingClosedSessionReportId = null;
     _pendingClosedPersonalArchiveId = null;
     _savedCaptureRecordIds.clear();
+    viewingSavedReport = null;
     recordsScope.clear();
     clearCaptureFields(preserveCatalogDefaults: false);
     unawaited(recordLocalStorageService.bindUser(null));

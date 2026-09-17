@@ -322,90 +322,93 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (!opened || !mounted) return;
 
     final viewed = appState.viewingSavedReport ?? report;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        final phone = MediaQuery.sizeOf(dialogContext).width < 600;
-        return AlertDialog(
-          title: Text(viewed.name),
-          content: SizedBox(
-            width: phone ? double.maxFinite : 520,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${_formatDate(viewed.createdAt)} · ${viewed.records.length} reg.',
-                  style: const TextStyle(color: AppColors.muted),
-                ),
-                const SizedBox(height: 12),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: phone ? 320 : 420,
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          final phone = MediaQuery.sizeOf(dialogContext).width < 600;
+          return AlertDialog(
+            title: Text(viewed.name),
+            content: SizedBox(
+              width: phone ? double.maxFinite : 520,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_formatDate(viewed.createdAt)} · ${viewed.records.length} reg.',
+                    style: const TextStyle(color: AppColors.muted),
                   ),
-                  child: viewed.records.isEmpty
-                      ? const Text('Este informe no contiene registros.')
-                      : ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: viewed.records.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final record = viewed.records[index];
-                            return ListTile(
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(
-                                '${record.tela} · Telar ${record.telar}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
+                  const SizedBox(height: 12),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: phone ? 320 : 420,
+                    ),
+                    child: viewed.records.isEmpty
+                        ? const Text('Este informe no contiene registros.')
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: viewed.records.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final record = viewed.records[index];
+                              return ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(
+                                  '${record.tela} · Telar ${record.telar}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
                                 ),
-                              ),
-                              subtitle: Text(
-                                'Neps ${appState.formatDecimal(record.neps)} · '
-                                'Lote ${record.loteTrama} · '
-                                '${_formatDate(record.createdAt)}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
+                                subtitle: Text(
+                                  'Neps ${appState.formatDecimal(record.neps)} · '
+                                  'Lote ${record.loteTrama} · '
+                                  '${_formatDate(record.createdAt)}',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Cerrar'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-                await _shareSingle(viewed, 'csv');
-              },
-              child: const Text('CSV'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-                await _shareSingle(viewed, 'excel');
-              },
-              child: const Text('Excel'),
-            ),
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(dialogContext);
-                await _shareSingle(viewed, 'pdf');
-              },
-              child: const Text('PDF'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (mounted) {
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cerrar'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  await _shareSingle(viewed, 'csv');
+                },
+                child: const Text('CSV'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  await _shareSingle(viewed, 'excel');
+                },
+                child: const Text('Excel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  await _shareSingle(viewed, 'pdf');
+                },
+                child: const Text('PDF'),
+              ),
+            ],
+          );
+        },
+      );
+    } finally {
+      // Pertenecer a AppState: limpiar aunque el widget se desmonte.
+      // Idempotente si auth ya limpió viewingSavedReport.
       appState.clearViewingSavedReport();
     }
   }

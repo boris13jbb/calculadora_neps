@@ -331,4 +331,224 @@ void main() {
       state.dispose();
     });
   });
+
+  group('VIEW-AUTH aislamiento viewingSavedReport', () {
+    test('VIEW-AUTH-1 cambio de UID limpia viewingSavedReport', () async {
+      final cloud = _TrackingCloudSync();
+      final state = await readyState(cloud: cloud);
+      final liveA = _live(id: 'LIVE-A1', uid: 'user-a');
+      state.records = [liveA];
+      await state.recordsScope.persistLocally();
+
+      final reportA = SavedReport(
+        id: 'rep-a',
+        name: 'Informe A',
+        createdAt: DateTime(2026, 8, 2),
+        records: [_hist(id: 'HIST-A')],
+        createdByUid: 'user-a',
+      );
+      final opened = await state.openSavedReportView(reportA);
+      expect(opened, isTrue);
+      expect(state.viewingSavedReport, isNotNull);
+      expect(state.viewingSavedReport!.id, 'rep-a');
+
+      final replaceBefore = cloud.replaceCalls;
+      final clearBefore = cloud.clearCalls;
+      final upsertBatchBefore = cloud.upsertBatchCalls;
+      final upsertSingleBefore = cloud.upsertSingleCalls;
+
+      // Reinicia perfil como usuario B (cambio real de UID).
+      state.applyAuthProfile(
+        AppUser(uid: 'user-b', username: 'userb', role: AppUserRole.admin),
+      );
+
+      expect(state.viewingSavedReport, isNull);
+      // Registros del usuario A no se transfieren al cambiar UID.
+      expect(state.records.any((r) => r.id == 'LIVE-A1'), isFalse);
+      // Limpiar la vista no dispara escritura cloud.
+      expect(cloud.replaceCalls, replaceBefore);
+      expect(cloud.clearCalls, clearBefore);
+      expect(cloud.upsertBatchCalls, upsertBatchBefore);
+      expect(cloud.upsertSingleCalls, upsertSingleBefore);
+
+      cloud.dispose();
+      state.dispose();
+    });
+
+    test('VIEW-AUTH-2 logout limpia viewingSavedReport', () async {
+      final state = await readyState();
+      final opened = await state.openSavedReportView(
+        SavedReport(
+          id: 'rep-logout',
+          name: 'Informe logout',
+          createdAt: DateTime(2026, 8, 2),
+          records: [_hist(id: 'HIST-L')],
+          createdByUid: 'admin-uid',
+        ),
+      );
+      expect(opened, isTrue);
+      expect(state.viewingSavedReport, isNotNull);
+
+      state.resetCloudSession();
+
+      expect(state.viewingSavedReport, isNull);
+      state.dispose();
+    });
+
+    test(
+      'SAVED_REPORT_USER_ISOLATION A→B nunca observa informe de A',
+      () async {
+        final state = await readyState();
+        final reportA = SavedReport(
+          id: 'rep-a',
+          name: 'Informe A',
+          createdAt: DateTime(2026, 8, 1),
+          records: [_hist(id: 'HIST-A')],
+          createdByUid: 'user-a',
+        );
+        final reportB = SavedReport(
+          id: 'rep-b',
+          name: 'Informe B',
+          createdAt: DateTime(2026, 8, 2),
+          records: [_hist(id: 'HIST-B')],
+          createdByUid: 'user-b',
+        );
+
+        state.applyAuthProfile(
+          AppUser(uid: 'user-a', username: 'usera', role: AppUserRole.admin),
+        );
+        await Future<void>.delayed(Duration.zero);
+        final openedA = await state.openSavedReportView(reportA);
+        expect(openedA, isTrue);
+        expect(state.viewingSavedReport?.id, 'rep-a');
+
+        state.applyAuthProfile(
+          AppUser(uid: 'user-b', username: 'userb', role: AppUserRole.admin),
+        );
+        expect(state.viewingSavedReport, isNull);
+
+        final openedB = await state.openSavedReportView(reportB);
+        expect(openedB, isTrue);
+        expect(state.viewingSavedReport?.id, 'rep-b');
+        expect(state.viewingSavedReport?.id, isNot('rep-a'));
+
+        state.dispose();
+      },
+    );
+  });
+
+  group('LEGACY loadReport read-only', () {
+    test('LEGACY-1 loadReport NO reemplaza records vivos', () async {
+      final state = await readyState();
+      state.records = [
+        _live(id: 'LIVE1', uid: 'admin-uid'),
+        _live(id: 'LIVE2', uid: 'admin-uid'),
+      ];
+      await state.recordsScope.persistLocally();
+
+      await state.loadReport(
+        SavedReport(
+          id: 'rep-legacy',
+          name: 'Histórico legacy',
+          createdAt: DateTime(2026, 8, 2),
+          records: [_hist(id: 'HIST1')],
+          createdByUid: 'admin-uid',
+        ),
+      );
+
+      expect(state.records.map((r) => r.id).toSet(), {'LIVE1', 'LIVE2'});
+      expect(state.records.any((r) => r.id == 'HIST1'), isFalse);
+      state.dispose();
+    });
+
+    test('LEGACY-2 loadReport NO cambia activeCaptureSessionId', () async {
+      final state = await readyState();
+      final sessionBefore = state.activeCaptureSessionId;
+      expect(sessionBefore, isNotNull);
+
+      await state.loadReport(
+        SavedReport(
+          id: 'rep-legacy',
+          name: 'Histórico legacy',
+          createdAt: DateTime(2026, 8, 2),
+          records: [_hist(id: 'HIST1')],
+          createdByUid: 'admin-uid',
+        ),
+      );
+
+      expect(state.activeCaptureSessionId, sessionBefore);
+      state.dispose();
+    });
+
+    test('LEGACY-3 loadReport NO cambia savedCaptureRecordIds', () async {
+      final state = await readyState();
+      state.records = [_live(id: 'LIVE1', uid: 'admin-uid')];
+      await savedCaptureIdsStorageService.save(
+        uid: 'admin-uid',
+        captureSessionId: state.activeCaptureSessionId!,
+        ids: {'LIVE1'},
+      );
+      await state.ensureCaptureSessionReady();
+      final before = Set<String>.from(state.savedCaptureRecordIds);
+      expect(before, contains('LIVE1'));
+
+      await state.loadReport(
+        SavedReport(
+          id: 'rep-legacy',
+          name: 'Histórico legacy',
+          createdAt: DateTime(2026, 8, 2),
+          records: [_hist(id: 'HIST1')],
+          createdByUid: 'admin-uid',
+        ),
+      );
+
+      expect(state.savedCaptureRecordIds, before);
+      state.dispose();
+    });
+
+    test('LEGACY-4 loadReport NO llama replace/clear/upsert cloud', () async {
+      final cloud = _TrackingCloudSync();
+      final state = await readyState(cloud: cloud);
+      state.records = [
+        _live(id: 'LIVE1', uid: 'admin-uid'),
+        _live(id: 'LIVE2', uid: 'admin-uid'),
+      ];
+
+      await state.loadReport(
+        SavedReport(
+          id: 'rep-legacy',
+          name: 'Histórico legacy',
+          createdAt: DateTime(2026, 8, 2),
+          records: [_hist(id: 'HIST1')],
+          createdByUid: 'admin-uid',
+        ),
+      );
+
+      expect(cloud.replaceCalls, 0);
+      expect(cloud.clearCalls, 0);
+      expect(cloud.upsertBatchCalls, 0);
+      expect(cloud.upsertSingleCalls, 0);
+      cloud.dispose();
+      state.dispose();
+    });
+
+    test('LEGACY-5 loadReport deja viewingSavedReport para vista read-only',
+        () async {
+      final state = await readyState();
+      await state.loadReport(
+        SavedReport(
+          id: 'rep-legacy',
+          name: 'Histórico legacy',
+          createdAt: DateTime(2026, 8, 2),
+          records: [_hist(id: 'HIST1')],
+          createdByUid: 'admin-uid',
+        ),
+      );
+
+      expect(state.viewingSavedReport, isNotNull);
+      expect(state.viewingSavedReport!.id, 'rep-legacy');
+      expect(state.viewingSavedReport!.records.map((r) => r.id), ['HIST1']);
+      state.dispose();
+    });
+  });
 }
