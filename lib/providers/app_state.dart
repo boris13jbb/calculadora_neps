@@ -59,6 +59,7 @@ import '../utils/lote_trama_helper.dart';
 import '../utils/stable_id.dart';
 import '../utils/today_capture_records.dart';
 import '../services/capture_draft_storage_service.dart';
+import '../services/saved_capture_ids_storage_service.dart';
 import '../services/pending_sync_queue_service.dart';
 import '../services/personal_session_archive_service.dart';
 import '../services/record_local_storage_service.dart';
@@ -195,6 +196,9 @@ class AppState extends ChangeNotifier {
   /// Sesión de captura activa del usuario autenticado (lista/contadores de Capturar).
   String? _activeCaptureSessionId;
 
+  /// IDs de registros de la sesión actual ya incluidos en un informe Guardar.
+  final Set<String> _savedCaptureRecordIds = <String>{};
+
   /// Si es true, se pueden rellenar tela/lote por defecto al cargar preferencias.
   /// Se desactiva al iniciar una sesión nueva vacía.
   bool _autoFillCaptureDefaults = true;
@@ -258,6 +262,27 @@ class AppState extends ChangeNotifier {
       if (owner != null && owner.isNotEmpty && owner != uid) return false;
       return true;
     }).toList(growable: false);
+  }
+
+  /// IDs de la sesión actual ya guardados en un informe (Captura → Guardar).
+  Set<String> get savedCaptureRecordIds =>
+      Set<String>.unmodifiable(_savedCaptureRecordIds);
+
+  /// Registros de la sesión aún no incluidos en un Guardar exitoso.
+  List<NepRecord> get pendingCaptureSessionRecords {
+    final saved = _savedCaptureRecordIds;
+    return captureSessionRecords
+        .where((record) => !saved.contains(record.id))
+        .toList(growable: false);
+  }
+
+  /// Último pendiente de la sesión (por `createdAt`), o null.
+  NepRecord? get latestPendingCaptureSessionRecord {
+    final pending = pendingCaptureSessionRecords;
+    if (pending.isEmpty) return null;
+    return pending.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
   }
 
   /// Registros creados hoy (día local) por el usuario autenticado.
@@ -386,6 +411,7 @@ class AppState extends ChangeNotifier {
         _pendingClosedSessionReportId = null;
         _pendingClosedPersonalArchiveId = null;
         _activeCaptureSessionId = null;
+        _savedCaptureRecordIds.clear();
       }
       unawaited(_bootstrapUserLocalState(user.uid, generation));
     }
@@ -408,6 +434,7 @@ class AppState extends ChangeNotifier {
     _activeCaptureSessionId = null;
     _pendingClosedSessionReportId = null;
     _pendingClosedPersonalArchiveId = null;
+    _savedCaptureRecordIds.clear();
     recordsScope.clear();
     clearCaptureFields(preserveCatalogDefaults: false);
     unawaited(recordLocalStorageService.bindUser(null));
@@ -462,6 +489,20 @@ class AppState extends ChangeNotifier {
       // No adopta registros legacy ambiguos ni ajenos.
     }
     _activeCaptureSessionId = sessionId;
+    await _loadSavedCaptureIdsForSession(uid, sessionId);
+  }
+
+  Future<void> _loadSavedCaptureIdsForSession(
+    String uid,
+    String sessionId,
+  ) async {
+    final loaded = await savedCaptureIdsStorageService.load(
+      uid: uid,
+      captureSessionId: sessionId,
+    );
+    _savedCaptureRecordIds
+      ..clear()
+      ..addAll(loaded);
   }
 
   Future<void> _persistActiveCaptureSessionId(
@@ -1516,10 +1557,9 @@ class AppState extends ChangeNotifier {
     if (!_requirePermission(canManageReports, 'guardar informes')) {
       return;
     }
-    final source = recordsOverride ??
-        (filters.hasActiveFilters
-            ? visibleRecords
-            : List<NepRecord>.from(records));
+    // Sin override: solo visibles (filtros de Registros/Exportar).
+    // Captura → Guardar debe usar [saveCaptureReport] con sourceRecords.
+    final source = List<NepRecord>.from(recordsOverride ?? visibleRecords);
 
     if (source.isEmpty) {
       showMessage('No hay registros para guardar como informe.');
@@ -1558,6 +1598,100 @@ class AppState extends ChangeNotifier {
       showMessage(
         'No se pudo guardar el informe: ${ErrorHandler.userMessage(error)}',
       );
+    }
+  }
+
+  /// Guarda un informe desde Captura con [sourceRecords] exactos.
+  ///
+  /// Solo acepta pendientes de la sesión actual. Tras éxito marca esos IDs;
+  /// si falla, no marca nada. No usa `records` ni `visibleRecords`.
+  Future<bool> saveCaptureReport(
+    String name, {
+    required List<NepRecord> sourceRecords,
+  }) async {
+    if (!_requirePermission(canManageReports, 'guardar informes')) {
+      return false;
+    }
+
+    final selected = List<NepRecord>.from(sourceRecords);
+    if (selected.isEmpty) {
+      showMessage('Seleccione al menos un registro.');
+      return false;
+    }
+
+    final pendingIds =
+        pendingCaptureSessionRecords.map((record) => record.id).toSet();
+    final invalid = selected.any((record) => !pendingIds.contains(record.id));
+    if (invalid) {
+      showMessage(
+        'Selección inválida: solo puede guardar registros pendientes '
+        'de esta sesión.',
+      );
+      return false;
+    }
+
+    try {
+      final report = await reportStorageService.saveReport(
+        name: name.trim().isEmpty ? 'Informe $timestamp' : name.trim(),
+        records: selected,
+        appliedFilters: null,
+        saveFiles: !kIsWeb,
+        exportStyle: pdfReportStyle,
+        createdByUid: _authUid,
+      );
+
+      // Solo tras persistencia exitosa del informe: disco y luego memoria.
+      final addedIds = selected.map((record) => record.id).toSet();
+      final nextSaved = {..._savedCaptureRecordIds, ...addedIds};
+      final uid = _authUid;
+      final sessionId = _activeCaptureSessionId;
+      if (uid != null &&
+          uid.isNotEmpty &&
+          sessionId != null &&
+          sessionId.isNotEmpty) {
+        try {
+          await savedCaptureIdsStorageService.save(
+            uid: uid,
+            captureSessionId: sessionId,
+            ids: nextSaved,
+          );
+        } catch (persistError, persistStack) {
+          ErrorHandler.log(
+            persistError,
+            persistStack,
+            'persistSavedCaptureIds',
+          );
+        }
+      }
+      _savedCaptureRecordIds
+        ..clear()
+        ..addAll(nextSaved);
+      notifyListeners();
+
+      try {
+        if (cloudSyncEnabled) {
+          showMessage('Informe "${report.name}" guardado en la nube.');
+        } else if (!kIsWeb) {
+          final folder = await reportStorageService.getReportsDirectory();
+          showMessage(
+            'Informe "${report.name}" guardado. Archivos en: ${folder.path}',
+          );
+        } else {
+          showMessage(
+            'Informe "${report.name}" guardado. '
+            'Sincronice con Firebase para compartirlo con el equipo.',
+          );
+        }
+      } catch (_) {
+        showMessage('Informe "${report.name}" guardado.');
+      }
+      return true;
+    } catch (error, stack) {
+      ErrorHandler.log(error, stack, 'saveCaptureReport');
+      showMessage(
+        'No se pudo guardar el informe: ${ErrorHandler.userMessage(error)}',
+      );
+      return false;
     }
   }
 
@@ -1719,6 +1853,12 @@ class AppState extends ChangeNotifier {
       _activeCaptureSessionId = newSessionId;
       _pendingClosedSessionReportId = null;
       _pendingClosedPersonalArchiveId = null;
+      _savedCaptureRecordIds.clear();
+      await savedCaptureIdsStorageService.save(
+        uid: uid,
+        captureSessionId: newSessionId,
+        ids: const <String>{},
+      );
       // Evita que preferencias o restauración de borrador rellenen la sesión.
       _autoFillCaptureDefaults = false;
       await captureDraftStorageService.clearForUid(uid);
@@ -1793,6 +1933,7 @@ class AppState extends ChangeNotifier {
       await _persistActiveCaptureSessionId(uid, archive.captureSessionId);
       if (!_isAuthContextValid(generation, uid)) return false;
       _activeCaptureSessionId = archive.captureSessionId;
+      await _loadSavedCaptureIdsForSession(uid, archive.captureSessionId);
 
       records = await recordsScope.loadFromPreferences();
       if (!_isAuthContextValid(generation, uid)) return false;

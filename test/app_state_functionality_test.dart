@@ -222,4 +222,46 @@ void main() {
       stateB.dispose();
     });
   });
+
+  group('Guardar informe', () {
+    test('con sourceRecords guarda solo la sesión pendiente, no el workspace',
+        () async {
+      final state = await createReadyState(role: AppUserRole.admin);
+      state.records = [
+        for (var i = 0; i < 5; i++)
+          NepRecord(
+            id: 'hist_$i',
+            telar: '$i',
+            neps: 10,
+            tela: 'BOLTON',
+            loteTrama: 'L$i',
+            createdAt: DateTime(2026, 9, 1, i),
+            captureSessionId: 'ses_old',
+          ),
+      ];
+      state.useManualFabric = true;
+      state.manualTelaController.text = 'BOLTON';
+      state.loteFullController.text = '63E264H10A';
+      state.telarController.text = '99';
+      state.nepsController.text = '11';
+      await state.addRecord();
+
+      expect(state.records.length, greaterThan(1));
+      expect(state.captureSessionRecords, hasLength(1));
+      expect(state.pendingCaptureSessionRecords, hasLength(1));
+
+      final ok = await state.saveCaptureReport(
+        'Informe sesión QA',
+        sourceRecords: state.pendingCaptureSessionRecords,
+      );
+      expect(ok, isTrue);
+
+      final reports = await state.refreshReports();
+      final saved = reports.firstWhere((r) => r.name == 'Informe sesión QA');
+      expect(saved.records, hasLength(1));
+      expect(saved.records.single.telar, '99');
+      expect(state.pendingCaptureSessionRecords, isEmpty);
+      state.dispose();
+    });
+  });
 }
