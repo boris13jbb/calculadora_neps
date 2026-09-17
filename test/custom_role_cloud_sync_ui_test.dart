@@ -8,6 +8,7 @@ import 'package:calculadora_neps/core/widgets/records_table.dart';
 import 'package:calculadora_neps/features/records/records_screen.dart';
 import 'package:calculadora_neps/models/app_user.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
+import 'package:calculadora_neps/models/record_delete_outcome.dart';
 import 'package:calculadora_neps/models/role_definition.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
 import 'package:calculadora_neps/providers/auth_provider.dart';
@@ -165,7 +166,7 @@ void main() {
           body: RecordsTable(
             appState: appState,
             records: const [],
-            onDelete: (_) async {},
+            onDelete: (_) async => RecordDeleteOutcome.deletedRemote,
             onEdit: null,
             onGoToCapture: appState.canCapture ? () {} : null,
             onGoToImport: appState.canImportRecords ? () {} : null,
@@ -193,8 +194,8 @@ void main() {
             child: RecordsTable(
               appState: appState,
               records: [_sampleRecord()],
-              onDelete: (_) async {},
-              onEdit: appState.canEditRecords ? (_) async {} : null,
+              onDelete: (_) async => RecordDeleteOutcome.deletedRemote,
+              onEdit: appState.canEditRecords ? (_) async => false : null,
             ),
           ),
         ),

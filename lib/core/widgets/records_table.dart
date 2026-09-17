@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../models/nep_record.dart';
+import '../../models/record_delete_outcome.dart';
 import '../../providers/app_state.dart';
 import '../../services/alert_service.dart';
+import '../../utils/records_multi_selection.dart';
 import '../layout/breakpoints.dart';
 import '../theme/app_theme.dart';
 import 'alert_status_badge.dart';
@@ -11,7 +13,7 @@ import 'confirm_dialogs.dart';
 import 'corrective_action_dialog.dart';
 import 'empty_state.dart';
 
-class RecordsTable extends StatelessWidget {
+class RecordsTable extends StatefulWidget {
   const RecordsTable({
     super.key,
     required this.appState,
@@ -22,16 +24,110 @@ class RecordsTable extends StatelessWidget {
     this.onClearFilters,
     this.onGoToCapture,
     this.onGoToImport,
+    this.selectionResetToken = 0,
+    this.userContextKey = '',
   });
 
   final AppState appState;
   final List<NepRecord> records;
-  final Future<void> Function(String id) onDelete;
-  final Future<void> Function(NepRecord record)? onEdit;
+  final Future<RecordDeleteOutcome> Function(String id) onDelete;
+  final Future<bool> Function(NepRecord record)? onEdit;
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
   final VoidCallback? onGoToImport;
+
+  /// Cambia al modificar filtros → limpia selección.
+  final int selectionResetToken;
+
+  /// Cambia con usuario/logout → limpia selección.
+  final String userContextKey;
+
+  @override
+  State<RecordsTable> createState() => _RecordsTableState();
+}
+
+class _RecordsTableState extends State<RecordsTable> {
+  final RecordsMultiSelection _selection = RecordsMultiSelection();
+  bool _busy = false;
+
+  bool get _canSelect =>
+      widget.appState.canDeleteRecords || widget.appState.canEditRecords;
+
+  @override
+  void didUpdateWidget(covariant RecordsTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    var changed = false;
+    if (widget.selectionResetToken != oldWidget.selectionResetToken) {
+      _selection.onFilterContextChanged();
+      changed = true;
+    }
+    if (widget.userContextKey != oldWidget.userContextKey) {
+      _selection.onUserContextChanged();
+      changed = true;
+    }
+    final before = _selection.count;
+    _selection.pruneToExisting(widget.records.map((r) => r.id));
+    if (changed || before != _selection.count) {
+      // Rebuild para reflejar selección limpia/pruned.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
+
+  void _notifySelection() => setState(() {});
+
+  Future<void> _onUpdateSelected() async {
+    if (_busy || widget.onEdit == null) return;
+    setState(() => _busy = true);
+    try {
+      await runUpdateSelectedRecord(
+        selection: _selection,
+        records: widget.records,
+        canEditRecords: widget.appState.canEditRecords,
+        openEditor: widget.onEdit!,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _onBulkDelete() async {
+    if (_busy ||
+        !_selection.canBulkDelete(
+          canDeleteRecords: widget.appState.canDeleteRecords,
+        )) {
+      return;
+    }
+
+    final count = _selection.count;
+    final confirmed = await confirmDeleteSelectedRecords(
+      context,
+      count: count,
+    );
+    if (!mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      final summary = await runBulkDeleteSelected(
+        selectedIds: _selection.selectedRecordIds,
+        canDeleteRecords: widget.appState.canDeleteRecords,
+        confirmed: confirmed,
+        deleteRecord: widget.onDelete,
+      );
+
+      _selection
+        ..clear()
+        ..selectedRecordIds.addAll(summary.remainingSelectedIds);
+
+      if (summary.message.isNotEmpty) {
+        widget.appState.showMessage(summary.message);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -48,30 +144,141 @@ class RecordsTable extends StatelessWidget {
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(useMobileList ? 10 : 18),
-            child: useMobileList
-                ? _MobileRecordsList(
-                    appState: appState,
-                    records: records,
-                    onDelete: onDelete,
-                    onEdit: onEdit,
-                    totalSourceCount: totalSourceCount,
-                    onClearFilters: onClearFilters,
-                    onGoToCapture: onGoToCapture,
-                    onGoToImport: onGoToImport,
-                  )
-                : _DesktopRecordsTable(
-                    appState: appState,
-                    records: records,
-                    onDelete: onDelete,
-                    onEdit: onEdit,
-                    totalSourceCount: totalSourceCount,
-                    onClearFilters: onClearFilters,
-                    onGoToCapture: onGoToCapture,
-                    onGoToImport: onGoToImport,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_selection.isNotEmpty && _canSelect)
+                  _RecordsSelectionBar(
+                    count: _selection.count,
+                    compact: useMobileList,
+                    busy: _busy,
+                    showUpdate: _selection.canUpdate(
+                      canEditRecords: widget.appState.canEditRecords,
+                    ),
+                    showDelete: _selection.canBulkDelete(
+                      canDeleteRecords: widget.appState.canDeleteRecords,
+                    ),
+                    onUpdate: _onUpdateSelected,
+                    onDelete: _onBulkDelete,
+                    onClear: () => setState(_selection.clear),
                   ),
+                Expanded(
+                  child: useMobileList
+                      ? _MobileRecordsList(
+                          appState: widget.appState,
+                          records: widget.records,
+                          onDelete: widget.onDelete,
+                          onEdit: widget.onEdit,
+                          totalSourceCount: widget.totalSourceCount,
+                          onClearFilters: widget.onClearFilters,
+                          onGoToCapture: widget.onGoToCapture,
+                          onGoToImport: widget.onGoToImport,
+                          selection: _selection,
+                          canSelect: _canSelect,
+                          onSelectionChanged: _notifySelection,
+                        )
+                      : _DesktopRecordsTable(
+                          appState: widget.appState,
+                          records: widget.records,
+                          onDelete: widget.onDelete,
+                          onEdit: widget.onEdit,
+                          totalSourceCount: widget.totalSourceCount,
+                          onClearFilters: widget.onClearFilters,
+                          onGoToCapture: widget.onGoToCapture,
+                          onGoToImport: widget.onGoToImport,
+                          selection: _selection,
+                          canSelect: _canSelect,
+                          onSelectionChanged: _notifySelection,
+                          onPageContextChanged: () {
+                            _selection.onPageContextChanged();
+                            _notifySelection();
+                          },
+                        ),
+                ),
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+class _RecordsSelectionBar extends StatelessWidget {
+  const _RecordsSelectionBar({
+    required this.count,
+    required this.compact,
+    required this.busy,
+    required this.showUpdate,
+    required this.showDelete,
+    required this.onUpdate,
+    required this.onDelete,
+    required this.onClear,
+  });
+
+  final int count;
+  final bool compact;
+  final bool busy;
+  final bool showUpdate;
+  final bool showDelete;
+  final VoidCallback onUpdate;
+  final VoidCallback onDelete;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count == 1 ? '1 seleccionado' : '$count seleccionados';
+    final updateLabel = compact ? 'Actualizar' : 'Actualizar registro';
+    final deleteLabel = count == 1
+        ? (compact ? 'Eliminar' : 'Eliminar seleccionado')
+        : (compact ? 'Eliminar' : 'Eliminar seleccionados');
+    final clearLabel = compact ? 'Limpiar' : 'Limpiar selección';
+
+    final actions = <Widget>[
+      if (showUpdate)
+        FilledButton.tonal(
+          onPressed: busy ? null : onUpdate,
+          child: Text(updateLabel),
+        ),
+      if (showDelete)
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: busy ? null : onDelete,
+          child: Text(deleteLabel),
+        ),
+      TextButton(
+        onPressed: busy ? null : onClear,
+        child: Text(clearLabel),
+      ),
+    ];
+
+    return Material(
+      color: AppColors.surface,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 10 : 12,
+          vertical: compact ? 6 : 8,
+        ),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.border)),
+        ),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: compact ? 12 : 13,
+              ),
+            ),
+            ...actions,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -86,16 +293,22 @@ class _MobileRecordsList extends StatelessWidget {
     this.onClearFilters,
     this.onGoToCapture,
     this.onGoToImport,
+    required this.selection,
+    required this.canSelect,
+    required this.onSelectionChanged,
   });
 
   final AppState appState;
   final List<NepRecord> records;
-  final Future<void> Function(String id) onDelete;
-  final Future<void> Function(NepRecord record)? onEdit;
+  final Future<RecordDeleteOutcome> Function(String id) onDelete;
+  final Future<bool> Function(NepRecord record)? onEdit;
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
   final VoidCallback? onGoToImport;
+  final RecordsMultiSelection selection;
+  final bool canSelect;
+  final VoidCallback onSelectionChanged;
 
   bool get _isFilteredEmpty {
     final total = totalSourceCount;
@@ -114,122 +327,184 @@ class _MobileRecordsList extends StatelessWidget {
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: records.length,
-      separatorBuilder: (_, __) =>
-          const Divider(height: 1, indent: 10, endIndent: 10),
-      itemBuilder: (context, index) {
-        final item = records[index];
-        final level = alertService.getAlertLevel(item.neps);
-        final bgColor = alertService.getAlertBackgroundColor(level);
-        return AppMaterialListTile(
-          backgroundColor: bgColor,
-          dense: true,
-          visualDensity: const VisualDensity(horizontal: -2, vertical: -3),
-          minVerticalPadding: 0,
-          onTap: onEdit != null ? () => onEdit!(item) : null,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-          leading: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AlertLevelDot(level: level, size: 8),
-              const SizedBox(width: 6),
-              CircleAvatar(
-                radius: 12,
-                backgroundColor: AppColors.formulaBg,
-                child: Text(
-                  '${index + 1}',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.textDark,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'T${item.telar} · ${appState.formatNumber(appState.calculateMts(item.neps))} mts',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              AlertNepsText(
-                nepsText: '${appState.formatDecimal(item.neps)} neps',
-                level: level,
-                fontSize: 12,
-              ),
-            ],
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${appState.formatDateTime(item.createdAt)}\n'
-                '${item.tela} · ${item.loteTrama}',
-                style: const TextStyle(fontSize: 10),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 4),
-              AlertStatusBadge(level: level, compact: true),
-            ],
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (item.requiereSeguimiento && appState.canApplyCorrectiveAction)
-                IconButton(
+    final pageIds = records.map((r) => r.id).toList(growable: false);
+
+    return Column(
+      children: [
+        if (canSelect)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 2, 8, 0),
+            child: Row(
+              children: [
+                Checkbox(
+                  tristate: true,
                   visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                  tooltip: 'Seguimiento / acción correctiva',
-                  icon: const Icon(
-                    Icons.fact_check_outlined,
-                    color: AppColors.statusCritical,
-                    size: 18,
-                  ),
-                  onPressed: () => showCorrectiveActionDialog(
-                    context: context,
-                    appState: appState,
-                    record: item,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  value: selection.isPageNoneSelected(pageIds)
+                      ? false
+                      : selection.isPageFullySelected(pageIds)
+                          ? true
+                          : null,
+                  onChanged: (_) {
+                    selection.toggleSelectAllOnPage(pageIds);
+                    onSelectionChanged();
+                  },
+                ),
+                const Expanded(
+                  child: Text(
+                    'Seleccionar visibles',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
                   ),
                 ),
-              if (onEdit != null)
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                  tooltip: 'Editar',
-                  icon: const Icon(
-                    Icons.edit_outlined,
-                    color: AppColors.primaryBlue,
-                    size: 18,
-                  ),
-                  onPressed: () => onEdit!(item),
-                ),
-              _DeleteRecordIconButton(
-                canDelete: appState.canDeleteRecords,
-                compact: true,
-                onConfirmDelete: () async {
-                  if (await confirmDeleteRecord(context)) {
-                    await onDelete(item.id);
-                  }
-                },
-              ),
-            ],
+              ],
+            ),
           ),
-        );
-      },
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            itemCount: records.length,
+            separatorBuilder: (_, __) =>
+                const Divider(height: 1, indent: 10, endIndent: 10),
+            itemBuilder: (context, index) {
+              final item = records[index];
+              final level = alertService.getAlertLevel(item.neps);
+              final bgColor = alertService.getAlertBackgroundColor(level);
+              final selected = selection.selectedRecordIds.contains(item.id);
+              final tile = AppMaterialListTile(
+                backgroundColor: bgColor,
+                dense: true,
+                visualDensity:
+                    const VisualDensity(horizontal: -2, vertical: -3),
+                minVerticalPadding: 0,
+                onTap: onEdit != null ? () => onEdit!(item) : null,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                leading: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AlertLevelDot(level: level, size: 8),
+                    const SizedBox(width: 4),
+                    CircleAvatar(
+                      radius: 12,
+                      backgroundColor: AppColors.formulaBg,
+                      child: Text(
+                        '${index + 1}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'T${item.telar} · ${appState.formatNumber(appState.calculateMts(item.neps))} mts',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    AlertNepsText(
+                      nepsText: '${appState.formatDecimal(item.neps)} neps',
+                      level: level,
+                      fontSize: 12,
+                    ),
+                  ],
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${appState.formatDateTime(item.createdAt)}\n'
+                      '${item.tela} · ${item.loteTrama}',
+                      style: const TextStyle(fontSize: 10),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    AlertStatusBadge(level: level, compact: true),
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (item.requiereSeguimiento &&
+                        appState.canApplyCorrectiveAction)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 32, minHeight: 32),
+                        tooltip: 'Seguimiento / acción correctiva',
+                        icon: const Icon(
+                          Icons.fact_check_outlined,
+                          color: AppColors.statusCritical,
+                          size: 18,
+                        ),
+                        onPressed: () => showCorrectiveActionDialog(
+                          context: context,
+                          appState: appState,
+                          record: item,
+                        ),
+                      ),
+                    if (onEdit != null)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 32, minHeight: 32),
+                        tooltip: 'Editar',
+                        icon: const Icon(
+                          Icons.edit_outlined,
+                          color: AppColors.primaryBlue,
+                          size: 18,
+                        ),
+                        onPressed: () => onEdit!(item),
+                      ),
+                    _DeleteRecordIconButton(
+                      canDelete: appState.canDeleteRecords,
+                      compact: true,
+                      onConfirmDelete: () async {
+                        if (await confirmDeleteRecord(context)) {
+                          await onDelete(item.id);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              );
+
+              if (!canSelect) return tile;
+
+              return ColoredBox(
+                color: bgColor,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Checkbox(
+                      value: selected,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (value) {
+                        selection.setSelected(item.id, value ?? false);
+                        onSelectionChanged();
+                      },
+                    ),
+                    Expanded(child: tile),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -244,16 +519,24 @@ class _DesktopRecordsTable extends StatefulWidget {
     this.onClearFilters,
     this.onGoToCapture,
     this.onGoToImport,
+    required this.selection,
+    required this.canSelect,
+    required this.onSelectionChanged,
+    required this.onPageContextChanged,
   });
 
   final AppState appState;
   final List<NepRecord> records;
-  final Future<void> Function(String id) onDelete;
-  final Future<void> Function(NepRecord record)? onEdit;
+  final Future<RecordDeleteOutcome> Function(String id) onDelete;
+  final Future<bool> Function(NepRecord record)? onEdit;
   final int? totalSourceCount;
   final VoidCallback? onClearFilters;
   final VoidCallback? onGoToCapture;
   final VoidCallback? onGoToImport;
+  final RecordsMultiSelection selection;
+  final bool canSelect;
+  final VoidCallback onSelectionChanged;
+  final VoidCallback onPageContextChanged;
 
   @override
   State<_DesktopRecordsTable> createState() => _DesktopRecordsTableState();
@@ -272,10 +555,17 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
   int _pageCount(int total) =>
       total == 0 ? 1 : ((total + _rowsPerPage - 1) ~/ _rowsPerPage);
 
+  void _changePage(void Function() mutate) {
+    mutate();
+    widget.onPageContextChanged();
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = widget.appState;
     final records = widget.records;
+    final selection = widget.selection;
 
     if (records.isEmpty) {
       return _RecordsEmptyState(
@@ -294,6 +584,34 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
     final start = page * _rowsPerPage;
     final end = (start + _rowsPerPage) > total ? total : (start + _rowsPerPage);
     final pageRecords = records.sublist(start, end);
+    final pageIds = pageRecords.map((r) => r.id).toList(growable: false);
+
+    final columns = <DataColumn>[
+      if (widget.canSelect)
+        DataColumn(
+          label: Checkbox(
+            tristate: true,
+            value: selection.isPageNoneSelected(pageIds)
+                ? false
+                : selection.isPageFullySelected(pageIds)
+                    ? true
+                    : null,
+            onChanged: (_) {
+              selection.toggleSelectAllOnPage(pageIds);
+              widget.onSelectionChanged();
+            },
+          ),
+        ),
+      const DataColumn(label: Text('#')),
+      const DataColumn(label: Text('FECHA')),
+      const DataColumn(label: Text('LOTE DE\nTRAMA')),
+      const DataColumn(label: Text('TELA')),
+      const DataColumn(label: Text('TELAR')),
+      const DataColumn(label: Text('NEPS')),
+      const DataColumn(label: Text('MTS CALCULADOS\nNEPS / 0.09')),
+      const DataColumn(label: Text('ESTADO')),
+      const DataColumn(label: Text('ACCION')),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -305,7 +623,9 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
               primary: false,
               scrollDirection: Axis.horizontal,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 1240),
+                constraints: BoxConstraints(
+                  minWidth: widget.canSelect ? 1280 : 1240,
+                ),
                 child: DataTable(
                   headingRowColor: WidgetStateProperty.all(AppColors.header),
                   headingTextStyle: const TextStyle(
@@ -313,26 +633,28 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
                     fontWeight: FontWeight.w900,
                     fontSize: 12,
                   ),
-                  columns: const [
-                    DataColumn(label: Text('#')),
-                    DataColumn(label: Text('FECHA')),
-                    DataColumn(label: Text('LOTE DE\nTRAMA')),
-                    DataColumn(label: Text('TELA')),
-                    DataColumn(label: Text('TELAR')),
-                    DataColumn(label: Text('NEPS')),
-                    DataColumn(label: Text('MTS CALCULADOS\nNEPS / 0.09')),
-                    DataColumn(label: Text('ESTADO')),
-                    DataColumn(label: Text('ACCION')),
-                  ],
+                  columns: columns,
                   rows: List.generate(pageRecords.length, (index) {
                     final item = pageRecords[index];
                     final globalIndex = start + index;
                     final level = alertService.getAlertLevel(item.neps);
                     final rowColor =
                         alertService.getAlertBackgroundColor(level);
+                    final selected =
+                        selection.selectedRecordIds.contains(item.id);
                     return DataRow(
                       color: WidgetStateProperty.all(rowColor),
                       cells: [
+                        if (widget.canSelect)
+                          DataCell(
+                            Checkbox(
+                              value: selected,
+                              onChanged: (value) {
+                                selection.setSelected(item.id, value ?? false);
+                                widget.onSelectionChanged();
+                              },
+                            ),
+                          ),
                         DataCell(Text('${globalIndex + 1}')),
                         DataCell(
                           Text(appState.formatDateTime(item.createdAt)),
@@ -427,18 +749,19 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
           rowsPerPage: _rowsPerPage,
           rowsPerPageOptions: _rowsPerPageOptions,
           onRowsPerPageChanged: (value) {
-            setState(() {
+            _changePage(() {
               _rowsPerPage = value;
               _page = 0;
             });
           },
-          onFirst: page > 0 ? () => setState(() => _page = 0) : null,
-          onPrevious: page > 0 ? () => setState(() => _page = page - 1) : null,
+          onFirst: page > 0 ? () => _changePage(() => _page = 0) : null,
+          onPrevious:
+              page > 0 ? () => _changePage(() => _page = page - 1) : null,
           onNext: page < pageCount - 1
-              ? () => setState(() => _page = page + 1)
+              ? () => _changePage(() => _page = page + 1)
               : null,
           onLast: page < pageCount - 1
-              ? () => setState(() => _page = pageCount - 1)
+              ? () => _changePage(() => _page = pageCount - 1)
               : null,
         ),
       ],

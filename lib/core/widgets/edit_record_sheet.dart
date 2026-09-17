@@ -309,15 +309,22 @@ class _EditRecordDialogState extends State<_EditRecordDialog> {
         FilledButton(
           onPressed: isSaving ? null : _save,
           child: isSaving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
+              ? const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Text('Actualizando...'),
+                  ],
                 )
-              : const Text('Guardar'),
+              : const Text('Actualizar registro'),
         ),
       ],
     );

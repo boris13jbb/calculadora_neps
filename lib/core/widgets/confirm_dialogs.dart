@@ -40,6 +40,44 @@ Future<bool> confirmDeleteRecord(BuildContext context) async {
   return result == true;
 }
 
+/// Confirmación de borrado múltiple (distinta de Vaciar tabla).
+Future<bool> confirmDeleteSelectedRecords(
+  BuildContext context, {
+  required int count,
+}) async {
+  if (count <= 0) return false;
+
+  final title = count == 1
+      ? 'Eliminar 1 registro seleccionado'
+      : 'Eliminar $count registros seleccionados';
+  final actionLabel = count == 1 ? 'Eliminar 1' : 'Eliminar $count';
+  final noun =
+      count == 1 ? 'el registro seleccionado' : 'los registros seleccionados';
+
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text(
+        'Se eliminarán únicamente $noun de esta página.\n'
+        'Esta acción no vaciará la tabla completa.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.pop(context, true),
+          child: Text(actionLabel),
+        ),
+      ],
+    ),
+  );
+  return result == true;
+}
+
 Future<bool> confirmClearTable(
   BuildContext context, {
   required int recordCount,
