@@ -17,6 +17,26 @@ List<String> pageRecordIds({
   return records.sublist(start, end).map((r) => r.id).toList(growable: false);
 }
 
+/// Sincroniza la selección con la página efectiva actual.
+///
+/// Devuelve `true` si la selección cambió.
+bool syncSelectionToCurrentPage({
+  required RecordsMultiSelection selection,
+  required List<NepRecord> records,
+  required int page,
+  required int rowsPerPage,
+}) {
+  final before = Set<String>.from(selection.selectedRecordIds);
+  final pageIds = pageRecordIds(
+    records: records,
+    page: page,
+    rowsPerPage: rowsPerPage,
+  );
+  selection.pruneToExisting(pageIds);
+  if (before.length != selection.selectedRecordIds.length) return true;
+  return !before.every(selection.selectedRecordIds.contains);
+}
+
 /// Selección múltiple de registros identificada exclusivamente por [NepRecord.id].
 class RecordsMultiSelection {
   final Set<String> selectedRecordIds = <String>{};
@@ -220,7 +240,10 @@ Future<BulkDeleteSummary> runBulkDeleteSelected({
       succeeded++;
     } else {
       failed++;
-      remaining.add(id);
+      // notFound: no reintentable y no deja selección fantasma.
+      if (outcome != RecordDeleteOutcome.notFound) {
+        remaining.add(id);
+      }
     }
   }
 

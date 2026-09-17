@@ -345,7 +345,7 @@ void main() {
       expect(summary.remainingSelectedIds, {'R1'});
     });
 
-    test('DEL-11 notFound → no rompe operación', () async {
+    test('DEL-11 notFound → no rompe operación ni deja fantasma', () async {
       final summary = await runBulkDeleteSelected(
         selectedIds: {'R1', 'R2'},
         canDeleteRecords: true,
@@ -357,6 +357,42 @@ void main() {
       );
       expect(summary.succeeded, 1);
       expect(summary.failed, 1);
+      // notFound no es reintentable: no permanece seleccionado.
+      expect(summary.remainingSelectedIds, isEmpty);
+    });
+
+    test('NOTFOUND-1 R1 notFound + R2 deleted → remaining vacío', () async {
+      final summary = await runBulkDeleteSelected(
+        selectedIds: {'R1', 'R2'},
+        canDeleteRecords: true,
+        confirmed: true,
+        deleteRecord: (id) async {
+          if (id == 'R1') return RecordDeleteOutcome.notFound;
+          return RecordDeleteOutcome.deletedRemote;
+        },
+      );
+      expect(summary.succeeded, 1);
+      expect(summary.failed, 1);
+      expect(summary.remainingSelectedIds, isEmpty);
+    });
+
+    test('NOTFOUND-2 permissionDenied → remaining {R1}', () async {
+      final summary = await runBulkDeleteSelected(
+        selectedIds: {'R1'},
+        canDeleteRecords: true,
+        confirmed: true,
+        deleteRecord: (_) async => RecordDeleteOutcome.permissionDenied,
+      );
+      expect(summary.remainingSelectedIds, {'R1'});
+    });
+
+    test('NOTFOUND-3 firebaseError → remaining {R1}', () async {
+      final summary = await runBulkDeleteSelected(
+        selectedIds: {'R1'},
+        canDeleteRecords: true,
+        confirmed: true,
+        deleteRecord: (_) async => RecordDeleteOutcome.firebaseError,
+      );
       expect(summary.remainingSelectedIds, {'R1'});
     });
 
@@ -392,6 +428,82 @@ void main() {
       );
       expect(deleteCalls.toSet(), {'R1', 'R2', 'R3'});
       expect(deleteCalls, hasLength(3));
+    });
+  });
+
+  group('REALTIME — selección ⊆ página visible', () {
+    test('REALTIME-1 insertar NEW mueve R50 fuera de página → vacío', () {
+      final records = _dataset(51);
+      const rowsPerPage = 50;
+      final pageIds = pageRecordIds(
+        records: records,
+        page: 0,
+        rowsPerPage: rowsPerPage,
+      );
+      expect(pageIds.last, 'R50');
+
+      final selection = RecordsMultiSelection()..toggle('R50');
+      expect(selection.selectedRecordIds, {'R50'});
+
+      // Realtime inserta NEW al inicio: R50 pasa a página 2.
+      final updated = [_rec('NEW'), ...records];
+      final changed = syncSelectionToCurrentPage(
+        selection: selection,
+        records: updated,
+        page: 0,
+        rowsPerPage: rowsPerPage,
+      );
+      expect(changed, isTrue);
+      expect(selection.selectedRecordIds, isEmpty);
+    });
+
+    test('REALTIME-2 seleccionado sigue en página → se conserva', () {
+      final records = _dataset(51);
+      final selection = RecordsMultiSelection()..toggle('R1');
+      final updated = [_rec('NEW'), ...records];
+      final changed = syncSelectionToCurrentPage(
+        selection: selection,
+        records: updated,
+        page: 0,
+        rowsPerPage: 50,
+      );
+      // R1 sigue en página 0 (posición 1).
+      expect(changed, isFalse);
+      expect(selection.selectedRecordIds, {'R1'});
+    });
+
+    test('REALTIME-3 registro desaparece del dataset → poda', () {
+      final selection = RecordsMultiSelection()
+        ..toggle('R1')
+        ..toggle('R2');
+      final changed = syncSelectionToCurrentPage(
+        selection: selection,
+        records: [_rec('R2'), _rec('R3')],
+        page: 0,
+        rowsPerPage: 50,
+      );
+      expect(changed, isTrue);
+      expect(selection.selectedRecordIds, {'R2'});
+    });
+
+    test('REALTIME-4 página fuera de rango se ajusta y limpia selección', () {
+      final records = _dataset(60);
+      final selection = RecordsMultiSelection()
+        ..selectAllOnPage(
+          pageRecordIds(records: records, page: 1, rowsPerPage: 50),
+        );
+      expect(selection.count, 10); // R51..R60
+
+      // Dataset se reduce: página 1 ya no existe; effectivePage=0.
+      final reduced = _dataset(40);
+      final changed = syncSelectionToCurrentPage(
+        selection: selection,
+        records: reduced,
+        page: 1,
+        rowsPerPage: 50,
+      );
+      expect(changed, isTrue);
+      expect(selection.selectedRecordIds, isEmpty);
     });
   });
 }

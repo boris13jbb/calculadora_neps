@@ -120,6 +120,8 @@ class _RecordsTableState extends State<RecordsTable> {
       _selection
         ..clear()
         ..selectedRecordIds.addAll(summary.remainingSelectedIds);
+      // Solo IDs que aún existen en el dataset visible (desktop poda a página).
+      _selection.pruneToExisting(widget.records.map((r) => r.id));
 
       if (summary.message.isNotEmpty) {
         widget.appState.showMessage(summary.message);
@@ -554,6 +556,47 @@ class _DesktopRecordsTableState extends State<_DesktopRecordsTable> {
 
   int _pageCount(int total) =>
       total == 0 ? 1 : ((total + _rowsPerPage - 1) ~/ _rowsPerPage);
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleSyncSelection();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DesktopRecordsTable oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleSyncSelection();
+  }
+
+  void _scheduleSyncSelection() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncSelectionWithCurrentPage();
+    });
+  }
+
+  /// Mantiene selectedRecordIds ⊆ currentPageIds (página efectiva).
+  void _syncSelectionWithCurrentPage() {
+    if (!widget.canSelect) return;
+    final records = widget.records;
+    if (records.isEmpty) {
+      if (widget.selection.isNotEmpty) {
+        widget.selection.clear();
+        widget.onSelectionChanged();
+      }
+      return;
+    }
+    final pageCount = _pageCount(records.length);
+    final effectivePage = _page.clamp(0, pageCount - 1);
+    final changed = syncSelectionToCurrentPage(
+      selection: widget.selection,
+      records: records,
+      page: effectivePage,
+      rowsPerPage: _rowsPerPage,
+    );
+    if (changed) widget.onSelectionChanged();
+  }
 
   void _changePage(void Function() mutate) {
     mutate();

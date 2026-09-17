@@ -246,6 +246,10 @@ class AppState extends ChangeNotifier {
   int get filterPanelKey => recordsScope.filterPanelKey;
   set filterPanelKey(int value) => recordsScope.filterPanelKey = value;
 
+  /// Token de contexto de filtros para limpiar selección en Registros.
+  int get recordsSelectionContextVersion =>
+      recordsScope.recordsSelectionContextVersion;
+
   List<NepRecord> get records => recordsScope.items;
   set records(List<NepRecord> value) {
     recordsScope.items = value;

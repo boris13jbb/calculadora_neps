@@ -261,7 +261,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
                 onGoToImport: appState.canImportRecords
                     ? () => _importRecords(appState)
                     : null,
-                selectionResetToken: appState.filterPanelKey,
+                selectionResetToken: appState.recordsSelectionContextVersion,
                 userContextKey: appState.authUid ?? '',
               ),
             ),

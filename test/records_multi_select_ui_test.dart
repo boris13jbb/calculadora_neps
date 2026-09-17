@@ -185,4 +185,40 @@ void main() {
     expect(find.byType(Checkbox), findsNothing);
     state.dispose();
   });
+
+  testWidgets('FILTER-4 cambio de selectionResetToken limpia selección',
+      (tester) async {
+    final state = AppState()
+      ..applyAuthProfile(
+        AppUser(uid: 'u1', username: 'admin', role: AppUserRole.admin),
+      );
+    final records = [_rec('R1'), _rec('R2')];
+
+    await _pumpTable(
+      tester,
+      state: state,
+      records: records,
+      selectionResetToken: 1,
+      onDelete: (_) async => RecordDeleteOutcome.deletedRemote,
+      onEdit: (_) async => false,
+    );
+
+    await tester.tap(find.byType(Checkbox).at(1));
+    await tester.pumpAndSettle();
+    expect(find.text('1 seleccionado'), findsOneWidget);
+
+    // Simula cambio real de filtro (nuevo context version).
+    await _pumpTable(
+      tester,
+      state: state,
+      records: records,
+      selectionResetToken: 2,
+      onDelete: (_) async => RecordDeleteOutcome.deletedRemote,
+      onEdit: (_) async => false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 seleccionado'), findsNothing);
+    state.dispose();
+  });
 }
