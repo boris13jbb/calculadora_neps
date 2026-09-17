@@ -91,6 +91,7 @@ class AppState extends ChangeNotifier {
     RecordImportService? recordImportService,
     ReportStorageService? reportStorageService,
     ReportExportService? reportExportService,
+    RecordExportCoordinator? recordExportCoordinator,
     CloudSyncPort? cloudSyncService,
   }) {
     final syncService =
@@ -105,6 +106,7 @@ class AppState extends ChangeNotifier {
       reportStorageService:
           reportStorageService ?? ReportStorageService(cloudSync: syncService),
       reportExportService: reportExportService ?? ReportExportService(),
+      recordExportCoordinator: recordExportCoordinator,
     );
   }
 
@@ -1314,20 +1316,6 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _replaceAllRecords(List<NepRecord> updatedRecords) async {
-    records = updatedRecords;
-    await _cacheRecordsLocally(updatedRecords);
-
-    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
-      try {
-        await cloudSyncCoordinator!.replaceRecords(updatedRecords);
-        return;
-      } catch (_) {
-        cloudSyncEnabled = false;
-      }
-    }
-  }
-
   /// Resultado de la última eliminación (útil en pruebas).
   @visibleForTesting
   RecordDeleteOutcome? lastDeleteOutcome;
@@ -1403,11 +1391,14 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<void> runExport(Future<void> Function() action) async {
+  Future<void> runExport({
+    required List<NepRecord> recordsToExport,
+    required Future<void> Function() action,
+  }) async {
     if (!_requirePermission(canExportReports, 'exportar reportes')) {
       return;
     }
-    if (visibleRecords.isEmpty) {
+    if (recordsToExport.isEmpty) {
       showMessage('No hay datos para exportar.');
       return;
     }
@@ -1447,15 +1438,18 @@ class AppState extends ChangeNotifier {
     final selected = columns ?? exportColumns;
     final reportStyle = style ?? pdfReportStyle;
     final toExport = resolveExportRecords(sourceRecords);
-    await runExport(() async {
-      await recordExportCoordinator.shareCsv(
-        records: toExport,
-        columns: selected,
-        style: reportStyle,
-        fileTimestamp: timestamp,
-      );
-      showMessage('Reporte CSV listo para compartir o descargar.');
-    });
+    await runExport(
+      recordsToExport: toExport,
+      action: () async {
+        await recordExportCoordinator.shareCsv(
+          records: toExport,
+          columns: selected,
+          style: reportStyle,
+          fileTimestamp: timestamp,
+        );
+        showMessage('Reporte CSV listo para compartir o descargar.');
+      },
+    );
   }
 
   Future<void> exportExcel({
@@ -1466,15 +1460,18 @@ class AppState extends ChangeNotifier {
     final selected = columns ?? exportColumns;
     final reportStyle = style ?? pdfReportStyle;
     final toExport = resolveExportRecords(sourceRecords);
-    await runExport(() async {
-      await recordExportCoordinator.shareExcel(
-        records: toExport,
-        columns: selected,
-        style: reportStyle,
-        fileTimestamp: timestamp,
-      );
-      showMessage('Reporte Excel listo para compartir o descargar.');
-    });
+    await runExport(
+      recordsToExport: toExport,
+      action: () async {
+        await recordExportCoordinator.shareExcel(
+          records: toExport,
+          columns: selected,
+          style: reportStyle,
+          fileTimestamp: timestamp,
+        );
+        showMessage('Reporte Excel listo para compartir o descargar.');
+      },
+    );
   }
 
   Future<Uint8List> buildPdfBytes({
@@ -1500,31 +1497,38 @@ class AppState extends ChangeNotifier {
     final selected = columns ?? exportColumns;
     final reportStyle = style ?? pdfReportStyle;
     final toExport = resolveExportRecords(sourceRecords);
-    await runExport(() async {
-      await recordExportCoordinator.sharePdf(
-        records: toExport,
-        columns: selected,
-        style: reportStyle,
-        fileTimestamp: timestamp,
-        filtersDescription: filters.hasActiveFilters
-            ? FilterDescriptionHelper.describe(filters)
-            : null,
-      );
-    });
+    await runExport(
+      recordsToExport: toExport,
+      action: () async {
+        await recordExportCoordinator.sharePdf(
+          records: toExport,
+          columns: selected,
+          style: reportStyle,
+          fileTimestamp: timestamp,
+          filtersDescription: filters.hasActiveFilters
+              ? FilterDescriptionHelper.describe(filters)
+              : null,
+        );
+      },
+    );
   }
 
   Future<void> printPdf({PdfReportStyle? style}) async {
     final reportStyle = style ?? pdfReportStyle;
-    await runExport(() async {
-      await recordExportCoordinator.printPdf(
-        records: visibleRecords,
-        columns: exportColumns,
-        style: reportStyle,
-        filtersDescription: filters.hasActiveFilters
-            ? FilterDescriptionHelper.describe(filters)
-            : null,
-      );
-    });
+    final toExport = List<NepRecord>.from(visibleRecords);
+    await runExport(
+      recordsToExport: toExport,
+      action: () async {
+        await recordExportCoordinator.printPdf(
+          records: toExport,
+          columns: exportColumns,
+          style: reportStyle,
+          filtersDescription: filters.hasActiveFilters
+              ? FilterDescriptionHelper.describe(filters)
+              : null,
+        );
+      },
+    );
   }
 
   Future<void> copyTable({Set<ExportColumn>? columns}) async {
@@ -1978,9 +1982,23 @@ class AppState extends ChangeNotifier {
     await openEmptyCaptureSessionAfterSave();
   }
 
-  Future<void> loadReport(SavedReport report) async {
-    if (!_requirePermission(canManageReports, 'cargar informes en registros')) {
-      return;
+  /// Informe histórico abierto solo para visualización read-only.
+  /// No forma parte del dataset operativo (`records` / Captura).
+  SavedReport? viewingSavedReport;
+
+  void clearViewingSavedReport() {
+    if (viewingSavedReport == null) return;
+    viewingSavedReport = null;
+    notifyListeners();
+  }
+
+  /// Abre un [SavedReport] en modo lectura.
+  ///
+  /// No modifica `records`, persistencia operativa, sesión de captura,
+  /// `savedCaptureRecordIds` ni sincroniza registros hacia Firestore.
+  Future<bool> openSavedReportView(SavedReport report) async {
+    if (!_requirePermission(canManageReports, 'ver informes guardados')) {
+      return false;
     }
     if (!canViewSavedReport(
       report,
@@ -1988,39 +2006,25 @@ class AppState extends ChangeNotifier {
       canViewTeamReports: canManageReports,
     )) {
       showMessage('No tiene permiso para abrir este informe.');
-      return;
-    }
-    final loadedRecords = List<NepRecord>.from(report.records);
-
-    if (report.appliedFilters != null) {
-      final f = report.appliedFilters!;
-      filters
-        ..tela = f.tela
-        ..loteTrama = f.loteTrama
-        ..telar = f.telar
-        ..nepsMin = f.nepsMin
-        ..nepsMax = f.nepsMax
-        ..mtsMin = f.mtsMin
-        ..mtsMax = f.mtsMax
-        ..dateFrom = f.dateFrom
-        ..dateTo = f.dateTo
-        ..searchText = f.searchText
-        ..alertLevel = f.alertLevel
-        ..turno = f.turno
-        ..operario = f.operario
-        ..lineaProduccion = f.lineaProduccion
-        ..soloNoRevisados = f.soloNoRevisados
-        ..soloConAccionCorrectiva = f.soloConAccionCorrectiva
-        ..quickRange = f.quickRange;
-      filterPanelKey++;
+      return false;
     }
 
-    await _replaceAllRecords(loadedRecords);
-    navigationIndex = 2;
-    if (!cloudSyncEnabled) {
-      notifyListeners();
-    }
-    showMessage('Informe "${report.name}" cargado en registros.');
+    viewingSavedReport = SavedReport(
+      id: report.id,
+      name: report.name,
+      createdAt: report.createdAt,
+      records: List<NepRecord>.from(report.records),
+      appliedFilters: report.appliedFilters?.copy(),
+      createdByUid: report.createdByUid,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// @Deprecated Use [openSavedReportView]. Conservado solo por compatibilidad
+  /// de tests legados; ya no reemplaza registros vivos.
+  Future<void> loadReport(SavedReport report) async {
+    await openSavedReportView(report);
   }
 
   RecordImportResult previewImport({
