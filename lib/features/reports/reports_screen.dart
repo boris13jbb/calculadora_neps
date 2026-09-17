@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -23,6 +23,27 @@ import '../../utils/file_share_helper.dart';
 import '../../utils/record_filter_helper.dart';
 import '../../utils/report_share_helper.dart';
 import '../../core/widgets/record_filters_panel.dart';
+
+/// Lifecycle del visor: tras apertura exitosa, [clearViewingSavedReport] en
+/// `finally` aunque el flujo no llegue al diálogo (p. ej. widget desmontado).
+@visibleForTesting
+Future<void> runSavedReportViewLifecycle({
+  required AppState appState,
+  required SavedReport report,
+  required bool Function() isMounted,
+  required Future<void> Function(SavedReport viewed) present,
+}) async {
+  final opened = await appState.openSavedReportView(report);
+  if (!opened) return;
+
+  try {
+    if (!isMounted()) return;
+    final viewed = appState.viewingSavedReport ?? report;
+    await present(viewed);
+  } finally {
+    appState.clearViewingSavedReport();
+  }
+}
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -313,6 +334,101 @@ class _ReportsScreenState extends State<ReportsScreen> {
           },
         );
     }
+  }
+
+  /// Vista read-only del informe histórico (no toca registros operativos).
+  Future<void> _viewSavedReport(SavedReport report) async {
+    final appState = context.read<AppState>();
+    await runSavedReportViewLifecycle(
+      appState: appState,
+      report: report,
+      isMounted: () => mounted,
+      present: (viewed) async {
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) {
+            final phone = MediaQuery.sizeOf(dialogContext).width < 600;
+            return AlertDialog(
+              title: Text(viewed.name),
+              content: SizedBox(
+                width: phone ? double.maxFinite : 520,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${_formatDate(viewed.createdAt)} · ${viewed.records.length} reg.',
+                      style: const TextStyle(color: AppColors.muted),
+                    ),
+                    const SizedBox(height: 12),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: phone ? 320 : 420,
+                      ),
+                      child: viewed.records.isEmpty
+                          ? const Text('Este informe no contiene registros.')
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: viewed.records.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final record = viewed.records[index];
+                                return ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    '${record.tela} · Telar ${record.telar}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    'Neps ${appState.formatDecimal(record.neps)} · '
+                                    'Lote ${record.loteTrama} · '
+                                    '${_formatDate(record.createdAt)}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cerrar'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(dialogContext);
+                    await _shareSingle(viewed, 'csv');
+                  },
+                  child: const Text('CSV'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(dialogContext);
+                    await _shareSingle(viewed, 'excel');
+                  },
+                  child: const Text('Excel'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(dialogContext);
+                    await _shareSingle(viewed, 'pdf');
+                  },
+                  child: const Text('PDF'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _shareBatch(String action) async {
@@ -652,8 +768,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         )
                       : PopupMenuButton<String>(
                           onSelected: (value) async {
-                            if (value == 'load') {
-                              await appState.loadReport(report);
+                            if (value == 'view') {
+                              await _viewSavedReport(report);
                             } else if (value == 'delete') {
                               await _deleteReport(report);
                             } else {
@@ -662,8 +778,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           },
                           itemBuilder: (context) => const [
                             PopupMenuItem(
-                              value: 'load',
-                              child: Text('Cargar en registros'),
+                              value: 'view',
+                              child: Text('Ver informe'),
                             ),
                             PopupMenuItem(
                               value: 'csv',
