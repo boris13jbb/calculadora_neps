@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/errors/error_handler.dart';
 import '../../models/app_user_role.dart';
 import '../../models/nep_record.dart';
+import '../../models/record_tombstone.dart';
 import '../../models/records_page_result.dart';
 import '../../models/record_filters.dart';
 import '../../models/sync_phase.dart';
@@ -34,6 +35,7 @@ class CloudSyncHost {
     required this.setRemoteFiltersActive,
     required this.onStateChanged,
     required this.reportStorageService,
+    required this.applyRecordTombstones,
   });
 
   final AppUserRole Function() getAuthRole;
@@ -52,6 +54,8 @@ class CloudSyncHost {
   final void Function(bool active) setRemoteFiltersActive;
   final VoidCallback onStateChanged;
   final ReportStorageService reportStorageService;
+  final Future<void> Function(List<RecordTombstone> tombstones)
+      applyRecordTombstones;
 }
 
 /// Ciclo de vida de Firebase sync: bootstrap, suscripciones y errores.
@@ -282,6 +286,9 @@ class CloudSyncScope {
         host.syncFabricSelection();
         unawaited(host.cacheFabrics(data));
         host.onStateChanged();
+      },
+      onTombstones: (tombstones) {
+        unawaited(host.applyRecordTombstones(tombstones));
       },
     );
   }

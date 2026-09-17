@@ -2,6 +2,7 @@ import '../core/constants.dart';
 import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
 import '../models/record_filters.dart';
+import '../models/record_tombstone.dart';
 import '../models/records_page_result.dart';
 import '../models/saved_report.dart';
 
@@ -64,8 +65,15 @@ abstract class CloudSyncPort {
 
   Future<void> deleteRecord(String recordId, {String? ownerUid});
 
+  /// Tombstones de eliminaciones confirmadas (delete-wins).
+  Stream<List<RecordTombstone>> watchRecordTombstones();
+
+  /// True si existe tombstone para [recordId] (lectura puntual).
+  Future<bool> hasRecordTombstone(String recordId);
+
   Future<void> clearRecords();
 
+  @Deprecated('Evitar: reescribe la caché local como fuente autoritativa.')
   Future<void> replaceRecords(List<NepRecord> records);
 
   Future<List<SavedReport>> fetchReports();

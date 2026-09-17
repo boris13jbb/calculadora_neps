@@ -17,6 +17,9 @@ import '../core/navigation/app_navigation.dart';
 import '../core/alert_config.dart';
 import '../core/constants.dart';
 import '../core/errors/error_handler.dart';
+import '../core/errors/record_tombstoned_exception.dart';
+import '../core/permissions/permission.dart';
+import '../core/permissions/role_permissions.dart';
 import '../core/permissions/report_visibility.dart';
 import '../models/app_user.dart';
 import '../models/app_user_role.dart';
@@ -28,6 +31,7 @@ import '../models/pdf_report_style.dart';
 import '../models/record_delete_outcome.dart';
 import '../models/record_filters.dart';
 import '../models/record_import_result.dart';
+import '../models/record_tombstone.dart';
 import '../models/saved_report.dart';
 import '../models/reports_load_result.dart';
 import '../models/analytics_history_bundle.dart';
@@ -43,10 +47,11 @@ import '../services/lote_trama_catalog_service.dart';
 import '../services/notification_preferences_service.dart';
 import '../services/notification_service.dart';
 import '../services/permissions_service.dart';
-import '../core/permissions/permission.dart';
-import '../core/permissions/role_permissions.dart';
+import '../services/pending_sync_queue_service.dart';
 import '../services/record_export_coordinator.dart';
 import '../services/record_import_service.dart';
+import '../services/record_local_storage_service.dart';
+import '../services/record_tombstone_reconciler.dart';
 import '../services/report_export_service.dart';
 import '../features/reports/professional/models/report_configuration.dart';
 import '../services/report_records_loader.dart';
@@ -60,9 +65,7 @@ import '../utils/stable_id.dart';
 import '../utils/today_capture_records.dart';
 import '../services/capture_draft_storage_service.dart';
 import '../services/saved_capture_ids_storage_service.dart';
-import '../services/pending_sync_queue_service.dart';
 import '../services/personal_session_archive_service.dart';
-import '../services/record_local_storage_service.dart';
 import '../core/permissions/record_visibility.dart';
 import 'domain/capture_form_scope.dart';
 import 'domain/cloud_sync_scope.dart';
@@ -164,6 +167,7 @@ class AppState extends ChangeNotifier {
             recordsScope.remoteFiltersActive = active,
         onStateChanged: notifyListeners,
         reportStorageService: reportStorageService,
+        applyRecordTombstones: _applyRecordTombstones,
       ),
     );
   }
@@ -613,6 +617,13 @@ class AppState extends ChangeNotifier {
               ownerUid: deleteOwner,
             );
         }
+      } on RecordTombstonedException catch (error) {
+        // DELETE definitivo: no reintentar; purgar local y cola.
+        if (!_isAuthContextValid(generation, uid)) continue;
+        await _purgeTombstonedRecord(
+          recordId: error.recordId,
+          actorUid: uid,
+        );
       } catch (_) {
         remaining.add(op);
       }
@@ -624,6 +635,50 @@ class AppState extends ChangeNotifier {
       cloudSyncEnabled = true;
       _notifyIfActive();
     }
+  }
+
+  Future<void> _applyRecordTombstones(List<RecordTombstone> tombstones) async {
+    final uid = _authUid;
+    final generation = _authGeneration;
+    if (uid == null || tombstones.isEmpty) return;
+    if (!_isAuthContextValid(generation, uid)) return;
+
+    var changed = false;
+    for (final tombstone in tombstones) {
+      if (!_isAuthContextValid(generation, uid)) return;
+      final id = tombstone.recordId.trim();
+      if (id.isEmpty) continue;
+      final hadInMemory = recordsScope.findById(id) != null;
+      await const RecordTombstoneReconciler().applyLocally(
+        tombstone: tombstone,
+        scope: recordsScope,
+        storage: recordLocalStorageService,
+        queue: pendingSyncQueueService,
+        actorUid: uid,
+      );
+      if (hadInMemory) changed = true;
+    }
+    if (changed && _isAuthContextValid(generation, uid)) {
+      notifyListeners();
+    }
+  }
+
+  Future<void> _purgeTombstonedRecord({
+    required String recordId,
+    required String actorUid,
+  }) async {
+    await const RecordTombstoneReconciler().applyLocally(
+      tombstone: RecordTombstone(
+        recordId: recordId,
+        ownerUid: '',
+        deletedByUid: actorUid,
+        deletedAt: DateTime.now().toUtc(),
+      ),
+      scope: recordsScope,
+      storage: recordLocalStorageService,
+      queue: pendingSyncQueueService,
+      actorUid: actorUid,
+    );
   }
 
   bool _requirePermission(bool allowed, String action) {
@@ -1224,17 +1279,13 @@ class AppState extends ChangeNotifier {
     showMessage('Catalogo de telas actualizado localmente.');
   }
 
+  /// Deshabilitado: no puede convertir la caché local en fuente autoritativa
+  /// (riesgo de resucitar IDs tombstoned).
+  @Deprecated('No usar: write-path peligrosa para delete-wins.')
   Future<void> saveData() async {
-    if (cloudSyncCoordinator != null && await _ensureCloudReady()) {
-      try {
-        await cloudSyncCoordinator!.replaceRecords(records);
-        return;
-      } catch (_) {
-        cloudSyncEnabled = false;
-      }
-    }
-
-    await _cacheRecordsLocally(records);
+    throw UnsupportedError(
+      'saveData está deshabilitado: no reescribe la nube desde la caché local.',
+    );
   }
 
   Future<void> _persistRecord(NepRecord record) async {
@@ -1264,6 +1315,10 @@ class AppState extends ChangeNotifier {
       if (!_isAuthContextValid(generation, uid)) return;
       try {
         await cloudSyncCoordinator!.upsertRecord(stamped);
+        return;
+      } on RecordTombstonedException catch (error) {
+        await _purgeTombstonedRecord(recordId: error.recordId, actorUid: uid);
+        showMessage('El registro fue eliminado y no se puede recrear.');
         return;
       } catch (error, stackTrace) {
         cloudSyncEnabled = false;
@@ -2463,7 +2518,10 @@ class AppState extends ChangeNotifier {
           return lastDeleteOutcome!;
         }
         recordsScope.removeById(recordId);
-        await recordsScope.persistLocally();
+        await recordLocalStorageService.deleteById(recordId);
+        if (uid != null) {
+          await pendingSyncQueueService.removeUpsertsForRecordId(uid, recordId);
+        }
         notifyListeners();
         showMessage('Registro eliminado correctamente.');
         lastDeleteOutcome = RecordDeleteOutcome.deletedRemote;
@@ -2521,7 +2579,7 @@ class AppState extends ChangeNotifier {
     }
 
     recordsScope.removeById(recordId);
-    await recordsScope.persistLocally();
+    await recordLocalStorageService.deleteById(recordId);
     notifyListeners();
     showMessage('Registro eliminado correctamente.');
     lastDeleteOutcome = RecordDeleteOutcome.deletedLocalPendingSync;
@@ -2535,7 +2593,7 @@ class AppState extends ChangeNotifier {
     required int generation,
   }) async {
     recordsScope.removeById(recordId);
-    await recordsScope.persistLocally();
+    await recordLocalStorageService.deleteById(recordId);
     if (actorUid != null && !_isAuthContextValid(generation, actorUid)) {
       lastDeleteOutcome = RecordDeleteOutcome.deletedLocalPendingSync;
       return lastDeleteOutcome!;

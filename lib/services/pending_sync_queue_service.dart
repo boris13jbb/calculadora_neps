@@ -125,6 +125,23 @@ class PendingSyncQueueService {
     await _save(uid, ops);
   }
 
+  /// Quita upserts pendientes de [recordId] (DELETE > UPSERT).
+  ///
+  /// Conserva deletes y upserts de otros IDs. Aislado por [uid].
+  Future<void> removeUpsertsForRecordId(String uid, String recordId) async {
+    final id = recordId.trim();
+    if (id.isEmpty) return;
+    final ops = List<PendingSyncOp>.from(await loadForUid(uid));
+    final next = ops
+        .where(
+          (op) => !(op.type == PendingSyncOpType.upsert &&
+              (op.recordId == id || op.record?.id == id)),
+        )
+        .toList(growable: false);
+    if (next.length == ops.length) return;
+    await _save(uid, next);
+  }
+
   Future<void> replaceAll(String uid, List<PendingSyncOp> ops) async {
     // Conserva todas las ops restantes de la cola del actor (incluye deletes
     // de registros ajenos encolados por roles con permiso global).

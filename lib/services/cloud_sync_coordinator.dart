@@ -3,6 +3,7 @@ import 'dart:async';
 import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
 import '../models/record_filters.dart';
+import '../models/record_tombstone.dart';
 import '../models/records_page_result.dart';
 import '../models/saved_report.dart';
 import 'cloud_sync_port.dart';
@@ -19,6 +20,7 @@ class CloudSyncCoordinator {
 
   StreamSubscription<RecordsPageResult>? _recordsSubscription;
   StreamSubscription<List<String>>? _fabricsSubscription;
+  StreamSubscription<List<RecordTombstone>>? _tombstonesSubscription;
 
   bool _useRemoteFilters = false;
 
@@ -60,8 +62,12 @@ class CloudSyncCoordinator {
 
   Future<void> clearRecords() => _cloud.clearRecords();
 
+  @Deprecated('Evitar: reescribe la caché local como fuente autoritativa.')
   Future<void> replaceRecords(List<NepRecord> records) =>
       _cloud.replaceRecords(records);
+
+  Future<bool> hasRecordTombstone(String recordId) =>
+      _cloud.hasRecordTombstone(recordId);
 
   Future<List<SavedReport>> fetchReports() => _cloud.fetchReports();
 
@@ -70,10 +76,11 @@ class CloudSyncCoordinator {
 
   Future<void> deleteReport(String reportId) => _cloud.deleteReport(reportId);
 
-  /// Escucha registros paginados y telas en tiempo real.
+  /// Escucha registros paginados, telas y tombstones en tiempo real.
   Future<void> bindSubscriptions({
     required void Function(RecordsPageResult page) onRecords,
     required void Function(List<String> fabrics) onFabrics,
+    required void Function(List<RecordTombstone> tombstones) onTombstones,
     AppUserRole viewerRole = AppUserRole.operario,
     String? viewerRoleCode,
     RecordFilters? filters,
@@ -87,6 +94,7 @@ class CloudSyncCoordinator {
 
     _recordsSubscription?.cancel();
     _fabricsSubscription?.cancel();
+    _tombstonesSubscription?.cancel();
 
     final recordsReady = Completer<void>();
     final fabricsReady = Completer<void>();
@@ -123,6 +131,13 @@ class CloudSyncCoordinator {
       onError: (Object error, StackTrace stackTrace) {
         onConnectionError?.call(error, stackTrace);
         if (!fabricsReady.isCompleted) fabricsReady.completeError(error);
+      },
+    );
+
+    _tombstonesSubscription = _cloud.watchRecordTombstones().listen(
+      onTombstones,
+      onError: (Object error, StackTrace stackTrace) {
+        onConnectionError?.call(error, stackTrace);
       },
     );
 
@@ -174,7 +189,9 @@ class CloudSyncCoordinator {
   void dispose() {
     _recordsSubscription?.cancel();
     _fabricsSubscription?.cancel();
+    _tombstonesSubscription?.cancel();
     _recordsSubscription = null;
     _fabricsSubscription = null;
+    _tombstonesSubscription = null;
   }
 }

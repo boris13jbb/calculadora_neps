@@ -6,12 +6,14 @@ import 'package:flutter/foundation.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/errors/error_handler.dart';
+import '../core/errors/record_tombstoned_exception.dart';
 import '../core/constants.dart';
 import '../core/permissions/record_visibility.dart';
 import '../firebase_options.dart';
 import '../models/app_user_role.dart';
 import '../models/nep_record.dart';
 import '../models/record_filters.dart';
+import '../models/record_tombstone.dart';
 import '../models/records_page_result.dart';
 import '../utils/firestore_json_helper.dart';
 import '../models/saved_report.dart';
@@ -30,6 +32,9 @@ class CloudSyncService implements CloudSyncPort {
 
   CollectionReference<Map<String, dynamic>> get _workspaceRecords =>
       _workspace.collection('records');
+
+  CollectionReference<Map<String, dynamic>> get _recordTombstones =>
+      _workspace.collection('record_tombstones');
 
   CollectionReference<Map<String, dynamic>> get _reports =>
       _workspace.collection('reports');
@@ -273,7 +278,16 @@ class CloudSyncService implements CloudSyncPort {
 
     if (migratable.isNotEmpty) {
       try {
-        await upsertRecords(migratable);
+        final allowed = <NepRecord>[];
+        for (final record in migratable) {
+          if (await hasRecordTombstone(record.id)) {
+            continue;
+          }
+          allowed.add(record);
+        }
+        if (allowed.isNotEmpty) {
+          await upsertRecords(allowed);
+        }
       } catch (error, stackTrace) {
         ErrorHandler.log(error, stackTrace, 'migrateRecords');
       }
@@ -349,30 +363,35 @@ class CloudSyncService implements CloudSyncPort {
     }
 
     final data = _recordData(stamped, ownerUid);
-    final batch = _firestore.batch();
-    batch.set(
-      _userRecords(ownerUid).doc(stamped.id),
-      data,
-      SetOptions(merge: true),
-    );
-    batch.set(
-      _workspaceRecords.doc(stamped.id),
-      data,
-      SetOptions(merge: true),
-    );
-    await batch.commit();
+    final tombRef = _recordTombstones.doc(stamped.id);
+    final userRef = _userRecords(ownerUid).doc(stamped.id);
+    final workspaceRef = _workspaceRecords.doc(stamped.id);
+
+    await _firestore.runTransaction((transaction) async {
+      final tombSnap = await transaction.get(tombRef);
+      if (tombSnap.exists) {
+        throw RecordTombstonedException(stamped.id);
+      }
+      transaction.set(userRef, data, SetOptions(merge: true));
+      transaction.set(workspaceRef, data, SetOptions(merge: true));
+    });
   }
 
   @override
   Future<void> upsertRecords(List<NepRecord> records) async {
     for (final record in records) {
-      await upsertRecord(record);
+      try {
+        await upsertRecord(record);
+      } on RecordTombstonedException {
+        // DELETE > UPSERT: un ID tombstoned no aborta el resto.
+        continue;
+      }
     }
   }
 
   @override
   Future<void> deleteRecord(String recordId, {String? ownerUid}) async {
-    await _requireUserId();
+    final currentUid = await _requireUserId();
 
     var resolvedOwner = ownerUid?.trim();
     var legacyResolution = 'provided';
@@ -414,7 +433,49 @@ class CloudSyncService implements CloudSyncPort {
     if (resolvedOwner != null && resolvedOwner.isNotEmpty) {
       batch.delete(_userRecords(resolvedOwner).doc(recordId));
     }
+    batch.set(_recordTombstones.doc(recordId), {
+      'recordId': recordId,
+      'ownerUid': resolvedOwner ?? '',
+      'deletedByUid': currentUid,
+      'deletedAt': FieldValue.serverTimestamp(),
+    });
     await batch.commit();
+  }
+
+  @override
+  Stream<List<RecordTombstone>> watchRecordTombstones() {
+    return _recordTombstones.snapshots().map((snapshot) {
+      return snapshot.docs
+          .map((doc) => _tombstoneFromDoc(doc.id, doc.data()))
+          .where((t) => t.recordId.isNotEmpty)
+          .toList(growable: false);
+    });
+  }
+
+  @override
+  Future<bool> hasRecordTombstone(String recordId) async {
+    final id = recordId.trim();
+    if (id.isEmpty) return false;
+    final snap = await _recordTombstones.doc(id).get();
+    return snap.exists;
+  }
+
+  RecordTombstone _tombstoneFromDoc(String docId, Map<String, dynamic> data) {
+    final deletedAtRaw = data['deletedAt'];
+    DateTime deletedAt;
+    if (deletedAtRaw is Timestamp) {
+      deletedAt = deletedAtRaw.toDate();
+    } else {
+      deletedAt = DateTime.tryParse(deletedAtRaw?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    final recordId = data['recordId']?.toString().trim();
+    return RecordTombstone(
+      recordId: (recordId == null || recordId.isEmpty) ? docId : recordId,
+      ownerUid: data['ownerUid']?.toString() ?? '',
+      deletedByUid: data['deletedByUid']?.toString() ?? '',
+      deletedAt: deletedAt,
+    );
   }
 
   /// Resuelve el dueño para borrar sin asumir el UID del actor autenticado.
@@ -463,10 +524,12 @@ class CloudSyncService implements CloudSyncPort {
   }
 
   @override
+  @Deprecated('Evitar: reescribe la caché local como fuente autoritativa.')
   Future<void> replaceRecords(List<NepRecord> records) async {
-    await clearRecords();
-    if (records.isEmpty) return;
-    await upsertRecords(records);
+    throw UnsupportedError(
+      'replaceRecords está deshabilitado: no puede reinsertar IDs tombstoned '
+      'desde la caché local.',
+    );
   }
 
   @override
