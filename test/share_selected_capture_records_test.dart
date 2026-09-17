@@ -279,4 +279,67 @@ void main() {
       state.dispose();
     });
   });
+
+  group('SaveCaptureSessionReportDialog', () {
+    Future<void> pumpSaveDialog(
+      WidgetTester tester, {
+      required List<NepRecord> eligible,
+    }) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.build(),
+          home: Scaffold(
+            body: SaveCaptureSessionReportDialog(
+              eligibleRecords: eligible,
+              initialName: 'Informe prueba',
+              style: PdfReportStyle.completo,
+              formatDateTime: (d) =>
+                  '${d.day}/${d.month}/${d.year} ${d.hour}:${d.minute}',
+              formatNeps: (n) => n.toStringAsFixed(0),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('por defecto selecciona solo el pendiente más reciente',
+        (tester) async {
+      final records = [
+        _rec(id: 'a', createdAt: todayMorning, uid: 'A', telar: '10'),
+        _rec(id: 'b', createdAt: todayNoon, uid: 'A', telar: '20'),
+        _rec(id: 'c', createdAt: todayEvening, uid: 'A', telar: '30'),
+      ];
+      await pumpSaveDialog(tester, eligible: records);
+
+      final state = tester.state<SaveCaptureSessionReportDialogState>(
+        find.byType(SaveCaptureSessionReportDialog),
+      );
+      expect(state.selectedCount, 1);
+      expect(state.selectedRecords.map((r) => r.id), ['c']);
+      expect(find.text('Guardar 1 registro'), findsOneWidget);
+    });
+
+    testWidgets('Seleccionar pendientes marca todos los elegibles',
+        (tester) async {
+      final records = [
+        _rec(id: 'a', createdAt: todayMorning, uid: 'A', telar: '10'),
+        _rec(id: 'b', createdAt: todayNoon, uid: 'A', telar: '20'),
+        _rec(id: 'c', createdAt: todayEvening, uid: 'A', telar: '30'),
+      ];
+      await pumpSaveDialog(tester, eligible: records);
+
+      final state = tester.state<SaveCaptureSessionReportDialogState>(
+        find.byType(SaveCaptureSessionReportDialog),
+      );
+      state.clearSelection();
+      await tester.pump();
+      expect(state.selectedCount, 0);
+
+      state.selectPending();
+      await tester.pump();
+      expect(state.selectedRecords.map((r) => r.id).toSet(), {'a', 'b', 'c'});
+      expect(find.text('Guardar 3 registros'), findsOneWidget);
+    });
+  });
 }

@@ -180,8 +180,8 @@ class _CaptureScreenState extends State<CaptureScreen>
 
     return [
       actionButton(
-        onPressed: captureActionsEnabled(appState)
-            ? () => promptSaveReport(context, appState)
+        onPressed: captureSaveEnabled(appState)
+            ? () => promptSaveCaptureSessionReport(context, appState)
             : null,
         icon: Icons.save,
         label: 'Guardar',
@@ -571,7 +571,7 @@ class _MobileCaptureActionBar extends StatelessWidget {
   void _handleMoreAction(BuildContext context, _MobileMoreAction action) {
     switch (action) {
       case _MobileMoreAction.save:
-        promptSaveReport(context, appState);
+        promptSaveCaptureSessionReport(context, appState);
       case _MobileMoreAction.share:
         showShareReportMenu(context, appState);
       case _MobileMoreAction.newSession:
@@ -1091,8 +1091,9 @@ class _CaptureFormPanel extends StatelessWidget {
                         minimumSize: const Size.fromHeight(48),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      onPressed: captureActionsEnabled(appState)
-                          ? () => promptSaveReport(context, appState)
+                      onPressed: captureSaveEnabled(appState)
+                          ? () =>
+                              promptSaveCaptureSessionReport(context, appState)
                           : null,
                       icon: const Icon(Icons.save, size: 18),
                       label: const Text('Guardar'),
