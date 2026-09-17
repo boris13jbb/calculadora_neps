@@ -46,4 +46,59 @@ void main() {
       expect(find.text('1.234,5'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'KpiStrip compacto usa 2 columnas en ancho de teléfono',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Padding(
+              padding: const EdgeInsets.all(8),
+              child: KpiStrip(
+                compact: true,
+                minCardWidth: 148,
+                spacing: 6,
+                cards: const [
+                  KpiCard(
+                    compact: true,
+                    label: 'Visibles',
+                    value: '24',
+                    icon: Icons.list_alt,
+                  ),
+                  KpiCard(
+                    compact: true,
+                    label: 'Total neps',
+                    value: '821',
+                    icon: Icons.analytics_outlined,
+                  ),
+                  KpiCard(
+                    compact: true,
+                    label: 'Promedio',
+                    value: '34',
+                    icon: Icons.trending_up,
+                  ),
+                  KpiCard(
+                    compact: true,
+                    label: 'Críticos',
+                    value: '0',
+                    icon: Icons.error_outline,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final stripSize = tester.getSize(find.byType(KpiStrip));
+      // Con 2×2 la altura debe quedar claramente por debajo de 4 tarjetas apiladas.
+      expect(stripSize.height, lessThan(220));
+    },
+  );
 }

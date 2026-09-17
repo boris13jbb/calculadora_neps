@@ -30,6 +30,9 @@ class RecordsScreen extends StatefulWidget {
 class _RecordsScreenState extends State<RecordsScreen> {
   bool isImporting = false;
 
+  /// En móvil el resumen KPI inicia colapsado para liberar altura al listado.
+  bool _summaryExpanded = false;
+
   Future<void> _importRecords(AppState appState) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -159,45 +162,54 @@ class _RecordsScreenState extends State<RecordsScreen> {
                   onAction: appState.clearFilters,
                 ),
               ),
-            // Resumen fuera de la tabla, aprovechando el ancho.
-            KpiStrip(
-              compact: phone,
-              minCardWidth: 220,
-              cards: [
-                KpiCard(
-                  compact: phone,
-                  label: 'Registros visibles',
-                  value: '${visible.length}',
-                  subtitle: appState.filters.hasActiveFilters
-                      ? 'de ${appState.records.length} en total'
-                      : null,
-                  icon: Icons.list_alt,
-                  color: AppColors.primaryGreen,
-                ),
-                KpiCard(
-                  compact: phone,
-                  label: 'Total neps',
-                  value: appState.formatDecimal(appState.totalNeps),
-                  icon: Icons.analytics_outlined,
-                  color: AppColors.primaryBlue,
-                ),
-                KpiCard(
-                  compact: phone,
-                  label: 'Promedio neps',
-                  value: appState.formatNumber(appState.averageNeps),
-                  icon: Icons.trending_up,
-                  color: AppColors.accentDark,
-                ),
-                KpiCard(
-                  compact: phone,
-                  label: 'Registros críticos',
-                  value: '$criticalCount',
-                  icon: Icons.error_outline,
-                  color: AppColors.statusCritical,
-                ),
-              ],
+            // Resumen: en móvil colapsable + grilla 2×2; en escritorio siempre visible.
+            _RecordsSummarySection(
+              expanded: !phone || _summaryExpanded,
+              onToggle: phone
+                  ? () => setState(() => _summaryExpanded = !_summaryExpanded)
+                  : null,
+              previewLabel:
+                  '${visible.length} · ${appState.formatDecimal(appState.totalNeps)} neps · prom ${appState.formatNumber(appState.averageNeps)} · $criticalCount crít.',
+              child: KpiStrip(
+                compact: phone,
+                spacing: phone ? 6 : 12,
+                minCardWidth: phone ? 148 : 220,
+                cards: [
+                  KpiCard(
+                    compact: phone,
+                    label: phone ? 'Visibles' : 'Registros visibles',
+                    value: '${visible.length}',
+                    subtitle: !phone && appState.filters.hasActiveFilters
+                        ? 'de ${appState.records.length} en total'
+                        : null,
+                    icon: Icons.list_alt,
+                    color: AppColors.primaryGreen,
+                  ),
+                  KpiCard(
+                    compact: phone,
+                    label: 'Total neps',
+                    value: appState.formatDecimal(appState.totalNeps),
+                    icon: Icons.analytics_outlined,
+                    color: AppColors.primaryBlue,
+                  ),
+                  KpiCard(
+                    compact: phone,
+                    label: phone ? 'Promedio' : 'Promedio neps',
+                    value: appState.formatNumber(appState.averageNeps),
+                    icon: Icons.trending_up,
+                    color: AppColors.accentDark,
+                  ),
+                  KpiCard(
+                    compact: phone,
+                    label: phone ? 'Críticos' : 'Registros críticos',
+                    value: '$criticalCount',
+                    icon: Icons.error_outline,
+                    color: AppColors.statusCritical,
+                  ),
+                ],
+              ),
             ),
-            SizedBox(height: spacing),
+            SizedBox(height: phone ? 8 : spacing),
             RecordFiltersPanel(
               key: ValueKey(appState.filterPanelKey),
               records: appState.records,
@@ -206,7 +218,7 @@ class _RecordsScreenState extends State<RecordsScreen> {
               onClear: appState.clearFilters,
               compact: true,
             ),
-            if (appState.filters.hasActiveFilters)
+            if (!phone && appState.filters.hasActiveFilters)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
@@ -218,26 +230,39 @@ class _RecordsScreenState extends State<RecordsScreen> {
                   ),
                 ),
               ),
-            SizedBox(height: spacing),
+            SizedBox(height: phone ? 8 : spacing),
             if (appState.hasMoreRecords || appState.isLoadingMoreRecords)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: EdgeInsets.only(bottom: phone ? 4 : 8),
                 child: Center(
                   child: OutlinedButton.icon(
                     onPressed: appState.isLoadingMoreRecords
                         ? null
                         : appState.loadMoreRecords,
+                    style: phone
+                        ? OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                          )
+                        : null,
                     icon: appState.isLoadingMoreRecords
                         ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.expand_more),
+                        : const Icon(Icons.expand_more, size: 18),
                     label: Text(
                       appState.isLoadingMoreRecords
-                          ? 'Cargando más registros…'
-                          : 'Cargar más registros',
+                          ? 'Cargando más…'
+                          : 'Cargar más',
+                      style: TextStyle(
+                        fontSize: phone ? 12 : 14,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -268,6 +293,84 @@ class _RecordsScreenState extends State<RecordsScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Resumen KPI: en móvil una franja colapsable; en escritorio solo el hijo.
+class _RecordsSummarySection extends StatelessWidget {
+  const _RecordsSummarySection({
+    required this.expanded,
+    required this.previewLabel,
+    required this.child,
+    this.onToggle,
+  });
+
+  final bool expanded;
+  final String previewLabel;
+  final Widget child;
+  final VoidCallback? onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    if (onToggle == null) return child;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: onToggle,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.insights_outlined,
+                    size: 18,
+                    color: AppColors.primaryBlue,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      expanded ? 'Resumen' : 'Resumen · $previewLabel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.muted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: expanded
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: child,
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 }
