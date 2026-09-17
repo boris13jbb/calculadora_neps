@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:calculadora_neps/core/permissions/role_catalog.dart';
+import 'package:calculadora_neps/features/reports/reports_screen.dart';
 import 'package:calculadora_neps/models/app_user.dart';
 import 'package:calculadora_neps/models/app_user_role.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
@@ -550,5 +551,70 @@ void main() {
       expect(state.viewingSavedReport!.records.map((r) => r.id), ['HIST1']);
       state.dispose();
     });
+  });
+
+  group('VIEW-LIFECYCLE visor', () {
+    test(
+      'apertura exitosa sin diálogo (!mounted) deja viewingSavedReport null',
+      () async {
+        final state = await readyState();
+        var presentCalled = false;
+
+        await runSavedReportViewLifecycle(
+          appState: state,
+          report: SavedReport(
+            id: 'rep-life',
+            name: 'Lifecycle',
+            createdAt: DateTime(2026, 8, 2),
+            records: [_hist(id: 'HIST-L')],
+            createdByUid: 'admin-uid',
+          ),
+          isMounted: () => false,
+          present: (_) async {
+            presentCalled = true;
+          },
+        );
+
+        expect(presentCalled, isFalse);
+        expect(state.viewingSavedReport, isNull);
+        state.dispose();
+      },
+    );
+
+    test(
+      'apertura denegada no deja viewingSavedReport y no llama present',
+      () async {
+        final state = await readyState();
+        // operario sin manageReports no abre informes de terceros.
+        state.applyAuthProfile(
+          AppUser(
+            uid: 'op-uid',
+            username: 'operario',
+            role: AppUserRole.operario,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        var presentCalled = false;
+        await runSavedReportViewLifecycle(
+          appState: state,
+          report: SavedReport(
+            id: 'rep-other',
+            name: 'Ajeno',
+            createdAt: DateTime(2026, 8, 2),
+            records: [_hist(id: 'HIST-X')],
+            createdByUid: 'other-uid',
+          ),
+          isMounted: () => true,
+          present: (_) async {
+            presentCalled = true;
+          },
+        );
+
+        expect(presentCalled, isFalse);
+        expect(state.viewingSavedReport, isNull);
+        state.dispose();
+      },
+    );
   });
 }
