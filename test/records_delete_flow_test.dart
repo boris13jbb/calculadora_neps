@@ -248,7 +248,10 @@ void main() {
               child: RecordsTable(
                 appState: state,
                 records: [_record(id: 'r1', ownerUid: 'op')],
-                onDelete: (_) async => deleted = true,
+                onDelete: (_) async {
+                  deleted = true;
+                  return RecordDeleteOutcome.deletedRemote;
+                },
               ),
             ),
           ),

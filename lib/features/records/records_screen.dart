@@ -91,8 +91,8 @@ class _RecordsScreenState extends State<RecordsScreen> {
     await appState.clearTable();
   }
 
-  Future<void> _editRecord(AppState appState, NepRecord record) async {
-    await showEditRecordDialog(
+  Future<bool> _editRecord(AppState appState, NepRecord record) {
+    return showEditRecordDialog(
       context: context,
       appState: appState,
       record: record,
@@ -261,6 +261,8 @@ class _RecordsScreenState extends State<RecordsScreen> {
                 onGoToImport: appState.canImportRecords
                     ? () => _importRecords(appState)
                     : null,
+                selectionResetToken: appState.recordsSelectionContextVersion,
+                userContextKey: appState.authUid ?? '',
               ),
             ),
           ],

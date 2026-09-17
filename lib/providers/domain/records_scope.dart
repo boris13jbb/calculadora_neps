@@ -18,6 +18,10 @@ class RecordsScope extends ChangeNotifier {
   final RecordFilters filters = RecordFilters();
   int filterPanelKey = 0;
 
+  /// Versión de contexto de filtros/selección (UI).
+  /// Se incrementa en onFiltersChanged, clearFilters y applyNavigationFilters.
+  int recordsSelectionContextVersion = 0;
+
   int queryLimit = recordsInitialPageSize;
   bool hasMoreFromCloud = false;
   bool isLoadingMore = false;
@@ -113,6 +117,7 @@ class RecordsScope extends ChangeNotifier {
   void clearFilters() {
     filters.clear();
     filterPanelKey++;
+    recordsSelectionContextVersion++;
     queryLimit = recordsInitialPageSize;
     notifyListeners();
   }
@@ -133,11 +138,13 @@ class RecordsScope extends ChangeNotifier {
     filters.dateFrom = dateFrom;
     filters.dateTo = dateTo;
     filterPanelKey++;
+    recordsSelectionContextVersion++;
     queryLimit = recordsInitialPageSize;
     notifyListeners();
   }
 
   void onFiltersChanged() {
+    recordsSelectionContextVersion++;
     queryLimit = recordsInitialPageSize;
     notifyListeners();
   }
