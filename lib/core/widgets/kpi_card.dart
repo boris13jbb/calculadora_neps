@@ -163,9 +163,10 @@ class KpiStrip extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        // En compacto no reducir el ancho objetivo: menos columnas = menos recortes.
+        // En compacto permitimos tarjetas más estrechas para 2 columnas en móvil
+        // (antes el piso de 180 forzaba 1 columna y apilaba 4 KPI a pantalla completa).
         final target = compact
-            ? (minCardWidth < 180 ? 180.0 : minCardWidth.toDouble())
+            ? (minCardWidth < 140 ? 140.0 : minCardWidth.toDouble())
             : minCardWidth.toDouble();
         final maxCols = compact ? 2 : maxColumns;
         var columns = (width / target).floor();
