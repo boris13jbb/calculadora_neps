@@ -59,6 +59,7 @@ import '../utils/lote_trama_helper.dart';
 import '../utils/stable_id.dart';
 import '../utils/today_capture_records.dart';
 import '../services/capture_draft_storage_service.dart';
+import '../services/saved_capture_ids_storage_service.dart';
 import '../services/pending_sync_queue_service.dart';
 import '../services/personal_session_archive_service.dart';
 import '../services/record_local_storage_service.dart';
@@ -488,6 +489,20 @@ class AppState extends ChangeNotifier {
       // No adopta registros legacy ambiguos ni ajenos.
     }
     _activeCaptureSessionId = sessionId;
+    await _loadSavedCaptureIdsForSession(uid, sessionId);
+  }
+
+  Future<void> _loadSavedCaptureIdsForSession(
+    String uid,
+    String sessionId,
+  ) async {
+    final loaded = await savedCaptureIdsStorageService.load(
+      uid: uid,
+      captureSessionId: sessionId,
+    );
+    _savedCaptureRecordIds
+      ..clear()
+      ..addAll(loaded);
   }
 
   Future<void> _persistActiveCaptureSessionId(
@@ -1625,8 +1640,32 @@ class AppState extends ChangeNotifier {
         createdByUid: _authUid,
       );
 
-      // Solo tras persistencia exitosa del informe.
-      _savedCaptureRecordIds.addAll(selected.map((record) => record.id));
+      // Solo tras persistencia exitosa del informe: disco y luego memoria.
+      final addedIds = selected.map((record) => record.id).toSet();
+      final nextSaved = {..._savedCaptureRecordIds, ...addedIds};
+      final uid = _authUid;
+      final sessionId = _activeCaptureSessionId;
+      if (uid != null &&
+          uid.isNotEmpty &&
+          sessionId != null &&
+          sessionId.isNotEmpty) {
+        try {
+          await savedCaptureIdsStorageService.save(
+            uid: uid,
+            captureSessionId: sessionId,
+            ids: nextSaved,
+          );
+        } catch (persistError, persistStack) {
+          ErrorHandler.log(
+            persistError,
+            persistStack,
+            'persistSavedCaptureIds',
+          );
+        }
+      }
+      _savedCaptureRecordIds
+        ..clear()
+        ..addAll(nextSaved);
       notifyListeners();
 
       try {
@@ -1815,6 +1854,11 @@ class AppState extends ChangeNotifier {
       _pendingClosedSessionReportId = null;
       _pendingClosedPersonalArchiveId = null;
       _savedCaptureRecordIds.clear();
+      await savedCaptureIdsStorageService.save(
+        uid: uid,
+        captureSessionId: newSessionId,
+        ids: const <String>{},
+      );
       // Evita que preferencias o restauración de borrador rellenen la sesión.
       _autoFillCaptureDefaults = false;
       await captureDraftStorageService.clearForUid(uid);
@@ -1889,6 +1933,7 @@ class AppState extends ChangeNotifier {
       await _persistActiveCaptureSessionId(uid, archive.captureSessionId);
       if (!_isAuthContextValid(generation, uid)) return false;
       _activeCaptureSessionId = archive.captureSessionId;
+      await _loadSavedCaptureIdsForSession(uid, archive.captureSessionId);
 
       records = await recordsScope.loadFromPreferences();
       if (!_isAuthContextValid(generation, uid)) return false;

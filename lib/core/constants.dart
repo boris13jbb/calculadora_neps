@@ -54,6 +54,9 @@ const String notificationPrefsKey = 'vicunha_notification_prefs_v1';
 const String activeCaptureSessionKeyPrefix =
     'vicunha_active_capture_session_v1_';
 
+/// IDs ya incluidos en Captura → Guardar, por UID + captureSessionId.
+const String savedCaptureIdsKeyPrefix = 'vicunha_saved_capture_ids_v1_';
+
 String recordsPrefsKeyForUid(String uid) => '$recordsPrefsKeyPrefix$uid';
 String recordsHiveBoxForUid(String uid) => '$recordsHiveBoxPrefix$uid';
 String pendingSyncKeyForUid(String uid) => '$pendingSyncKeyPrefix$uid';
@@ -64,6 +67,10 @@ String personalReportsKeyForUid(String uid) => '$personalReportsKeyPrefix$uid';
 String lotePrefsKeyForUid(String uid) => '$lotePrefsKeyPrefix$uid';
 String activeCaptureSessionKeyForUid(String uid) =>
     '$activeCaptureSessionKeyPrefix$uid';
+
+/// Clave local de tracking de guardados: UID + sesión de captura.
+String savedCaptureIdsKeyFor(String uid, String captureSessionId) =>
+    '$savedCaptureIdsKeyPrefix${uid}_$captureSessionId';
 
 /// Site key reCAPTCHA v3 para Firebase App Check (web).
 /// Definir con: `--dart-define=APP_CHECK_RECAPTCHA_SITE_KEY=...`

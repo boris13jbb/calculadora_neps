@@ -337,6 +337,122 @@ void main() {
       expect(state.resolveExportRecords([only]).map((r) => r.id), [only.id]);
       state.dispose();
     });
+
+    test('L) restart AppState conserva R1 como guardado (no pendiente)',
+        () async {
+      final state = await readyState(uid: 'uid-a');
+      final sessionId = state.activeCaptureSessionId!;
+      final r1 = await addSessionRecord(state, telar: '1', neps: 11);
+      expect(
+        await state.saveCaptureReport('L1', sourceRecords: [r1]),
+        isTrue,
+      );
+      state.dispose();
+
+      final restored = await readyState(uid: 'uid-a');
+      expect(restored.activeCaptureSessionId, sessionId);
+      expect(restored.savedCaptureRecordIds, contains(r1.id));
+      expect(
+        restored.pendingCaptureSessionRecords.map((r) => r.id),
+        isNot(contains(r1.id)),
+      );
+      restored.dispose();
+    });
+
+    test('M) reload: R1 saved + R2 pendiente → solo R2 pendiente', () async {
+      final state = await readyState(uid: 'uid-m');
+      final sessionId = state.activeCaptureSessionId!;
+      final r1 = await addSessionRecord(state, telar: '1', neps: 1);
+      await state.saveCaptureReport('M1', sourceRecords: [r1]);
+      final r2 = await addSessionRecord(state, telar: '2', neps: 2);
+      state.dispose();
+
+      final restored = await readyState(uid: 'uid-m');
+      expect(restored.activeCaptureSessionId, sessionId);
+      expect(
+        restored.pendingCaptureSessionRecords.map((r) => r.id).toSet(),
+        {r2.id},
+      );
+      expect(restored.savedCaptureRecordIds, contains(r1.id));
+      restored.dispose();
+    });
+
+    test('N) logout/login mismo UID restaura tracking de SA', () async {
+      final state = await readyState(uid: 'uid-n');
+      final sessionId = state.activeCaptureSessionId!;
+      final r1 = await addSessionRecord(state, telar: '1', neps: 1);
+      await state.saveCaptureReport('N1', sourceRecords: [r1]);
+      state.resetCloudSession();
+      state.dispose();
+
+      final again = await readyState(uid: 'uid-n');
+      expect(again.activeCaptureSessionId, sessionId);
+      expect(again.savedCaptureRecordIds, contains(r1.id));
+      expect(
+        again.pendingCaptureSessionRecords.map((r) => r.id),
+        isNot(contains(r1.id)),
+      );
+      again.dispose();
+    });
+
+    test('O) Usuario B no carga tracking de Usuario A', () async {
+      final a = await readyState(uid: 'uid-oa');
+      final r1 = await addSessionRecord(a, telar: '1', neps: 1);
+      await a.saveCaptureReport('OA', sourceRecords: [r1]);
+      final sessionA = a.activeCaptureSessionId!;
+      a.dispose();
+
+      final b = await readyState(uid: 'uid-ob');
+      expect(b.activeCaptureSessionId, isNot(sessionA));
+      expect(b.savedCaptureRecordIds, isEmpty);
+      expect(b.pendingCaptureSessionRecords, isEmpty);
+      b.dispose();
+    });
+
+    test('P) Nueva sesión SB inicia tracking vacío', () async {
+      final state = await readyState(uid: 'uid-p');
+      final r1 = await addSessionRecord(state, telar: '1', neps: 1);
+      await state.saveCaptureReport('P1', sourceRecords: [r1]);
+      final sessionA = state.activeCaptureSessionId!;
+
+      final ok = await state.openEmptyCaptureSessionAfterSave();
+      expect(ok, isTrue);
+      final sessionB = state.activeCaptureSessionId!;
+      expect(sessionB, isNot(sessionA));
+      expect(state.savedCaptureRecordIds, isEmpty);
+
+      final r3 = await addSessionRecord(state, telar: '3', neps: 3);
+      expect(
+        state.pendingCaptureSessionRecords.map((r) => r.id).toSet(),
+        {r3.id},
+      );
+      expect(r3.captureSessionId, sessionB);
+      state.dispose();
+    });
+
+    test('Q) fallo de guardado + restart → R1 sigue pendiente', () async {
+      final state = await readyState(
+        uid: 'uid-q',
+        reportStorageService: _ThrowingReportStorage(),
+      );
+      final sessionId = state.activeCaptureSessionId!;
+      final r1 = await addSessionRecord(state, telar: '1', neps: 11);
+      expect(
+        await state.saveCaptureReport('fail-q', sourceRecords: [r1]),
+        isFalse,
+      );
+      expect(state.savedCaptureRecordIds, isEmpty);
+      state.dispose();
+
+      final restored = await readyState(uid: 'uid-q');
+      expect(restored.activeCaptureSessionId, sessionId);
+      expect(restored.savedCaptureRecordIds, isEmpty);
+      expect(
+        restored.pendingCaptureSessionRecords.map((r) => r.id).toSet(),
+        {r1.id},
+      );
+      restored.dispose();
+    });
   });
 
   group('Diálogo Guardar — selección pendiente', () {
