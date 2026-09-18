@@ -145,6 +145,12 @@ service cloud.firestore {
         && !('captureSessionId' in request.resource.data.diff(resource.data).affectedKeys());
     }
 
+    function notTombstoned(workspaceId, recordId) {
+      return !exists(
+        /databases/$(database)/documents/workspaces/$(workspaceId)/record_tombstones/$(recordId)
+      );
+    }
+
     function systemRoleCodes() {
       return ['super_admin', 'admin', 'supervisor', 'operario', 'gerencia'];
     }
@@ -184,6 +190,7 @@ service cloud.firestore {
             && workspaceIdOk(workspaceId)
             && request.auth.uid == userId
             && canCapture()
+            && notTombstoned(workspaceId, recordId)
             && request.resource.data.ownerUid == request.auth.uid
             && (
               !('createdByUid' in request.resource.data) ||
@@ -193,12 +200,28 @@ service cloud.firestore {
           allow update: if isAuthenticated()
             && workspaceIdOk(workspaceId)
             && canEditRecord(userId)
+            && notTombstoned(workspaceId, recordId)
             && ownershipUnchanged();
 
           allow delete: if isAuthenticated()
             && workspaceIdOk(workspaceId)
             && canDeleteRecord(userId);
         }
+      }
+
+      match /record_tombstones/{recordId} {
+        allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
+
+        allow create: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && canDeleteRecord(request.resource.data.ownerUid)
+          && request.resource.data.recordId == recordId
+          && request.resource.data.deletedByUid == request.auth.uid
+          && request.resource.data.keys().hasAll([
+            'recordId', 'ownerUid', 'deletedByUid', 'deletedAt'
+          ]);
+
+        allow update, delete: if false;
       }
 
       match /reports/{reportId} {
@@ -370,6 +393,7 @@ service cloud.firestore {
         allow create: if isAuthenticated()
           && workspaceIdOk(workspaceId)
           && canCapture()
+          && notTombstoned(workspaceId, recordId)
           && request.resource.data.ownerUid == request.auth.uid
           && (
             !('createdByUid' in request.resource.data) ||
@@ -378,6 +402,7 @@ service cloud.firestore {
         allow update: if isAuthenticated()
           && workspaceIdOk(workspaceId)
           && canEditRecord(resource.data.ownerUid)
+          && notTombstoned(workspaceId, recordId)
           && ownershipUnchanged();
         allow delete: if isAuthenticated()
           && workspaceIdOk(workspaceId)

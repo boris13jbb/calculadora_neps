@@ -7,6 +7,7 @@ import 'package:calculadora_neps/models/app_user_role.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
 import 'package:calculadora_neps/models/record_filters.dart';
 import 'package:calculadora_neps/models/records_page_result.dart';
+import 'package:calculadora_neps/models/record_tombstone.dart';
 import 'package:calculadora_neps/models/saved_report.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
 import 'package:calculadora_neps/services/cloud_sync_port.dart';
@@ -101,6 +102,13 @@ class _TrackingCloudSync implements CloudSyncPort {
 
   @override
   Future<void> deleteRecord(String recordId, {String? ownerUid}) async {}
+
+  @override
+  Stream<List<RecordTombstone>> watchRecordTombstones() =>
+      Stream.value(const []);
+
+  @override
+  Future<bool> hasRecordTombstone(String recordId) async => false;
 
   @override
   Future<void> clearRecords() async {
