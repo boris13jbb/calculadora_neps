@@ -1383,8 +1383,13 @@ class AppState extends ChangeNotifier {
   RecordDeleteOutcome? lastDeleteOutcome;
 
   Future<void> _clearAllRecords() async {
+    final uid = _authUid;
     recordsScope.clear();
     await recordsScope.persistLocally();
+    // Evita que UPSERTs stale revivan IDs tras vaciar (delete-wins local).
+    if (uid != null && uid.isNotEmpty) {
+      await pendingSyncQueueService.removeAllUpserts(uid);
+    }
     notifyListeners();
 
     if (cloudSyncCoordinator != null && await _ensureCloudReady()) {

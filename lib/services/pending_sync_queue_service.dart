@@ -142,6 +142,16 @@ class PendingSyncQueueService {
     await _save(uid, next);
   }
 
+  /// Quita todos los UPSERT del actor (p. ej. tras vaciar tabla). Conserva deletes.
+  Future<void> removeAllUpserts(String uid) async {
+    final ops = List<PendingSyncOp>.from(await loadForUid(uid));
+    final next = ops
+        .where((op) => op.type != PendingSyncOpType.upsert)
+        .toList(growable: false);
+    if (next.length == ops.length) return;
+    await _save(uid, next);
+  }
+
   Future<void> replaceAll(String uid, List<PendingSyncOp> ops) async {
     // Conserva todas las ops restantes de la cola del actor (incluye deletes
     // de registros ajenos encolados por roles con permiso global).

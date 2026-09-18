@@ -20,6 +20,27 @@ import '../models/saved_report.dart';
 import 'cloud_sync_port.dart';
 import 'firestore_record_query_builder.dart';
 
+/// Una escritura delete-wins por registro al vaciar (clearRecords).
+@visibleForTesting
+class ClearRecordsWrite {
+  const ClearRecordsWrite({
+    required this.recordId,
+    required this.ownerUid,
+    required this.deletedByUid,
+  });
+
+  final String recordId;
+  final String ownerUid;
+  final String deletedByUid;
+
+  static const int writesPerRecord = 3; // workspace + user + tombstone
+
+  bool get createsTombstone => true;
+  bool get deletesWorkspaceMirror => true;
+  bool get deletesUserMirror => true;
+  bool get touchesReports => false;
+}
+
 class CloudSyncService implements CloudSyncPort {
   CloudSyncService({
     FirebaseFirestore? firestore,
@@ -29,6 +50,45 @@ class CloudSyncService implements CloudSyncPort {
 
   final FirebaseFirestore? _firestoreOverride;
   final FirebaseAuth? _authOverride;
+
+  /// Máximo de operaciones por batch Firestore al vaciar (margen < 500).
+  @visibleForTesting
+  static const int clearRecordsMaxWritesPerBatch = 450;
+
+  /// Máximo de registros por batch (= floor(450/3)).
+  @visibleForTesting
+  static const int clearRecordsMaxRecordsPerBatch =
+      clearRecordsMaxWritesPerBatch ~/ ClearRecordsWrite.writesPerRecord;
+
+  /// Planifica deletes + tombstones por lotes seguros.
+  @visibleForTesting
+  static List<List<ClearRecordsWrite>> planClearBatches({
+    required Iterable<String> recordIds,
+    required String ownerUid,
+    required String deletedByUid,
+    int? maxRecordsPerBatch,
+  }) {
+    final limit = maxRecordsPerBatch ?? clearRecordsMaxRecordsPerBatch;
+    final safeLimit = limit < 1 ? 1 : limit;
+    final ids = recordIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    final batches = <List<ClearRecordsWrite>>[];
+    for (var i = 0; i < ids.length; i += safeLimit) {
+      final end = (i + safeLimit < ids.length) ? i + safeLimit : ids.length;
+      batches.add([
+        for (final id in ids.sublist(i, end))
+          ClearRecordsWrite(
+            recordId: id,
+            ownerUid: ownerUid,
+            deletedByUid: deletedByUid,
+          ),
+      ]);
+    }
+    return batches;
+  }
 
   bool _bootstrapped = false;
   Future<void>? _bootstrapFuture;
@@ -509,29 +569,52 @@ class CloudSyncService implements CloudSyncPort {
   @override
   Future<void> clearRecords() async {
     final userId = await _requireUserId();
-    await _deleteCollection(_userRecords(userId));
 
-    // Solo elimina del workspace los documentos propios. Nunca borra la
-    // colección completa (evitaría el trabajo de otros usuarios).
+    // IDs propios: espejo de usuario + workspace filtrado por ownerUid.
+    final ownedIds = <String>{};
+    await _collectDocumentIds(_userRecords(userId), ownedIds);
     try {
-      QuerySnapshot<Map<String, dynamic>> snapshot;
-      do {
-        snapshot = await _workspaceRecords
-            .where('ownerUid', isEqualTo: userId)
-            .limit(450)
-            .get();
-        if (snapshot.docs.isEmpty) break;
-        final batch = _firestore.batch();
-        for (final doc in snapshot.docs) {
-          batch.delete(doc.reference);
+      QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
+      while (true) {
+        Query<Map<String, dynamic>> query =
+            _workspaceRecords.where('ownerUid', isEqualTo: userId).limit(200);
+        if (cursor != null) {
+          query = query.startAfterDocument(cursor);
         }
-        await batch.commit();
-      } while (snapshot.docs.length >= 450);
+        final snapshot = await query.get();
+        if (snapshot.docs.isEmpty) break;
+        for (final doc in snapshot.docs) {
+          ownedIds.add(doc.id);
+        }
+        cursor = snapshot.docs.last;
+        if (snapshot.docs.length < 200) break;
+      }
     } on FirebaseException catch (error, stackTrace) {
       if (error.code != 'permission-denied') {
         ErrorHandler.log(error, stackTrace, 'clearOwnedWorkspaceRecords');
         rethrow;
       }
+    }
+
+    final batches = planClearBatches(
+      recordIds: ownedIds,
+      ownerUid: userId,
+      deletedByUid: userId,
+    );
+
+    for (final batchWrites in batches) {
+      final batch = _firestore.batch();
+      for (final write in batchWrites) {
+        batch.delete(_workspaceRecords.doc(write.recordId));
+        batch.delete(_userRecords(write.ownerUid).doc(write.recordId));
+        batch.set(_recordTombstones.doc(write.recordId), {
+          'recordId': write.recordId,
+          'ownerUid': write.ownerUid,
+          'deletedByUid': write.deletedByUid,
+          'deletedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
     }
   }
 
@@ -689,18 +772,23 @@ class CloudSyncService implements CloudSyncPort {
     };
   }
 
-  Future<void> _deleteCollection(
+  Future<void> _collectDocumentIds(
     CollectionReference<Map<String, dynamic>> collection,
+    Set<String> into,
   ) async {
+    QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
     while (true) {
-      final snapshot = await collection.limit(450).get();
-      if (snapshot.docs.isEmpty) return;
-
-      final batch = _firestore.batch();
-      for (final doc in snapshot.docs) {
-        batch.delete(doc.reference);
+      Query<Map<String, dynamic>> query = collection.limit(200);
+      if (cursor != null) {
+        query = query.startAfterDocument(cursor);
       }
-      await batch.commit();
+      final snapshot = await query.get();
+      if (snapshot.docs.isEmpty) return;
+      for (final doc in snapshot.docs) {
+        into.add(doc.id);
+      }
+      cursor = snapshot.docs.last;
+      if (snapshot.docs.length < 200) return;
     }
   }
 

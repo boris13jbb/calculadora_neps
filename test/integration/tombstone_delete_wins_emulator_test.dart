@@ -1,9 +1,13 @@
 /// Integración delete-wins contra Auth + Firestore Emulator (API REST).
 ///
-/// Valida el contrato que [CloudSyncService.deleteRecord]/[CloudSyncService.upsertRecord]
-/// aplica en Firestore (mirrors + tombstone + anti-resurrección). El plugin nativo
-/// de Firebase no inicializa en `flutter test` (VM); este archivo usa el mismo
-/// mecanismo REST que [multiuser_emulator_test.dart].
+/// Valida el **contrato Firestore** que aplican
+/// [CloudSyncService.deleteRecord], [CloudSyncService.clearRecords] y
+/// [CloudSyncService.upsertRecord] (mirrors + tombstone + anti-resurrección).
+///
+/// No ejecuta el SDK FlutterFire ni instancia `CloudSyncService` en la VM:
+/// `flutter test` no inicializa el plugin nativo. Este archivo usa el mismo
+/// mecanismo REST que [multiuser_emulator_test.dart] para ejercer las reglas
+/// y el shape de escrituras delete-wins.
 ///
 /// Terminal 1:
 /// ```powershell
@@ -36,7 +40,7 @@ const String _projectId = 'vicunha-calculadora-neps';
 const String _apiKey = 'fake-api-key';
 
 void main() {
-  group('Emulator tombstone delete-wins (contrato CloudSyncService)', () {
+  group('Emulator tombstone delete-wins (contrato Firestore REST)', () {
     setUpAll(() async {
       if (!useFirebaseEmulator) return;
       await _assertEmulatorsReachable();
@@ -58,7 +62,7 @@ void main() {
         final idB = 'rec_b_$stamp';
         final idC = 'rec_c_$stamp';
 
-        // A/B: crear B en ambos mirrors (como upsertRecord).
+        // Crear B en ambos mirrors (contrato upsertRecord).
         final createdWs = await _putDoc(
           token: session.idToken,
           path: 'workspaces/$cloudWorkspaceId/records/$idB',
@@ -102,7 +106,7 @@ void main() {
           200,
         );
 
-        // C/D: deleteRecord atómico (workspace + user + tombstone).
+        // Contrato deleteRecord: workspace + user + tombstone.
         final deleted = await _commitDeleteWithTombstone(
           token: session.idToken,
           recordId: idB,
@@ -138,7 +142,7 @@ void main() {
         expect(tombFields['ownerUid'], session.uid);
         expect(tombFields['deletedByUid'], session.uid);
 
-        // E/F: recreate = upsert stale → DENY (equivalente RecordTombstonedException).
+        // Recreate stale → DENY (equivalente RecordTombstonedException).
         final reviveWs = await _putDoc(
           token: session.idToken,
           path: 'workspaces/$cloudWorkspaceId/records/$idB',
@@ -182,7 +186,7 @@ void main() {
           404,
         );
 
-        // G: upsert C sin tombstone → ambos mirrors OK.
+        // Upsert C sin tombstone → ambos mirrors OK.
         final createCWs = await _putDoc(
           token: session.idToken,
           path: 'workspaces/$cloudWorkspaceId/records/$idC',
@@ -225,6 +229,132 @@ void main() {
               .statusCode,
           200,
         );
+      },
+      skip: useFirebaseEmulator
+          ? false
+          : 'Requiere: firebase emulators:start --only auth,firestore '
+              'y --dart-define=USE_FIREBASE_EMULATOR=true',
+    );
+
+    test(
+      'clearRecords delete-wins: A/B tombstone; recreate A DENY; C OK',
+      () async {
+        final admin = await _createUser('clear_admin');
+        await _setCustomClaims(admin.uid, {
+          'role': 'admin',
+          'isSuperAdmin': true,
+        });
+        final session = await _signIn(admin.email, admin.password);
+        await _seedAdminRole(session.idToken);
+
+        final stamp = DateTime.now().microsecondsSinceEpoch;
+        final idA = 'clr_a_$stamp';
+        final idB = 'clr_b_$stamp';
+        final idC = 'clr_c_$stamp';
+
+        for (final id in [idA, idB]) {
+          final ws = await _putDoc(
+            token: session.idToken,
+            path: 'workspaces/$cloudWorkspaceId/records/$id',
+            data: _recordPayload(
+              id: id,
+              ownerUid: session.uid,
+              sessionId: 'ses_clr_$stamp',
+              telar: 'T-$id',
+              neps: 5,
+            ),
+          );
+          final user = await _putDoc(
+            token: session.idToken,
+            path:
+                'workspaces/$cloudWorkspaceId/users/${session.uid}/records/$id',
+            data: _recordPayload(
+              id: id,
+              ownerUid: session.uid,
+              sessionId: 'ses_clr_$stamp',
+              telar: 'T-$id',
+              neps: 5,
+            ),
+          );
+          expect(ws.statusCode, anyOf(200, 201));
+          expect(user.statusCode, anyOf(200, 201));
+        }
+
+        // Contrato clearRecords: delete mirrors + tombstone por ID.
+        final cleared = await _commitClearWithTombstones(
+          token: session.idToken,
+          recordIds: [idA, idB],
+          ownerUid: session.uid,
+          deletedByUid: session.uid,
+        );
+        expect(cleared.statusCode, anyOf(200, 201));
+
+        for (final id in [idA, idB]) {
+          expect(
+            (await _getDoc(
+              token: session.idToken,
+              path: 'workspaces/$cloudWorkspaceId/records/$id',
+            ))
+                .statusCode,
+            404,
+          );
+          expect(
+            (await _getDoc(
+              token: session.idToken,
+              path:
+                  'workspaces/$cloudWorkspaceId/users/${session.uid}/records/$id',
+            ))
+                .statusCode,
+            404,
+          );
+          expect(
+            (await _getDoc(
+              token: session.idToken,
+              path: 'workspaces/$cloudWorkspaceId/record_tombstones/$id',
+            ))
+                .statusCode,
+            200,
+          );
+        }
+
+        final reviveA = await _putDoc(
+          token: session.idToken,
+          path: 'workspaces/$cloudWorkspaceId/records/$idA',
+          data: _recordPayload(
+            id: idA,
+            ownerUid: session.uid,
+            sessionId: 'ses_clr_$stamp',
+            telar: 'T-A',
+            neps: 5,
+          ),
+        );
+        expect(reviveA.statusCode, anyOf(403, 400));
+
+        final createC = await _putDoc(
+          token: session.idToken,
+          path: 'workspaces/$cloudWorkspaceId/records/$idC',
+          data: _recordPayload(
+            id: idC,
+            ownerUid: session.uid,
+            sessionId: 'ses_c_$stamp',
+            telar: 'T-C',
+            neps: 9,
+          ),
+        );
+        final createCUser = await _putDoc(
+          token: session.idToken,
+          path:
+              'workspaces/$cloudWorkspaceId/users/${session.uid}/records/$idC',
+          data: _recordPayload(
+            id: idC,
+            ownerUid: session.uid,
+            sessionId: 'ses_c_$stamp',
+            telar: 'T-C',
+            neps: 9,
+          ),
+        );
+        expect(createC.statusCode, anyOf(200, 201));
+        expect(createCUser.statusCode, anyOf(200, 201));
       },
       skip: useFirebaseEmulator
           ? false
@@ -461,15 +591,48 @@ Future<http.Response> _commitDeleteWithTombstone({
   required String ownerUid,
   required String deletedByUid,
 }) {
+  return _commitClearWithTombstones(
+    token: token,
+    recordIds: [recordId],
+    ownerUid: ownerUid,
+    deletedByUid: deletedByUid,
+  );
+}
+
+/// Réplica del batch de [CloudSyncService.clearRecords] por lote de IDs.
+Future<http.Response> _commitClearWithTombstones({
+  required String token,
+  required List<String> recordIds,
+  required String ownerUid,
+  required String deletedByUid,
+}) {
   final uri = Uri.parse(
     'http://$_fsHost:$_fsPort/v1/projects/$_projectId/databases/(default)/documents:commit',
   );
-  final wsName =
-      'projects/$_projectId/databases/(default)/documents/workspaces/$cloudWorkspaceId/records/$recordId';
-  final userName =
-      'projects/$_projectId/databases/(default)/documents/workspaces/$cloudWorkspaceId/users/$ownerUid/records/$recordId';
-  final tombName =
-      'projects/$_projectId/databases/(default)/documents/workspaces/$cloudWorkspaceId/record_tombstones/$recordId';
+  final writes = <Map<String, dynamic>>[];
+  for (final recordId in recordIds) {
+    final wsName =
+        'projects/$_projectId/databases/(default)/documents/workspaces/$cloudWorkspaceId/records/$recordId';
+    final userName =
+        'projects/$_projectId/databases/(default)/documents/workspaces/$cloudWorkspaceId/users/$ownerUid/records/$recordId';
+    final tombName =
+        'projects/$_projectId/databases/(default)/documents/workspaces/$cloudWorkspaceId/record_tombstones/$recordId';
+    writes.addAll([
+      {'delete': wsName},
+      {'delete': userName},
+      {
+        'update': {
+          'name': tombName,
+          'fields': _toFields({
+            'recordId': recordId,
+            'ownerUid': ownerUid,
+            'deletedByUid': deletedByUid,
+            'deletedAt': DateTime.now().toUtc().toIso8601String(),
+          }),
+        },
+      },
+    ]);
+  }
 
   return http.post(
     uri,
@@ -477,22 +640,6 @@ Future<http.Response> _commitDeleteWithTombstone({
       'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
     },
-    body: jsonEncode({
-      'writes': [
-        {'delete': wsName},
-        {'delete': userName},
-        {
-          'update': {
-            'name': tombName,
-            'fields': _toFields({
-              'recordId': recordId,
-              'ownerUid': ownerUid,
-              'deletedByUid': deletedByUid,
-              'deletedAt': DateTime.now().toUtc().toIso8601String(),
-            }),
-          },
-        },
-      ],
-    }),
+    body: jsonEncode({'writes': writes}),
   );
 }

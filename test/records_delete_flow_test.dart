@@ -23,6 +23,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class _TrackingCloudSync implements CloudSyncPort {
   final deleted = <({String id, String? ownerUid})>[];
+  final tombstonesCreated = <String>[];
+  final deletedReportIds = <String>[];
+  final ownedRecordIdsForClear = <String>[];
+  String? actorUidForClear;
+  int clearCallCount = 0;
   Object? throwOnDelete;
   bool failBootstrap = false;
   final _recordsController = StreamController<RecordsPageResult>.broadcast();
@@ -123,7 +128,15 @@ class _TrackingCloudSync implements CloudSyncPort {
   Future<bool> hasRecordTombstone(String recordId) async => false;
 
   @override
-  Future<void> clearRecords() async {}
+  Future<void> clearRecords() async {
+    clearCallCount++;
+    // Contrato delete-wins: cada ID vaciado deja tombstone (no informes).
+    for (final id in List<String>.from(ownedRecordIdsForClear)) {
+      tombstonesCreated.add(id);
+      deleted.add((id: id, ownerUid: actorUidForClear));
+    }
+    ownedRecordIdsForClear.clear();
+  }
 
   @override
   Future<void> replaceRecords(List<NepRecord> records) async {}
@@ -135,7 +148,9 @@ class _TrackingCloudSync implements CloudSyncPort {
   Future<SavedReport> saveReport(SavedReport report) async => report;
 
   @override
-  Future<void> deleteReport(String reportId) async {}
+  Future<void> deleteReport(String reportId) async {
+    deletedReportIds.add(reportId);
+  }
 
   @override
   Future<AppUserRole> fetchUserRole() async => AppUserRole.superAdmin;
@@ -391,6 +406,58 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(state.records.any((r) => r.id == 'r5'), isFalse);
 
+      cloud.dispose();
+      state.dispose();
+    });
+  });
+
+  group('Clear records delete-wins', () {
+    test('CLEAR: vaciar crea tombstones y quita UPSERT stale', () async {
+      final cloud = _TrackingCloudSync()
+        ..actorUidForClear = 'user_A'
+        ..ownedRecordIdsForClear.addAll(['A', 'B']);
+      final state = AppState(cloudSyncService: cloud);
+      state.applyAuthProfile(
+        AppUser(uid: 'user_A', username: 'a', role: AppUserRole.admin),
+      );
+      await state.initialize();
+      state.records = [
+        _record(id: 'A', ownerUid: 'user_A'),
+        _record(id: 'B', ownerUid: 'user_A'),
+      ];
+      await pendingSyncQueueService.enqueueUpsert(
+        'user_A',
+        _record(id: 'A', ownerUid: 'user_A'),
+      );
+
+      await state.clearTable();
+
+      expect(state.records, isEmpty);
+      expect(cloud.clearCallCount, 1);
+      expect(cloud.tombstonesCreated.toSet(), {'A', 'B'});
+      final pending = await pendingSyncQueueService.loadForUid('user_A');
+      expect(pending.any((o) => o.type == PendingSyncOpType.upsert), isFalse);
+      expect(cloud.deletedReportIds, isEmpty);
+
+      cloud.dispose();
+      state.dispose();
+    });
+
+    test('CLEAR: no llama deleteReport (informes históricos intactos)',
+        () async {
+      final cloud = _TrackingCloudSync()
+        ..actorUidForClear = 'user_A'
+        ..ownedRecordIdsForClear.add('A');
+      final state = AppState(cloudSyncService: cloud);
+      state.applyAuthProfile(
+        AppUser(uid: 'user_A', username: 'a', role: AppUserRole.admin),
+      );
+      await state.initialize();
+      state.records = [_record(id: 'A', ownerUid: 'user_A')];
+
+      await state.clearTable();
+
+      expect(cloud.deletedReportIds, isEmpty);
       cloud.dispose();
       state.dispose();
     });
