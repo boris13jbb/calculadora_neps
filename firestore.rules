@@ -200,6 +200,7 @@ service cloud.firestore {
           allow update: if isAuthenticated()
             && workspaceIdOk(workspaceId)
             && canEditRecord(userId)
+            && notTombstoned(workspaceId, recordId)
             && ownershipUnchanged();
 
           allow delete: if isAuthenticated()
@@ -401,6 +402,7 @@ service cloud.firestore {
         allow update: if isAuthenticated()
           && workspaceIdOk(workspaceId)
           && canEditRecord(resource.data.ownerUid)
+          && notTombstoned(workspaceId, recordId)
           && ownershipUnchanged();
         allow delete: if isAuthenticated()
           && workspaceIdOk(workspaceId)

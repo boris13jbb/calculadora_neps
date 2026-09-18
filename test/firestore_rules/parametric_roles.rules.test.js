@@ -489,6 +489,67 @@ test("K5) cliente no puede borrar tombstone; lectura autenticada OK", async () =
   await assertFails(deleteDoc(doc(db, tombstonePath("rec-k5"))));
 });
 
+test("K6) registro+tombstone: UPDATE workspace mirror DENY", async () => {
+  await seedAdmin(async (db) => {
+    await setDoc(doc(db, rolePath("admin")), baseRoleDoc("admin", [
+      "viewRecords",
+      "viewWorkspaceRecords",
+      "editRecords",
+      "deleteRecords",
+      "captureRecords",
+    ]));
+    // Estado inconsistente: documento vivo + tombstone (seed bypass).
+    await setDoc(doc(db, workspaceRecordPath("rec-k6")), {
+      ownerUid: "op1",
+      createdByUid: "op1",
+      captureSessionId: "ses-k6",
+      telar: "1",
+      neps: 5,
+    });
+    await setDoc(doc(db, tombstonePath("rec-k6")), {
+      recordId: "rec-k6",
+      ownerUid: "op1",
+      deletedByUid: "admin1",
+      deletedAt: new Date(),
+    });
+  });
+
+  const db = authed("admin1", "admin");
+  await assertFails(updateDoc(doc(db, workspaceRecordPath("rec-k6")), {
+    neps: 99,
+  }));
+});
+
+test("K7) registro+tombstone: UPDATE user mirror DENY", async () => {
+  await seedAdmin(async (db) => {
+    await setDoc(doc(db, rolePath("admin")), baseRoleDoc("admin", [
+      "viewRecords",
+      "viewWorkspaceRecords",
+      "editRecords",
+      "deleteRecords",
+      "captureRecords",
+    ]));
+    await setDoc(doc(db, userRecordPath("op1", "rec-k7")), {
+      ownerUid: "op1",
+      createdByUid: "op1",
+      captureSessionId: "ses-k7",
+      telar: "1",
+      neps: 5,
+    });
+    await setDoc(doc(db, tombstonePath("rec-k7")), {
+      recordId: "rec-k7",
+      ownerUid: "op1",
+      deletedByUid: "admin1",
+      deletedAt: new Date(),
+    });
+  });
+
+  const db = authed("admin1", "admin");
+  await assertFails(updateDoc(doc(db, userRecordPath("op1", "rec-k7")), {
+    neps: 99,
+  }));
+});
+
 // Sanity: assert helper used
 test("sanity assert", () => {
   assert.equal(typeof collection, "function");

@@ -21,11 +21,23 @@ import 'cloud_sync_port.dart';
 import 'firestore_record_query_builder.dart';
 
 class CloudSyncService implements CloudSyncPort {
+  CloudSyncService({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+  })  : _firestoreOverride = firestore,
+        _authOverride = auth;
+
+  final FirebaseFirestore? _firestoreOverride;
+  final FirebaseAuth? _authOverride;
+
   bool _bootstrapped = false;
   Future<void>? _bootstrapFuture;
   String? _userId;
 
-  FirebaseFirestore get _firestore => FirebaseFirestore.instance;
+  FirebaseFirestore get _firestore =>
+      _firestoreOverride ?? FirebaseFirestore.instance;
+
+  FirebaseAuth get _auth => _authOverride ?? FirebaseAuth.instance;
 
   DocumentReference<Map<String, dynamic>> get _workspace =>
       _firestore.collection('workspaces').doc(cloudWorkspaceId);
@@ -70,7 +82,7 @@ class CloudSyncService implements CloudSyncPort {
       );
     }
 
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUser = _auth.currentUser;
     if (currentUser == null) {
       throw StateError('Usuario no autenticado. Inicie sesión primero.');
     }
@@ -88,7 +100,7 @@ class CloudSyncService implements CloudSyncPort {
 
   Future<String> _requireUserId() async {
     await bootstrap();
-    final uid = _userId ?? FirebaseAuth.instance.currentUser?.uid;
+    final uid = _userId ?? _auth.currentUser?.uid;
     if (uid == null) {
       throw StateError('Usuario no autenticado.');
     }
