@@ -3,6 +3,7 @@ import 'package:calculadora_neps/models/nep_record.dart';
 import 'package:calculadora_neps/models/pdf_report_style.dart';
 import 'package:calculadora_neps/services/record_export_coordinator.dart';
 import 'package:calculadora_neps/services/report_export_service.dart';
+import 'package:calculadora_neps/utils/file_share_helper.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -40,6 +41,35 @@ void main() {
       );
       expect(bytes, isNotEmpty);
       expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+    });
+
+    // Caso 6: el CSV/Excel de Registros pasan shareText a FileShareHelper;
+    // en nativo ese texto no debe ir al Intent junto al archivo.
+    test('Caso 6: Registros — shareText se omite al adjuntar archivos', () {
+      expect(
+        FileShareHelper.resolveShareText(
+          hasFiles: true,
+          text: 'Reporte CSV de Neps',
+          isWebOverride: false,
+        ),
+        isNull,
+      );
+      expect(
+        FileShareHelper.resolveShareText(
+          hasFiles: true,
+          text: 'Reporte Excel de Neps',
+          isWebOverride: false,
+        ),
+        isNull,
+      );
+      expect(
+        FileShareHelper.resolveShareText(
+          hasFiles: false,
+          text: 'Solo texto',
+          isWebOverride: false,
+        ),
+        'Solo texto',
+      );
     });
   });
 }

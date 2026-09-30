@@ -4,17 +4,14 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
-    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+    show defaultTargetPlatform, kIsWeb, TargetPlatform, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 /// Archivo listo para compartir en el sheet nativo.
 class PreparedShareFile {
-  const PreparedShareFile({
-    required this.file,
-    required this.fileName,
-  });
+  const PreparedShareFile({required this.file, required this.fileName});
 
   final XFile file;
   final String fileName;
@@ -38,6 +35,24 @@ class FileShareHelper {
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
+  /// Decide el texto enviado al share sheet.
+  ///
+  /// Con archivos en plataformas nativas (Android/iOS/escritorio), el texto
+  /// debe omitirse: apps como WhatsApp priorizan `EXTRA_TEXT` y descartan
+  /// adjuntos. En Web se conserva el texto (descargas/Web Share actuales).
+  /// Sin archivos, el texto se conserva en todas las plataformas.
+  @visibleForTesting
+  static String? resolveShareText({
+    required bool hasFiles,
+    String? text,
+    bool? isWebOverride,
+  }) {
+    if (!hasFiles) return text;
+    final web = isWebOverride ?? kIsWeb;
+    if (web) return text;
+    return null;
+  }
+
   static Future<ShareResult> shareFiles({
     required List<XFile> inputFiles,
     List<String>? fileNameOverrides,
@@ -57,8 +72,7 @@ class FileShareHelper {
       files.add(await _ensureFileOnDisk(inputFiles[i], names[i]));
     }
 
-    // En escritorio, el texto del share suele reemplazar los archivos (p. ej. WhatsApp).
-    final shareText = isDesktopNative ? null : text;
+    final shareText = resolveShareText(hasFiles: true, text: text);
     final shareTitle = title ?? subject ?? text ?? names.first;
 
     return SharePlus.instance.share(
@@ -95,13 +109,7 @@ class FileShareHelper {
     }
 
     await shareFiles(
-      inputFiles: [
-        XFile.fromData(
-          bytes,
-          mimeType: mimeType,
-          name: fileName,
-        ),
-      ],
+      inputFiles: [XFile.fromData(bytes, mimeType: mimeType, name: fileName)],
       fileNameOverrides: [fileName],
       text: shareText,
       subject: subject,
@@ -147,10 +155,9 @@ class FileShareHelper {
 
       for (final item in materialized) {
         final path = '${exportDir.path}/${item.fileName}';
-        await File(path).writeAsBytes(
-          await item.file.readAsBytes(),
-          flush: true,
-        );
+        await File(
+          path,
+        ).writeAsBytes(await item.file.readAsBytes(), flush: true);
         savedFiles.add(
           PreparedShareFile(
             fileName: item.fileName,
@@ -273,11 +280,7 @@ class FileShareHelper {
     if (!kIsWeb && file.path.isNotEmpty) {
       final existing = File(file.path);
       if (await existing.exists()) {
-        return XFile(
-          existing.path,
-          mimeType: file.mimeType,
-          name: safeName,
-        );
+        return XFile(existing.path, mimeType: file.mimeType, name: safeName);
       }
     }
 
@@ -298,11 +301,7 @@ class FileShareHelper {
     final path = '${folder.path}/$safeName';
     await File(path).writeAsBytes(await file.readAsBytes(), flush: true);
 
-    return XFile(
-      path,
-      mimeType: file.mimeType,
-      name: safeName,
-    );
+    return XFile(path, mimeType: file.mimeType, name: safeName);
   }
 
   static String _sanitizeFileName(String fileName) {

@@ -3,19 +3,18 @@ import 'package:calculadora_neps/models/nep_record.dart';
 import 'package:calculadora_neps/models/pdf_report_style.dart';
 import 'package:calculadora_neps/models/saved_report.dart';
 import 'package:calculadora_neps/services/report_export_service.dart';
+import 'package:calculadora_neps/utils/file_share_helper.dart';
 import 'package:calculadora_neps/utils/report_share_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-SavedReport _report({
-  required String id,
-  List<NepRecord>? records,
-}) {
+SavedReport _report({required String id, List<NepRecord>? records}) {
   return SavedReport(
     id: id,
     name: 'Informe $id',
     createdAt: DateTime(2026, 9, 28, 19, 50),
-    records: records ??
+    records:
+        records ??
         [
           NepRecord(
             id: 'r1',
@@ -40,49 +39,81 @@ void main() {
 
   group('Informes guardados — compartir completo/clásico', () {
     test('kSavedReportAllShareFormats incluye CSV, Excel y PDF', () {
-      expect(
-        kSavedReportAllShareFormats,
-        {
-          ReportShareFormat.csv,
-          ReportShareFormat.excel,
-          ReportShareFormat.pdf,
-        },
-      );
+      expect(kSavedReportAllShareFormats, {
+        ReportShareFormat.csv,
+        ReportShareFormat.excel,
+        ReportShareFormat.pdf,
+      });
     });
 
-    test('buildShareFiles con estilo completo usa el informe seleccionado',
-        () async {
-      final report = _report(id: 'rep-completo');
-      final helper = ReportShareHelper(ReportExportService());
+    test(
+      'Caso 4: Compartir completo — MIME correctos y sin text nativo',
+      () async {
+        final report = _report(id: 'rep-completo');
+        final helper = ReportShareHelper(ReportExportService());
 
-      final files = await helper.buildShareFiles(
-        reports: [report],
-        formats: kSavedReportAllShareFormats,
-        reportStyle: PdfReportStyle.completo,
-      );
+        final files = await helper.buildShareFiles(
+          reports: [report],
+          formats: kSavedReportAllShareFormats,
+          reportStyle: PdfReportStyle.completo,
+        );
 
-      expect(files, hasLength(3));
-      expect(files.every((f) => f.fileName.contains('Informe_rep-completo')),
-          isTrue);
-      expect(files.map((f) => f.fileName.split('.').last).toSet(),
-          {'csv', 'xlsx', 'pdf'});
-    });
+        expect(files, hasLength(3));
+        expect(
+          files.every((f) => f.fileName.contains('Informe_rep-completo')),
+          isTrue,
+        );
+        expect(files.map((f) => f.fileName.split('.').last).toSet(), {
+          'csv',
+          'xlsx',
+          'pdf',
+        });
+        expect(
+          {for (final f in files) f.file.mimeType},
+          {'text/csv', FileShareHelper.excelMimeType, 'application/pdf'},
+        );
+        expect(
+          FileShareHelper.resolveShareText(
+            hasFiles: files.isNotEmpty,
+            text: 'Informes VICUNHA - 1 informe (completo)',
+            isWebOverride: false,
+          ),
+          isNull,
+        );
+      },
+    );
 
-    test('buildShareFiles con estilo clásico genera los tres formatos',
-        () async {
-      final report = _report(id: 'rep-clasico');
-      final helper = ReportShareHelper(ReportExportService());
+    test(
+      'Caso 5: Compartir clásico — MIME correctos y sin text nativo',
+      () async {
+        final report = _report(id: 'rep-clasico');
+        final helper = ReportShareHelper(ReportExportService());
 
-      final files = await helper.buildShareFiles(
-        reports: [report],
-        formats: kSavedReportAllShareFormats,
-        reportStyle: PdfReportStyle.clasico,
-      );
+        final files = await helper.buildShareFiles(
+          reports: [report],
+          formats: kSavedReportAllShareFormats,
+          reportStyle: PdfReportStyle.clasico,
+        );
 
-      expect(files, hasLength(3));
-      expect(files.every((f) => f.fileName.contains('Informe_rep-clasico')),
-          isTrue);
-    });
+        expect(files, hasLength(3));
+        expect(
+          files.every((f) => f.fileName.contains('Informe_rep-clasico')),
+          isTrue,
+        );
+        expect(
+          {for (final f in files) f.file.mimeType},
+          {'text/csv', FileShareHelper.excelMimeType, 'application/pdf'},
+        );
+        expect(
+          FileShareHelper.resolveShareText(
+            hasFiles: files.isNotEmpty,
+            text: 'Informes VICUNHA - 1 informe (clásico)',
+            isWebOverride: false,
+          ),
+          isNull,
+        );
+      },
+    );
 
     test('informe vacío no lanza al generar completo ni clásico', () async {
       final empty = _report(id: 'vacio', records: const []);
