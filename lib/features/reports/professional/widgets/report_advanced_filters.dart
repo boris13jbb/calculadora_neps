@@ -369,19 +369,13 @@ class _AlertLevelSelector extends StatelessWidget {
         labelText: 'Estado de alerta',
         border: OutlineInputBorder(),
       ),
-      items: const [
-        DropdownMenuItem(value: null, child: Text('Todos')),
-        DropdownMenuItem(
-          value: AlertLevel.normal,
-          child: Text('Normal'),
-        ),
-        DropdownMenuItem(
-          value: AlertLevel.advertencia,
-          child: Text('Advertencia'),
-        ),
-        DropdownMenuItem(
-          value: AlertLevel.critico,
-          child: Text('Crítico'),
+      items: [
+        const DropdownMenuItem(value: null, child: Text('Todos')),
+        ...AlertLevel.values.map(
+          (level) => DropdownMenuItem(
+            value: level,
+            child: Text(level.displayLabel),
+          ),
         ),
       ],
       onChanged: onChanged,

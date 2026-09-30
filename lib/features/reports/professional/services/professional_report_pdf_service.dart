@@ -609,7 +609,7 @@ class ProfessionalReportPdfService {
       'Turno mayor incidencia': q.turnoMayorPromedio,
       'Índice de calidad': '${q.indiceCalidadGeneral.toStringAsFixed(1)}%',
       'Tendencia': q.tendenciaGeneral.label,
-      '% dentro de límite normal':
+      '% OK':
           '${q.porcentajeDentroLimite.toStringAsFixed(1)}%',
     };
     return _buildPdfTable(
@@ -700,19 +700,24 @@ class ProfessionalReportPdfService {
       rows: [
         ['Total alertas', '${s.totalRecords}', '100%'],
         [
-          'Normales',
+          'OK',
           '${s.normalCount}',
           '${s.normalPercentage.toStringAsFixed(1)}%',
         ],
         [
-          'Advertencias',
+          'Menciones',
           '${s.warningCount}',
           '${s.warningPercentage.toStringAsFixed(1)}%',
         ],
         [
-          'Críticos',
+          'Criticos',
           '${s.criticalCount}',
           '${s.criticalPercentage.toStringAsFixed(1)}%',
+        ],
+        [
+          '2da Calidad',
+          '${s.segundaCalidadCount}',
+          '${s.segundaCalidadPercentage.toStringAsFixed(1)}%',
         ],
         ['Revisadas', '${s.reviewedCount}', '—'],
         ['Pendientes', '${s.pendingReviewCount}', '—'],

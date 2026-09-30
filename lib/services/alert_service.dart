@@ -17,14 +17,13 @@ class AlertService {
     _config = config;
   }
 
-  /// Obtiene el nivel de alerta según la cantidad de neps.
+  /// Obtiene la calificación oficial según el puntaje (neps crudos).
+  ///
+  /// [neps] es el valor capturado en el área de prueba (0.09 m²); equivale al
+  /// puntaje 0–55+ de los criterios oficiales.
   AlertLevel getAlertLevel(double neps) {
-    if (!_config.alertasActivas) return AlertLevel.normal;
-
-    final value = neps.round();
-    if (value <= _config.limiteNormalMax) return AlertLevel.normal;
-    if (value <= _config.limiteAdvertenciaMax) return AlertLevel.advertencia;
-    return AlertLevel.critico;
+    if (!_config.alertasActivas) return AlertLevel.ok;
+    return classifyNeps(score: neps.round());
   }
 
   /// Evaluación completa de un registro con recomendaciones.
@@ -39,12 +38,13 @@ class AlertService {
     );
   }
 
-  /// Color recomendado para el estado de alerta.
+  /// Color recomendado para el estado de calificación.
   Color getAlertColor(AlertLevel level) {
     return switch (level) {
-      AlertLevel.normal => AppColors.statusNormal,
-      AlertLevel.advertencia => AppColors.statusWarning,
+      AlertLevel.ok => AppColors.statusNormal,
+      AlertLevel.mencion => AppColors.statusWarning,
       AlertLevel.critico => AppColors.statusCritical,
+      AlertLevel.segundaCalidad => AppColors.statusSecondQuality,
     };
   }
 
@@ -53,23 +53,39 @@ class AlertService {
     return getAlertColor(level).withValues(alpha: 0.12);
   }
 
-  /// Registros con estado crítico.
+  /// Registros con calificación Crítico.
   List<NepRecord> detectCriticalRecords(List<NepRecord> records) {
     return records
         .where((r) => getAlertLevel(r.neps) == AlertLevel.critico)
         .toList();
   }
 
-  /// Registros en advertencia.
-  List<NepRecord> detectWarningRecords(List<NepRecord> records) {
+  /// Registros con calificación 2da Calidad.
+  List<NepRecord> detectSecondQualityRecords(List<NepRecord> records) {
     return records
-        .where((r) => getAlertLevel(r.neps) == AlertLevel.advertencia)
+        .where((r) => getAlertLevel(r.neps) == AlertLevel.segundaCalidad)
         .toList();
   }
 
-  /// Telares que tienen al menos un registro crítico.
+  /// Registros severos (Crítico o 2da Calidad).
+  List<NepRecord> detectSevereRecords(List<NepRecord> records) {
+    return records.where((r) => getAlertLevel(r.neps).isSevere).toList();
+  }
+
+  /// Registros en Mención.
+  List<NepRecord> detectMencionRecords(List<NepRecord> records) {
+    return records
+        .where((r) => getAlertLevel(r.neps) == AlertLevel.mencion)
+        .toList();
+  }
+
+  /// Alias histórico de [detectMencionRecords].
+  List<NepRecord> detectWarningRecords(List<NepRecord> records) =>
+      detectMencionRecords(records);
+
+  /// Telares que tienen al menos un registro severo.
   List<String> detectCriticalTelars(List<NepRecord> records) {
-    return detectCriticalRecords(records)
+    return detectSevereRecords(records)
         .map((r) => r.telar.trim())
         .where((t) => t.isNotEmpty)
         .toSet()
@@ -77,7 +93,7 @@ class AlertService {
       ..sort();
   }
 
-  /// Telares con reincidencia de alertas críticas.
+  /// Telares con reincidencia de calificaciones severas.
   List<String> detectReincidentTelars(List<NepRecord> records) {
     return _telarSummaries(records)
         .where((s) => s.isReincident)
@@ -133,17 +149,23 @@ class AlertService {
     return top.isEmpty ? null : top.first;
   }
 
-  /// Telar más crítico (más registros críticos, desempate por total neps).
+  /// Telar más crítico (más severos, desempate por total neps).
   TelarAlertSummary? mostCriticalTelar(List<NepRecord> records) {
     final summaries = _telarSummaries(records)
       ..sort((a, b) {
-        final byCritical = b.criticalCount.compareTo(a.criticalCount);
-        if (byCritical != 0) return byCritical;
+        final severeA = a.criticalCount + a.segundaCalidadCount;
+        final severeB = b.criticalCount + b.segundaCalidadCount;
+        final bySevere = severeB.compareTo(severeA);
+        if (bySevere != 0) return bySevere;
         return b.totalNeps.compareTo(a.totalNeps);
       });
     if (summaries.isEmpty) return null;
     final best = summaries.first;
-    if (best.criticalCount == 0 && best.warningCount == 0) return null;
+    if (best.criticalCount == 0 &&
+        best.segundaCalidadCount == 0 &&
+        best.mencionCount == 0) {
+      return null;
+    }
     return best;
   }
 
@@ -155,11 +177,15 @@ class AlertService {
     final level = getAlertLevel(record.neps);
     final recommendations = <String>[];
 
-    if (level == AlertLevel.normal) {
+    if (level == AlertLevel.ok) {
       return recommendations;
     }
 
-    if (level == AlertLevel.advertencia || level == AlertLevel.critico) {
+    if (level.recommendation != null) {
+      recommendations.add(level.recommendation!);
+    }
+
+    if (level == AlertLevel.mencion || level.isSevere) {
       recommendations.add('Revisar calibración del telar.');
     }
 
@@ -177,7 +203,7 @@ class AlertService {
       );
     }
 
-    if (level == AlertLevel.critico) {
+    if (level.isSevere) {
       recommendations.add('Notificar a supervisor de calidad de inmediato.');
     }
 
@@ -189,29 +215,29 @@ class AlertService {
     final normalized = telar.trim().toLowerCase();
     if (normalized.isEmpty) return false;
 
-    final criticalForTelar = records.where((r) {
+    final severeForTelar = records.where((r) {
       return r.telar.trim().toLowerCase() == normalized &&
-          getAlertLevel(r.neps) == AlertLevel.critico;
+          getAlertLevel(r.neps).isSevere;
     }).toList();
 
-    if (criticalForTelar.length < _config.cantidadReincidenciasCriticas) {
+    if (severeForTelar.length < _config.cantidadReincidenciasCriticas) {
       return false;
     }
 
     if (_config.diasParaReincidencia <= 0) {
-      return criticalForTelar.length >= _config.cantidadReincidenciasCriticas;
+      return severeForTelar.length >= _config.cantidadReincidenciasCriticas;
     }
 
-    criticalForTelar.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    severeForTelar.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
     for (var i = 0;
-        i <= criticalForTelar.length - _config.cantidadReincidenciasCriticas;
+        i <= severeForTelar.length - _config.cantidadReincidenciasCriticas;
         i++) {
-      final windowStart = criticalForTelar[i].createdAt;
+      final windowStart = severeForTelar[i].createdAt;
       final windowEnd = windowStart.add(
         Duration(days: _config.diasParaReincidencia),
       );
-      final countInWindow = criticalForTelar
+      final countInWindow = severeForTelar
           .where(
             (r) =>
                 !r.createdAt.isBefore(windowStart) &&
@@ -238,20 +264,17 @@ class AlertService {
       final items = entry.value;
       final total = items.fold<double>(0, (s, r) => s + r.neps);
       final totalMts = items.fold<double>(0, (s, r) => s + r.mtsCalculados);
-      final critical = items
-          .where((r) => getAlertLevel(r.neps) == AlertLevel.critico)
-          .length;
-      final warning = items
-          .where((r) => getAlertLevel(r.neps) == AlertLevel.advertencia)
-          .length;
+      final counts = _countByLevel(items);
       return TelarAlertSummary(
         telar: entry.key,
         totalNeps: total,
         totalMts: totalMts,
         recordCount: items.length,
         averageNeps: items.isEmpty ? 0 : total / items.length,
-        criticalCount: critical,
-        warningCount: warning,
+        okCount: counts.ok,
+        mencionCount: counts.mencion,
+        criticalCount: counts.critico,
+        segundaCalidadCount: counts.segundaCalidad,
         isReincident: isTelarReincident(entry.key, records),
       );
     }).toList();
@@ -272,25 +295,49 @@ class AlertService {
       final items = entry.value;
       final total = items.fold<double>(0, (s, r) => s + r.neps);
       final totalMts = items.fold<double>(0, (s, r) => s + r.mtsCalculados);
-      final critical = items
-          .where((r) => getAlertLevel(r.neps) == AlertLevel.critico)
-          .length;
-      final warning = items
-          .where((r) => getAlertLevel(r.neps) == AlertLevel.advertencia)
-          .length;
+      final counts = _countByLevel(items);
       return GroupNepsSummary(
         key: entry.key,
         totalNeps: total,
         totalMts: totalMts,
         recordCount: items.length,
         averageNeps: items.isEmpty ? 0 : total / items.length,
-        criticalCount: critical,
-        warningCount: warning,
+        okCount: counts.ok,
+        mencionCount: counts.mencion,
+        criticalCount: counts.critico,
+        segundaCalidadCount: counts.segundaCalidad,
       );
     }).toList();
 
     summaries.sort((a, b) => b.totalNeps.compareTo(a.totalNeps));
     return summaries;
+  }
+
+  ({int ok, int mencion, int critico, int segundaCalidad}) _countByLevel(
+    List<NepRecord> items,
+  ) {
+    var ok = 0;
+    var mencion = 0;
+    var critico = 0;
+    var segundaCalidad = 0;
+    for (final r in items) {
+      switch (getAlertLevel(r.neps)) {
+        case AlertLevel.ok:
+          ok++;
+        case AlertLevel.mencion:
+          mencion++;
+        case AlertLevel.critico:
+          critico++;
+        case AlertLevel.segundaCalidad:
+          segundaCalidad++;
+      }
+    }
+    return (
+      ok: ok,
+      mencion: mencion,
+      critico: critico,
+      segundaCalidad: segundaCalidad,
+    );
   }
 }
 

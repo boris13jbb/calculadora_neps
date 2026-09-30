@@ -21,26 +21,35 @@ class DailyNepsPoint {
   final double averageNeps;
 }
 
-/// Conteo por nivel de alerta.
+/// Conteo por calificación oficial NEPS.
 class AlertDistribution {
   const AlertDistribution({
-    required this.normal,
-    required this.advertencia,
+    required this.ok,
+    required this.mencion,
     required this.critico,
+    required this.segundaCalidad,
   });
 
-  final int normal;
-  final int advertencia;
+  final int ok;
+  final int mencion;
   final int critico;
+  final int segundaCalidad;
 
-  int get total => normal + advertencia + critico;
+  /// Alias histórico.
+  int get normal => ok;
+
+  /// Alias histórico (Advertencia → Mención).
+  int get advertencia => mencion;
+
+  int get total => ok + mencion + critico + segundaCalidad;
 
   double percentage(AlertLevel level) {
     if (total == 0) return 0;
     final count = switch (level) {
-      AlertLevel.normal => normal,
-      AlertLevel.advertencia => advertencia,
+      AlertLevel.ok => ok,
+      AlertLevel.mencion => mencion,
       AlertLevel.critico => critico,
+      AlertLevel.segundaCalidad => segundaCalidad,
     };
     return (count / total) * 100;
   }
@@ -75,8 +84,10 @@ class AnalyticsService {
             totalMts: s.totalMts,
             recordCount: s.recordCount,
             averageNeps: s.averageNeps,
+            okCount: s.okCount,
+            mencionCount: s.mencionCount,
             criticalCount: s.criticalCount,
-            warningCount: s.warningCount,
+            segundaCalidadCount: s.segundaCalidadCount,
           ),
         )
         .toList();
@@ -138,7 +149,7 @@ class AnalyticsService {
     }).toList();
   }
 
-  /// Top telares con desglose normal / advertencia / crítico.
+  /// Top telares con desglose OK / Mención / Crítico / 2da Calidad.
   List<TelarAlertSummary> topTelaresConAlertas(
     List<NepRecord> records, {
     int limit = 6,
@@ -158,8 +169,10 @@ class AnalyticsService {
             totalMts: s.totalMts,
             recordCount: s.recordCount,
             averageNeps: s.averageNeps,
+            okCount: s.okCount,
+            mencionCount: s.mencionCount,
             criticalCount: s.criticalCount,
-            warningCount: s.warningCount,
+            segundaCalidadCount: s.segundaCalidadCount,
           ),
         )
         .toList();
@@ -184,25 +197,29 @@ class AnalyticsService {
   }
 
   AlertDistribution distribucionPorEstado(List<NepRecord> records) {
-    var normal = 0;
-    var advertencia = 0;
+    var ok = 0;
+    var mencion = 0;
     var critico = 0;
+    var segundaCalidad = 0;
 
     for (final record in records) {
       switch (_alerts.getAlertLevel(record.neps)) {
-        case AlertLevel.normal:
-          normal++;
-        case AlertLevel.advertencia:
-          advertencia++;
+        case AlertLevel.ok:
+          ok++;
+        case AlertLevel.mencion:
+          mencion++;
         case AlertLevel.critico:
           critico++;
+        case AlertLevel.segundaCalidad:
+          segundaCalidad++;
       }
     }
 
     return AlertDistribution(
-      normal: normal,
-      advertencia: advertencia,
+      ok: ok,
+      mencion: mencion,
       critico: critico,
+      segundaCalidad: segundaCalidad,
     );
   }
 
@@ -388,16 +405,20 @@ class AnalyticsService {
       final items = entry.value;
       final total = items.fold<double>(0, (s, r) => s + r.neps);
       final totalMts = items.fold<double>(0, (s, r) => s + r.mtsCalculados);
+      var ok = 0;
+      var mencion = 0;
       var critical = 0;
-      var warning = 0;
+      var segunda = 0;
       for (final item in items) {
         switch (_alerts.getAlertLevel(item.neps)) {
-          case AlertLevel.normal:
-            break;
-          case AlertLevel.advertencia:
-            warning++;
+          case AlertLevel.ok:
+            ok++;
+          case AlertLevel.mencion:
+            mencion++;
           case AlertLevel.critico:
             critical++;
+          case AlertLevel.segundaCalidad:
+            segunda++;
         }
       }
       return GroupNepsSummary(
@@ -406,8 +427,10 @@ class AnalyticsService {
         totalMts: totalMts,
         recordCount: items.length,
         averageNeps: items.isEmpty ? 0 : total / items.length,
+        okCount: ok,
+        mencionCount: mencion,
         criticalCount: critical,
-        warningCount: warning,
+        segundaCalidadCount: segunda,
       );
     }).toList();
 

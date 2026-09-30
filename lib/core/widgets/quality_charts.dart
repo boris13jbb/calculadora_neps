@@ -275,7 +275,7 @@ Widget _buildChartCard({
     QualityChartKind.telarStackedAlerts => _ChartCard(
         icon: Icons.stacked_bar_chart_outlined,
         title: 'Alertas por telar (Top 6)',
-        subtitle: 'Normal · Advertencia · Crítico',
+        subtitle: 'OK · Mención · Crítico · 2da Calidad',
         height: chartHeight,
         child: _StackedAlertBarChart(summaries: data.telarAlerts),
       ),
@@ -690,8 +690,24 @@ class _StackedAlertBarChart extends StatelessWidget {
         borderData: FlBorderData(show: false),
         barGroups: List.generate(summaries.length, (i) {
           final s = summaries[i];
-          final normal = (s.recordCount - s.criticalCount - s.warningCount)
-              .clamp(0, s.recordCount);
+          final ok = s.okCount;
+          final mencion = s.mencionCount;
+          final critico = s.criticalCount;
+          final segunda = s.segundaCalidadCount;
+          var from = 0.0;
+          final stacks = <BarChartRodStackItem>[];
+          void addStack(int count, Color color) {
+            if (count <= 0) return;
+            final to = from + count;
+            stacks.add(BarChartRodStackItem(from, to, color));
+            from = to;
+          }
+
+          addStack(ok, AppColors.statusNormal);
+          addStack(mencion, AppColors.statusWarning);
+          addStack(critico, AppColors.statusCritical);
+          addStack(segunda, AppColors.statusSecondQuality);
+
           return BarChartGroupData(
             x: i,
             barRods: [
@@ -700,23 +716,7 @@ class _StackedAlertBarChart extends StatelessWidget {
                 width: 22,
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(4)),
-                rodStackItems: [
-                  if (normal > 0)
-                    BarChartRodStackItem(
-                        0, normal.toDouble(), AppColors.statusNormal),
-                  if (s.warningCount > 0)
-                    BarChartRodStackItem(
-                      normal.toDouble(),
-                      (normal + s.warningCount).toDouble(),
-                      AppColors.statusWarning,
-                    ),
-                  if (s.criticalCount > 0)
-                    BarChartRodStackItem(
-                      (normal + s.warningCount).toDouble(),
-                      s.recordCount.toDouble(),
-                      AppColors.statusCritical,
-                    ),
-                ],
+                rodStackItems: stacks,
               ),
             ],
           );
@@ -850,11 +850,9 @@ class _DonutChart extends StatelessWidget {
                   centerSpaceRadius: 44,
                   sections: [
                     PieChartSectionData(
-                      value: distribution.normal.toDouble(),
+                      value: distribution.ok.toDouble(),
                       color: AppColors.statusNormal,
-                      title: distribution.normal > 0
-                          ? '${distribution.normal}'
-                          : '',
+                      title: distribution.ok > 0 ? '${distribution.ok}' : '',
                       radius: 52,
                       titleStyle: const TextStyle(
                         fontSize: 11,
@@ -863,10 +861,10 @@ class _DonutChart extends StatelessWidget {
                       ),
                     ),
                     PieChartSectionData(
-                      value: distribution.advertencia.toDouble(),
+                      value: distribution.mencion.toDouble(),
                       color: AppColors.statusWarning,
-                      title: distribution.advertencia > 0
-                          ? '${distribution.advertencia}'
+                      title: distribution.mencion > 0
+                          ? '${distribution.mencion}'
                           : '',
                       radius: 52,
                       titleStyle: const TextStyle(
@@ -880,6 +878,19 @@ class _DonutChart extends StatelessWidget {
                       color: AppColors.statusCritical,
                       title: distribution.critico > 0
                           ? '${distribution.critico}'
+                          : '',
+                      radius: 52,
+                      titleStyle: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                    PieChartSectionData(
+                      value: distribution.segundaCalidad.toDouble(),
+                      color: AppColors.statusSecondQuality,
+                      title: distribution.segundaCalidad > 0
+                          ? '${distribution.segundaCalidad}'
                           : '',
                       radius: 52,
                       titleStyle: const TextStyle(
@@ -919,21 +930,27 @@ class _DonutChart extends StatelessWidget {
             children: [
               _LegendItem(
                 color: AppColors.statusNormal,
-                label: 'Normal',
-                count: distribution.normal,
-                pct: distribution.percentage(AlertLevel.normal),
+                label: 'OK',
+                count: distribution.ok,
+                pct: distribution.percentage(AlertLevel.ok),
               ),
               _LegendItem(
                 color: AppColors.statusWarning,
-                label: 'Advertencia',
-                count: distribution.advertencia,
-                pct: distribution.percentage(AlertLevel.advertencia),
+                label: 'Mención',
+                count: distribution.mencion,
+                pct: distribution.percentage(AlertLevel.mencion),
               ),
               _LegendItem(
                 color: AppColors.statusCritical,
-                label: 'Crítico',
+                label: 'Crítico — Realizar Ajuste',
                 count: distribution.critico,
                 pct: distribution.percentage(AlertLevel.critico),
+              ),
+              _LegendItem(
+                color: AppColors.statusSecondQuality,
+                label: '2da Calidad',
+                count: distribution.segundaCalidad,
+                pct: distribution.percentage(AlertLevel.segundaCalidad),
               ),
             ],
           ),

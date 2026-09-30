@@ -41,6 +41,7 @@ class DashboardScreen extends StatelessWidget {
             final worstLote = alertService.mostProblematicLote(records);
             final lastCritical = analytics.ultimaAlertaCritica(records);
             final pctCritical = analytics.porcentajeCriticos(records);
+            final distribution = analytics.distribucionPorEstado(records);
 
             return SingleChildScrollView(
               child: Column(
@@ -64,6 +65,10 @@ class DashboardScreen extends StatelessWidget {
                         appState.formatNumber(analytics.promedioNeps(records)),
                     totalTelares: analytics.totalTelares(records),
                     criticalTelars: analytics.countTelaresCriticos(records),
+                    okCount: distribution.ok,
+                    mencionCount: distribution.mencion,
+                    criticoCount: distribution.critico,
+                    segundaCalidadCount: distribution.segundaCalidad,
                     worstTela: worstTela?.key,
                     worstLote: worstLote?.key,
                     lastCritical: lastCritical != null
@@ -236,6 +241,10 @@ class _KpiGrid extends StatelessWidget {
     required this.averageNeps,
     required this.totalTelares,
     required this.criticalTelars,
+    required this.okCount,
+    required this.mencionCount,
+    required this.criticoCount,
+    required this.segundaCalidadCount,
     this.worstTela,
     this.worstLote,
     this.lastCritical,
@@ -248,6 +257,10 @@ class _KpiGrid extends StatelessWidget {
   final String averageNeps;
   final int totalTelares;
   final int criticalTelars;
+  final int okCount;
+  final int mencionCount;
+  final int criticoCount;
+  final int segundaCalidadCount;
   final String? worstTela;
   final String? worstLote;
   final String? lastCritical;
@@ -265,6 +278,34 @@ class _KpiGrid extends StatelessWidget {
           value: '$totalRecords',
           icon: Icons.list_alt,
           color: AppColors.primaryGreen,
+        ),
+        KpiCard(
+          compact: compact,
+          label: 'OK',
+          value: '$okCount',
+          icon: Icons.check_circle_outline,
+          color: AppColors.statusNormal,
+        ),
+        KpiCard(
+          compact: compact,
+          label: 'Mención',
+          value: '$mencionCount',
+          icon: Icons.warning_amber_outlined,
+          color: AppColors.statusWarning,
+        ),
+        KpiCard(
+          compact: compact,
+          label: 'Crítico — Realizar Ajuste',
+          value: '$criticoCount',
+          icon: Icons.build_circle_outlined,
+          color: AppColors.statusCritical,
+        ),
+        KpiCard(
+          compact: compact,
+          label: '2da Calidad',
+          value: '$segundaCalidadCount',
+          icon: Icons.error_outline,
+          color: AppColors.statusSecondQuality,
         ),
         KpiCard(
           compact: compact,

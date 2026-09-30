@@ -155,38 +155,52 @@ class AppStatusStyle {
   final IconData icon;
   final String label;
 
-  static const AppStatusStyle normal = AppStatusStyle(
+  static const AppStatusStyle ok = AppStatusStyle(
     color: AppColors.statusNormal,
     background: AppColors.statusNormalBg,
     foreground: AppColors.statusNormalText,
     icon: Icons.check_circle_outline,
-    label: 'Normal',
+    label: 'OK',
   );
 
-  static const AppStatusStyle warning = AppStatusStyle(
+  static const AppStatusStyle mencion = AppStatusStyle(
     color: AppColors.statusWarning,
     background: AppColors.statusWarningBg,
     foreground: AppColors.statusWarningText,
     icon: Icons.warning_amber_rounded,
-    label: 'Advertencia',
+    label: 'Mención',
   );
 
   static const AppStatusStyle critical = AppStatusStyle(
     color: AppColors.statusCritical,
     background: AppColors.statusCriticalBg,
     foreground: AppColors.statusCriticalText,
-    icon: Icons.error_outline,
-    label: 'Crítico',
+    icon: Icons.build_circle_outlined,
+    label: 'Crítico — Realizar Ajuste',
   );
+
+  static const AppStatusStyle segundaCalidad = AppStatusStyle(
+    color: AppColors.statusSecondQuality,
+    background: AppColors.statusSecondQualityBg,
+    foreground: AppColors.statusSecondQualityText,
+    icon: Icons.error_outline,
+    label: '2da Calidad',
+  );
+
+  /// Alias históricos (evitar romper imports puntuales).
+  static const AppStatusStyle normal = ok;
+  static const AppStatusStyle warning = mencion;
 
   static AppStatusStyle of(AlertLevel level) {
     switch (level) {
-      case AlertLevel.normal:
-        return normal;
-      case AlertLevel.advertencia:
-        return warning;
+      case AlertLevel.ok:
+        return ok;
+      case AlertLevel.mencion:
+        return mencion;
       case AlertLevel.critico:
         return critical;
+      case AlertLevel.segundaCalidad:
+        return segundaCalidad;
     }
   }
 }

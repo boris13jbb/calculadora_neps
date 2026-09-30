@@ -212,7 +212,7 @@ class ReportStatisticsService {
 
     for (final r in records) {
       final level = _alerts.getAlertLevel(r.neps);
-      if (level != AlertLevel.normal) {
+      if (level != AlertLevel.ok) {
         if (r.revisadoPorSupervisor) {
           reviewed++;
         } else {
@@ -253,9 +253,10 @@ class ReportStatisticsService {
       totalMts: mtsValues.reduce((a, b) => a + b),
       minMts: mtsValues.reduce((a, b) => a < b ? a : b),
       maxMts: mtsValues.reduce((a, b) => a > b ? a : b),
-      normalCount: dist.normal,
-      warningCount: dist.advertencia,
+      normalCount: dist.ok,
+      warningCount: dist.mencion,
       criticalCount: dist.critico,
+      segundaCalidadCount: dist.segundaCalidad,
       reviewedCount: reviewed,
       pendingReviewCount: pending,
       withCorrectiveActionCount: withAction,
@@ -269,9 +270,10 @@ class ReportStatisticsService {
       shiftCount: RecordFilterHelper.uniqueTurnos(records).length,
       lineCount: RecordFilterHelper.uniqueLineas(records).length,
       alertDistribution: AlertDistributionStats(
-        normal: dist.normal,
-        advertencia: dist.advertencia,
+        ok: dist.ok,
+        mencion: dist.mencion,
         critico: dist.critico,
+        segundaCalidad: dist.segundaCalidad,
       ),
       qualityIndicators: quality,
     );

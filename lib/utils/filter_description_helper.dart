@@ -8,7 +8,7 @@ class FilterDescriptionHelper {
     if (filters.loteTrama != null) parts.add('Lote: ${filters.loteTrama}');
     if (filters.telar != null) parts.add('Telar: ${filters.telar}');
     if (filters.alertLevel != null) {
-      parts.add('Estado: ${filters.alertLevel!.label}');
+      parts.add('Estado: ${filters.alertLevel!.displayLabel}');
     }
     if (filters.turno != null) parts.add('Turno: ${filters.turno}');
     if (filters.operario != null) parts.add('Operario: ${filters.operario}');

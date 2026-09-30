@@ -171,7 +171,7 @@ class _AlertLevelDropdown extends StatelessWidget {
         ...AlertLevel.values.map(
           (l) => DropdownMenuItem(
             value: l,
-            child: Text(l.label, overflow: TextOverflow.ellipsis),
+            child: Text(l.displayLabel, overflow: TextOverflow.ellipsis),
           ),
         ),
       ],

@@ -62,8 +62,8 @@ void main() {
         const ChartConfig(metric: ChartMetric.statusDistribution),
       );
       expect(result.isValid, isTrue);
-      expect(result.labels, ['Normal', 'Advertencia', 'Crítico']);
-      expect(result.values.length, 3);
+      expect(result.labels, ['OK', 'Mención', 'Crítico — Realizar Ajuste', '2da Calidad']);
+      expect(result.values.length, 4);
     });
 
     test('devuelve gauge de criticidad', () {

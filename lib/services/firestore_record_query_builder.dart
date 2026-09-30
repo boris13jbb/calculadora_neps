@@ -75,8 +75,9 @@ class FirestoreRecordQueryBuilder {
   }
 
   static String _alertLevelCode(AlertLevel level) => switch (level) {
-        AlertLevel.normal => 'normal',
-        AlertLevel.advertencia => 'advertencia',
+        AlertLevel.ok => 'ok',
+        AlertLevel.mencion => 'mencion',
         AlertLevel.critico => 'critico',
+        AlertLevel.segundaCalidad => 'segundaCalidad',
       };
 }

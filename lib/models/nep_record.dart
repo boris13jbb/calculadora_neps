@@ -64,10 +64,11 @@ class NepRecord {
 
   AlertLevel get alertLevel => alertService.getAlertLevel(neps);
 
-  String get estadoAlerta => alertLevel.label;
+  /// Texto visible de calificación (p. ej. «Crítico — Realizar Ajuste»).
+  String get estadoAlerta => alertLevel.displayLabel;
 
   bool get requiereSeguimiento =>
-      alertLevel != AlertLevel.normal && !revisadoPorSupervisor;
+      alertLevel.requiresFollowUp && !revisadoPorSupervisor;
 
   Map<String, dynamic> toJson() {
     return {

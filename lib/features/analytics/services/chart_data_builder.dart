@@ -175,35 +175,47 @@ class ChartDataBuilder {
     final dist = _analytics.distribucionPorEstado(records);
     return ChartDataResult(
       isValid: true,
-      labels: const ['Normal', 'Advertencia', 'Crítico'],
-      values: [
-        dist.normal.toDouble(),
-        dist.advertencia.toDouble(),
-        dist.critico.toDouble(),
+      labels: const [
+        'OK',
+        'Mención',
+        'Crítico — Realizar Ajuste',
+        '2da Calidad',
       ],
-      title: 'Distribución de estados',
+      values: [
+        dist.ok.toDouble(),
+        dist.mencion.toDouble(),
+        dist.critico.toDouble(),
+        dist.segundaCalidad.toDouble(),
+      ],
+      title: 'Distribución de calificaciones',
       subtitle: '${dist.total} registros',
       suggestedVisualType: ChartVisualType.donut,
       distribution: {
-        'Normal': dist.normal.toDouble(),
-        'Advertencia': dist.advertencia.toDouble(),
-        'Crítico': dist.critico.toDouble(),
+        'OK': dist.ok.toDouble(),
+        'Mención': dist.mencion.toDouble(),
+        'Crítico — Realizar Ajuste': dist.critico.toDouble(),
+        '2da Calidad': dist.segundaCalidad.toDouble(),
       },
       tableRows: [
         [
-          'Normal',
-          '${dist.normal}',
-          '${dist.percentage(AlertLevel.normal).toStringAsFixed(1)}%'
+          'OK',
+          '${dist.ok}',
+          '${dist.percentage(AlertLevel.ok).toStringAsFixed(1)}%'
         ],
         [
-          'Advertencia',
-          '${dist.advertencia}',
-          '${dist.percentage(AlertLevel.advertencia).toStringAsFixed(1)}%'
+          'Mención',
+          '${dist.mencion}',
+          '${dist.percentage(AlertLevel.mencion).toStringAsFixed(1)}%'
         ],
         [
-          'Crítico',
+          'Crítico — Realizar Ajuste',
           '${dist.critico}',
           '${dist.percentage(AlertLevel.critico).toStringAsFixed(1)}%'
+        ],
+        [
+          '2da Calidad',
+          '${dist.segundaCalidad}',
+          '${dist.percentage(AlertLevel.segundaCalidad).toStringAsFixed(1)}%'
         ],
       ],
     );
@@ -278,7 +290,8 @@ class ChartDataBuilder {
           ChartGroupBy.lot => r.loteTrama,
           ChartGroupBy.shift => r.turno,
           ChartGroupBy.operator => r.operario,
-          ChartGroupBy.alertStatus => _alerts.getAlertLevel(r.neps).label,
+          ChartGroupBy.alertStatus =>
+            _alerts.getAlertLevel(r.neps).displayLabel,
           _ => '',
         };
 
@@ -336,15 +349,15 @@ class ChartDataBuilder {
       ChartMetric.criticalCount =>
         _alerts.detectCriticalRecords(items).length.toDouble(),
       ChartMetric.warningCount => items
-          .where((r) => _alerts.getAlertLevel(r.neps) == AlertLevel.advertencia)
+          .where((r) => _alerts.getAlertLevel(r.neps) == AlertLevel.mencion)
           .length
           .toDouble(),
       ChartMetric.normalCount => items
-          .where((r) => _alerts.getAlertLevel(r.neps) == AlertLevel.normal)
+          .where((r) => _alerts.getAlertLevel(r.neps) == AlertLevel.ok)
           .length
           .toDouble(),
       ChartMetric.alertCount => items
-          .where((r) => _alerts.getAlertLevel(r.neps) != AlertLevel.normal)
+          .where((r) => _alerts.getAlertLevel(r.neps) != AlertLevel.ok)
           .length
           .toDouble(),
       ChartMetric.criticalityPercent => _analytics.porcentajeCriticos(items),

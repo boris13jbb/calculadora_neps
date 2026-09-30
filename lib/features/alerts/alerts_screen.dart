@@ -144,7 +144,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
     final filtered = _applyFilters(appState.records);
 
     final critical = alertService.detectCriticalRecords(filtered);
-    final warnings = alertService.detectWarningRecords(filtered);
+    final warnings = alertService.detectMencionRecords(filtered);
+    final secondQuality = alertService.detectSecondQualityRecords(filtered);
+    final okRecords = filtered
+        .where((r) => alertService.getAlertLevel(r.neps) == AlertLevel.ok)
+        .toList();
     final topTelars = analyticsService.topTelaresPorNeps(filtered, limit: 10);
     final worstTelar = alertService.mostCriticalTelar(filtered);
     final worstTela = alertService.mostProblematicTela(filtered);
@@ -166,11 +170,49 @@ class _AlertsScreenState extends State<AlertsScreen> {
     final summaryCards = _SummaryCardsRow(
       compact: compact,
       minCardWidth: compactHeight ? 150 : 200,
+      okCount: okRecords.length,
+      mencionCount: warnings.length,
       criticalCount: critical.length,
-      warningCount: warnings.length,
+      segundaCalidadCount: secondQuality.length,
       worstTelar: worstTelar?.telar,
       worstTela: worstTela?.key,
       worstLote: worstLote?.key,
+    );
+
+    final classificationSections = Column(
+      children: [
+        _AlertSection(
+          title: AlertLevel.ok.displayLabel,
+          emptyMessage: 'No hay registros en esta clasificación.',
+          records: okRecords,
+          appState: appState,
+          compact: true,
+        ),
+        SizedBox(height: spacing),
+        _AlertSection(
+          title: AlertLevel.mencion.displayLabel,
+          emptyMessage: 'No hay registros de Mención.',
+          records: warnings,
+          appState: appState,
+          compact: true,
+        ),
+        SizedBox(height: spacing),
+        _AlertSection(
+          title: AlertLevel.critico.displayLabel,
+          emptyMessage: 'No hay registros críticos.',
+          records: critical,
+          appState: appState,
+          compact: true,
+        ),
+        SizedBox(height: spacing),
+        _AlertSection(
+          title: AlertLevel.segundaCalidad.displayLabel,
+          emptyMessage: 'No hay registros de 2da Calidad.',
+          records: secondQuality,
+          appState: appState,
+          compact: true,
+        ),
+      ],
     );
 
     return NavPermissionGate(
@@ -190,21 +232,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                   SizedBox(height: spacing),
                   summaryCards,
                   SizedBox(height: spacing),
-                  _AlertSection(
-                    title: 'Alertas críticas',
-                    emptyMessage: 'No hay alertas críticas.',
-                    records: critical,
-                    appState: appState,
-                    compact: true,
-                  ),
-                  SizedBox(height: spacing),
-                  _AlertSection(
-                    title: 'Advertencias',
-                    emptyMessage: 'No hay advertencias activas.',
-                    records: warnings,
-                    appState: appState,
-                    compact: true,
-                  ),
+                  classificationSections,
                   SizedBox(height: spacing),
                   _TopTelarsSection(
                     summaries: topTelars,
@@ -227,23 +255,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                         Expanded(
                           flex: 3,
                           child: SingleChildScrollView(
-                            child: Column(
-                              children: [
-                                _AlertSection(
-                                  title: 'Alertas críticas',
-                                  emptyMessage: 'No hay alertas críticas.',
-                                  records: critical,
-                                  appState: appState,
-                                ),
-                                SizedBox(height: spacing),
-                                _AlertSection(
-                                  title: 'Advertencias',
-                                  emptyMessage: 'No hay advertencias activas.',
-                                  records: warnings,
-                                  appState: appState,
-                                ),
-                              ],
-                            ),
+                            child: classificationSections,
                           ),
                         ),
                         SizedBox(width: spacing),
@@ -323,7 +335,7 @@ class _FiltersBar extends StatelessWidget {
       label: 'Estado',
       value: filters.estado,
       items: const [null, ...AlertLevel.values],
-      itemLabel: (v) => v?.label ?? 'Todos',
+      itemLabel: (v) => v?.displayLabel ?? 'Todos',
       onChanged: onEstadoChanged,
       width: compact ? null : 140,
     );
@@ -542,8 +554,10 @@ class _FilterDropdown<T> extends StatelessWidget {
 class _SummaryCardsRow extends StatelessWidget {
   const _SummaryCardsRow({
     required this.compact,
+    required this.okCount,
+    required this.mencionCount,
     required this.criticalCount,
-    required this.warningCount,
+    required this.segundaCalidadCount,
     this.minCardWidth = 200,
     this.worstTelar,
     this.worstTela,
@@ -551,8 +565,10 @@ class _SummaryCardsRow extends StatelessWidget {
   });
 
   final bool compact;
+  final int okCount;
+  final int mencionCount;
   final int criticalCount;
-  final int warningCount;
+  final int segundaCalidadCount;
   final double minCardWidth;
   final String? worstTelar;
   final String? worstTela;
@@ -566,17 +582,31 @@ class _SummaryCardsRow extends StatelessWidget {
       cards: [
         KpiCard(
           compact: compact,
-          label: 'Críticas',
-          value: '$criticalCount',
-          color: AppColors.statusCritical,
-          icon: Icons.error_outline,
+          label: AlertLevel.ok.displayLabel,
+          value: '$okCount',
+          color: AppColors.statusNormal,
+          icon: Icons.check_circle_outline,
         ),
         KpiCard(
           compact: compact,
-          label: 'Advertencias',
-          value: '$warningCount',
+          label: AlertLevel.mencion.displayLabel,
+          value: '$mencionCount',
           color: AppColors.statusWarning,
           icon: Icons.warning_amber_outlined,
+        ),
+        KpiCard(
+          compact: compact,
+          label: AlertLevel.critico.displayLabel,
+          value: '$criticalCount',
+          color: AppColors.statusCritical,
+          icon: Icons.build_circle_outlined,
+        ),
+        KpiCard(
+          compact: compact,
+          label: AlertLevel.segundaCalidad.displayLabel,
+          value: '$segundaCalidadCount',
+          color: AppColors.statusSecondQuality,
+          icon: Icons.error_outline,
         ),
         KpiCard(
           compact: compact,
@@ -644,16 +674,10 @@ class _AlertSection extends StatelessWidget {
           if (records.isEmpty)
             EmptyState(
               compact: compact,
-              icon: emptyMessage.contains('críticas')
-                  ? Icons.check_circle_outline
-                  : Icons.warning_amber_outlined,
-              title: emptyMessage.contains('críticas')
-                  ? 'Sin alertas críticas'
-                  : 'Sin advertencias',
+              icon: Icons.inbox_outlined,
+              title: 'Sin registros',
               message: emptyMessage,
-              iconColor: emptyMessage.contains('críticas')
-                  ? AppColors.statusNormal
-                  : AppColors.statusWarning,
+              iconColor: AppColors.muted,
             )
           else
             ListView.separated(

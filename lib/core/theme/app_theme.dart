@@ -60,20 +60,23 @@ class AppColors {
   /// Fondo de la caja de fórmula (branding dorado muy sutil).
   static const formulaBg = Color(0xFFF6EFDD);
 
-  // ── Estados de calidad (alertas de neps) ─────────────────────────
-  static const statusNormal = Color(0xFF2E7D46);
-  static const statusWarning = Color(0xFFC77700);
-  static const statusCritical = Color(0xFFC0392B);
+  // ── Estados de calidad (calificación NEPS) ───────────────────────
+  static const statusNormal = Color(0xFF2E7D46); // OK
+  static const statusWarning = Color(0xFFC77700); // Mención
+  static const statusCritical = Color(0xFFC0392B); // Crítico
+  static const statusSecondQuality = Color(0xFF6D1B2A); // 2da Calidad
 
   /// Contenedores claros para chips/badges de estado sobre fondo claro.
   static const statusNormalBg = Color(0xFFE7F4EC);
   static const statusWarningBg = Color(0xFFFBEFD9);
   static const statusCriticalBg = Color(0xFFFBE7E4);
+  static const statusSecondQualityBg = Color(0xFFF3E0E4);
 
   /// Texto legible de estado sobre sus contenedores claros.
   static const statusNormalText = Color(0xFF1E5B32);
   static const statusWarningText = Color(0xFF8A5300);
   static const statusCriticalText = Color(0xFF8E2A20);
+  static const statusSecondQualityText = Color(0xFF5A1522);
 }
 
 class AppTheme {
