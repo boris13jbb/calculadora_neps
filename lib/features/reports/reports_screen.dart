@@ -15,6 +15,7 @@ import '../../core/widgets/kpi_card.dart';
 import '../../core/widgets/section_header.dart';
 import '../../core/widgets/status_banner.dart';
 import '../../models/nep_record.dart';
+import '../../models/pdf_report_style.dart';
 import '../../models/record_filters.dart';
 import '../../models/saved_report.dart';
 import '../../providers/app_state.dart';
@@ -23,6 +24,49 @@ import '../../utils/file_share_helper.dart';
 import '../../utils/record_filter_helper.dart';
 import '../../utils/report_share_helper.dart';
 import '../../core/widgets/record_filters_panel.dart';
+
+/// Formatos CSV+Excel+PDF usados por «Compartir completo/clásico».
+@visibleForTesting
+const Set<ReportShareFormat> kSavedReportAllShareFormats = {
+  ReportShareFormat.csv,
+  ReportShareFormat.excel,
+  ReportShareFormat.pdf,
+};
+
+/// Ítems del menú de acciones por informe (fuente única para UI y tests).
+@visibleForTesting
+List<PopupMenuEntry<String>> buildSavedReportRowMenuItems() {
+  return const [
+    PopupMenuItem(
+      value: 'view',
+      child: Text('Ver informe'),
+    ),
+    PopupMenuItem(
+      value: 'csv',
+      child: Text('Compartir CSV'),
+    ),
+    PopupMenuItem(
+      value: 'excel',
+      child: Text('Compartir Excel'),
+    ),
+    PopupMenuItem(
+      value: 'pdf',
+      child: Text('Compartir PDF'),
+    ),
+    PopupMenuItem(
+      value: 'all',
+      child: Text('Compartir completo'),
+    ),
+    PopupMenuItem(
+      value: 'classic',
+      child: Text('Compartir clásico'),
+    ),
+    PopupMenuItem(
+      value: 'delete',
+      child: Text('Eliminar'),
+    ),
+  ];
+}
 
 /// Lifecycle del visor: tras apertura exitosa, [clearViewingSavedReport] en
 /// `finally` aunque el flujo no llegue al diálogo (p. ej. widget desmontado).
@@ -249,6 +293,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Future<void> _shareReports(
     List<SavedReport> reportsToShare, {
     required Set<ReportShareFormat> formats,
+    PdfReportStyle? reportStyle,
   }) async {
     if (reportsToShare.isEmpty) {
       _showMessage('Seleccione al menos un informe para compartir.');
@@ -259,11 +304,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final shareOrigin = _shareOrigin(context);
     try {
       final appState = context.read<AppState>();
+      // Estilo explícito (Completo/Clásico) o el activo en AppState para CSV/Excel/PDF.
+      final style = reportStyle ?? appState.pdfReportStyle;
       final files = await shareHelper.buildShareFiles(
         reports: reportsToShare,
         formats: formats,
         columns: appState.exportColumns,
-        reportStyle: appState.pdfReportStyle,
+        reportStyle: style,
       );
 
       if (files.isEmpty) {
@@ -325,13 +372,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'pdf':
         await _shareReports([report], formats: {ReportShareFormat.pdf});
       case 'all':
+        // Equivalente a Registros → modo Completo (tres formatos).
         await _shareReports(
           [report],
-          formats: {
-            ReportShareFormat.csv,
-            ReportShareFormat.excel,
-            ReportShareFormat.pdf,
-          },
+          formats: kSavedReportAllShareFormats,
+          reportStyle: PdfReportStyle.completo,
+        );
+      case 'classic':
+        // Equivalente a Registros → modo Clásico (tres formatos).
+        await _shareReports(
+          [report],
+          formats: kSavedReportAllShareFormats,
+          reportStyle: PdfReportStyle.clasico,
         );
     }
   }
@@ -443,11 +495,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'all':
         await _shareReports(
           targets,
-          formats: {
-            ReportShareFormat.csv,
-            ReportShareFormat.excel,
-            ReportShareFormat.pdf,
-          },
+          formats: kSavedReportAllShareFormats,
+          reportStyle: PdfReportStyle.completo,
+        );
+      case 'classic':
+        await _shareReports(
+          targets,
+          formats: kSavedReportAllShareFormats,
+          reportStyle: PdfReportStyle.clasico,
         );
       case 'filtered_csv':
         await _shareReports(
@@ -467,11 +522,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
       case 'filtered_all':
         await _shareReports(
           visibleReports,
-          formats: {
-            ReportShareFormat.csv,
-            ReportShareFormat.excel,
-            ReportShareFormat.pdf,
-          },
+          formats: kSavedReportAllShareFormats,
+          reportStyle: PdfReportStyle.completo,
+        );
+      case 'filtered_classic':
+        await _shareReports(
+          visibleReports,
+          formats: kSavedReportAllShareFormats,
+          reportStyle: PdfReportStyle.clasico,
         );
     }
   }
@@ -569,6 +627,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 compact: phone,
                 onPressed: () => _shareBatch('all'),
               ),
+              _shareChip(
+                label: 'Lote clásico',
+                enabled: selectedCount > 0 && !isWorking,
+                compact: phone,
+                onPressed: () => _shareBatch('classic'),
+              ),
               if (reportFilters.hasActiveFilters && filteredCount > 0) ...[
                 _shareChip(
                   label: 'Filtrados CSV ($filteredCount)',
@@ -597,6 +661,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   compact: phone,
                   color: AppColors.primaryBlue,
                   onPressed: () => _shareBatch('filtered_all'),
+                ),
+                _shareChip(
+                  label: 'Filtrados clásico ($filteredCount)',
+                  enabled: !isWorking,
+                  compact: phone,
+                  color: AppColors.primaryBlue,
+                  onPressed: () => _shareBatch('filtered_classic'),
                 ),
               ],
             ],
@@ -776,32 +847,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                               await _shareSingle(report, value);
                             }
                           },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
-                              value: 'view',
-                              child: Text('Ver informe'),
-                            ),
-                            PopupMenuItem(
-                              value: 'csv',
-                              child: Text('Compartir CSV'),
-                            ),
-                            PopupMenuItem(
-                              value: 'excel',
-                              child: Text('Compartir Excel'),
-                            ),
-                            PopupMenuItem(
-                              value: 'pdf',
-                              child: Text('Compartir PDF'),
-                            ),
-                            PopupMenuItem(
-                              value: 'all',
-                              child: Text('Compartir completo'),
-                            ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Text('Eliminar'),
-                            ),
-                          ],
+                          itemBuilder: (context) =>
+                              buildSavedReportRowMenuItems(),
                         ),
                 );
               },
