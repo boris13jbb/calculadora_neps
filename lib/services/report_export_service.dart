@@ -12,6 +12,7 @@ import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
 import '../services/alert_service.dart';
 import '../services/analytics_service.dart';
+import '../utils/pdf_official_neps_criteria.dart';
 import '../utils/record_filter_helper.dart';
 
 /// Generación profesional de reportes CSV, Excel y PDF.
@@ -661,6 +662,8 @@ class ReportExportService {
         margin: const pw.EdgeInsets.all(28),
         build: (context) => [
           _pdfHeader(title, generatedAt),
+          pw.SizedBox(height: 10),
+          PdfOfficialNepsCriteria.buildLegend(),
           pw.SizedBox(height: 12),
           pw.Text(
             'Fórmula utilizada: Mts calculados = Neps / 0.09',
@@ -811,6 +814,12 @@ class ReportExportService {
         margin: const pw.EdgeInsets.all(28),
         build: (context) => [
           _pdfClassicHeader(title),
+          pw.SizedBox(height: 10),
+          PdfOfficialNepsCriteria.buildLegend(
+            borderColor: PdfColor.fromHex('#3C4043'),
+            headerColor: PdfColor.fromHex('#1F2A2E'),
+            titleColor: PdfColor.fromHex('#1F2A2E'),
+          ),
           pw.SizedBox(height: 14),
           pw.Text(
             'Formula utilizada: Mts calculados = Neps / $testLengthM',
