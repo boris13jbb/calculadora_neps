@@ -256,7 +256,7 @@ class ReportDataBuilder {
       parts.add('Operarios: ${f.operarios.join(", ")}');
     }
     if (f.alertLevel != null) {
-      parts.add('Alerta: ${f.alertLevel!.label}');
+      parts.add('Alerta: ${f.alertLevel!.displayLabel}');
     }
     return parts.join(' · ');
   }

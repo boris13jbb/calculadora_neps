@@ -77,27 +77,47 @@ class AnalyticsKpiSection extends StatelessWidget {
         ),
         KpiCard(
           compact: compact,
-          label: 'Menciones',
-          value: '${summary.warningCount}',
-          icon: Icons.warning_amber_outlined,
-          color: AppColors.statusWarning,
+          label: AlertLevel.ok.displayLabel,
+          value: '${summary.okCount}',
+          icon: Icons.check_circle_outline,
+          color: AppColors.statusNormal,
+          subtitle:
+              '${summary.normalPercentage.toStringAsFixed(1)}% del total',
         ),
         KpiCard(
           compact: compact,
-          label: 'Críticos',
+          label: AlertLevel.mencion.displayLabel,
+          value: '${summary.mencionCount}',
+          icon: Icons.warning_amber_outlined,
+          color: AppColors.statusWarning,
+          subtitle:
+              '${summary.mencionPercentage.toStringAsFixed(1)}% del total',
+        ),
+        KpiCard(
+          compact: compact,
+          label: AlertLevel.critico.displayLabel,
           value: '${summary.criticalCount}',
-          icon: Icons.error_outline,
+          icon: Icons.build_circle_outlined,
           color: AppColors.statusCritical,
           subtitle:
               '${summary.criticalPercentage.toStringAsFixed(1)}% del total',
         ),
         KpiCard(
           compact: compact,
-          label: compact ? '% OK' : '% normales',
+          label: AlertLevel.segundaCalidad.displayLabel,
+          value: '${summary.segundaCalidadCount}',
+          icon: Icons.error_outline,
+          color: AppColors.statusSecondQuality,
+          subtitle:
+              '${summary.segundaCalidadPercentage.toStringAsFixed(1)}% del total',
+        ),
+        KpiCard(
+          compact: compact,
+          label: '% OK',
           value: '${summary.normalPercentage.toStringAsFixed(1)}%',
-          icon: Icons.check_circle_outline,
+          icon: Icons.pie_chart_outline,
           color: AppColors.statusNormal,
-          subtitle: '${summary.normalCount} registros',
+          subtitle: '${summary.okCount} registros',
         ),
         if (summary.bestTelar != null)
           KpiCard(
@@ -221,7 +241,7 @@ class AnalyticsAlertPieChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnalyticsChartCard(
-      title: 'Distribución de alertas',
+      title: 'Distribución de calificaciones',
       icon: Icons.pie_chart_outline,
       height: height,
       child: distribution.total == 0
@@ -279,7 +299,7 @@ class AnalyticsAlertPieChart extends StatelessWidget {
                       ),
                       _legendRow(
                         AppColors.statusCritical,
-                        'Crítico',
+                        AlertLevel.critico.displayLabel,
                         distribution.critico,
                         distribution.percentage(AlertLevel.critico),
                       ),

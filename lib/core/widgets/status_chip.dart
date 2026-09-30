@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import '../../models/alert_level.dart';
 import '../theme/app_styles.dart';
 
-/// Chip de estado accesible: comunica el nivel con icono + texto + color de
-/// contenedor (no depende solo del color). Componente canónico para mostrar
-/// estados Normal / Advertencia / Crítico en toda la app.
+/// Chip de estado accesible: comunica la calificación con icono + texto +
+/// color de contenedor. Usa [AlertLevel.displayLabel] como presentación
+/// centralizada (OK / Mención / Crítico — Realizar Ajuste / 2da Calidad).
 class StatusChip extends StatelessWidget {
   const StatusChip({
     super.key,
@@ -27,6 +27,7 @@ class StatusChip extends StatelessWidget {
       style: AppStatusStyle.of(level),
       compact: compact,
       showIcon: showIcon,
+      label: level.displayLabel,
     );
   }
 

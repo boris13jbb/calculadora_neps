@@ -149,7 +149,7 @@ class AnalyticsService {
     }).toList();
   }
 
-  /// Top telares con desglose normal / advertencia / crítico.
+  /// Top telares con desglose OK / Mención / Crítico / 2da Calidad.
   List<TelarAlertSummary> topTelaresConAlertas(
     List<NepRecord> records, {
     int limit = 6,

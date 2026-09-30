@@ -176,7 +176,7 @@ class AppStatusStyle {
     background: AppColors.statusCriticalBg,
     foreground: AppColors.statusCriticalText,
     icon: Icons.build_circle_outlined,
-    label: 'Crítico',
+    label: 'Crítico — Realizar Ajuste',
   );
 
   static const AppStatusStyle segundaCalidad = AppStatusStyle(

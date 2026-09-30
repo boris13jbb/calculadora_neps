@@ -609,7 +609,7 @@ class ProfessionalReportPdfService {
       'Turno mayor incidencia': q.turnoMayorPromedio,
       'Índice de calidad': '${q.indiceCalidadGeneral.toStringAsFixed(1)}%',
       'Tendencia': q.tendenciaGeneral.label,
-      '% dentro de límite normal':
+      '% OK':
           '${q.porcentajeDentroLimite.toStringAsFixed(1)}%',
     };
     return _buildPdfTable(

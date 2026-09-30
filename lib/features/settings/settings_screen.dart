@@ -224,7 +224,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   TableRow(
                     children: [
-                      _TableCell('Crítico'),
+                      _TableCell('Crítico — Realizar Ajuste'),
                       _TableCell('46 – 54'),
                       _TableCell('500 < … ≤ 600'),
                     ],

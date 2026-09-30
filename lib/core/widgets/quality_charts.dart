@@ -275,7 +275,7 @@ Widget _buildChartCard({
     QualityChartKind.telarStackedAlerts => _ChartCard(
         icon: Icons.stacked_bar_chart_outlined,
         title: 'Alertas por telar (Top 6)',
-        subtitle: 'Normal · Advertencia · Crítico',
+        subtitle: 'OK · Mención · Crítico · 2da Calidad',
         height: chartHeight,
         child: _StackedAlertBarChart(summaries: data.telarAlerts),
       ),
@@ -942,7 +942,7 @@ class _DonutChart extends StatelessWidget {
               ),
               _LegendItem(
                 color: AppColors.statusCritical,
-                label: 'Crítico',
+                label: 'Crítico — Realizar Ajuste',
                 count: distribution.critico,
                 pct: distribution.percentage(AlertLevel.critico),
               ),

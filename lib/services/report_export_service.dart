@@ -522,7 +522,7 @@ class ReportExportService {
         item.tela,
         item.loteTrama,
         item.neps,
-        level.label,
+        level.displayLabel,
         item.observacion,
         _recommendationFor(item, all),
       ];

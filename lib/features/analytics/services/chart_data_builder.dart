@@ -175,7 +175,12 @@ class ChartDataBuilder {
     final dist = _analytics.distribucionPorEstado(records);
     return ChartDataResult(
       isValid: true,
-      labels: const ['OK', 'Mención', 'Crítico', '2da Calidad'],
+      labels: const [
+        'OK',
+        'Mención',
+        'Crítico — Realizar Ajuste',
+        '2da Calidad',
+      ],
       values: [
         dist.ok.toDouble(),
         dist.mencion.toDouble(),
@@ -188,7 +193,7 @@ class ChartDataBuilder {
       distribution: {
         'OK': dist.ok.toDouble(),
         'Mención': dist.mencion.toDouble(),
-        'Crítico': dist.critico.toDouble(),
+        'Crítico — Realizar Ajuste': dist.critico.toDouble(),
         '2da Calidad': dist.segundaCalidad.toDouble(),
       },
       tableRows: [
@@ -203,7 +208,7 @@ class ChartDataBuilder {
           '${dist.percentage(AlertLevel.mencion).toStringAsFixed(1)}%'
         ],
         [
-          'Crítico',
+          'Crítico — Realizar Ajuste',
           '${dist.critico}',
           '${dist.percentage(AlertLevel.critico).toStringAsFixed(1)}%'
         ],
@@ -285,7 +290,8 @@ class ChartDataBuilder {
           ChartGroupBy.lot => r.loteTrama,
           ChartGroupBy.shift => r.turno,
           ChartGroupBy.operator => r.operario,
-          ChartGroupBy.alertStatus => _alerts.getAlertLevel(r.neps).label,
+          ChartGroupBy.alertStatus =>
+            _alerts.getAlertLevel(r.neps).displayLabel,
           _ => '',
         };
 

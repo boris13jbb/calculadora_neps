@@ -8,6 +8,7 @@ import '../../core/theme/app_styles.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/app_material_list_tile.dart';
 import '../../core/widgets/app_input_decoration.dart';
+import '../../core/widgets/alert_status_badge.dart';
 import '../../core/widgets/app_page.dart';
 import '../../core/widgets/capture_optional_fields.dart';
 import '../../core/widgets/capture_session_actions.dart';
@@ -20,6 +21,7 @@ import '../../models/nep_record.dart';
 import '../../core/permissions/permission.dart';
 import '../../core/widgets/permission_gate.dart';
 import '../../providers/app_state.dart';
+import '../../services/alert_service.dart';
 import '../../utils/numeric_input_formatters.dart';
 
 Future<void> _editCaptureRecord(
@@ -1223,6 +1225,15 @@ class _MetersPreview extends StatelessWidget {
     return ListenableBuilder(
       listenable: appState.nepsController,
       builder: (context, _) {
+        final raw = appState.nepsController.text.trim();
+        final hasNeps = raw.isNotEmpty;
+        final neps = hasNeps ? appState.parseNumber(raw) : 0.0;
+        final score = neps.round();
+        final nepsPerM2 = hasNeps ? appState.previewValue : 0.0;
+        final level = hasNeps && neps > 0
+            ? alertService.getAlertLevel(neps)
+            : null;
+
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1231,41 +1242,83 @@ class _MetersPreview extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.borderLight),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'NEPS/m² (mts calculados)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          appState.formatNumber(nepsPerM2),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 22,
+                            color: Color(0xFF2F4125),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Text(
+                    'NEPS/m² = Neps / 0.09',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: AppColors.textGreen,
+                    ),
+                  ),
+                ],
+              ),
+              if (level != null) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Text(
-                      'Mts calculados',
-                      style: TextStyle(
+                    Text(
+                      'NEPS: ${appState.formatDecimal(neps)}',
+                      style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
-                        color: AppColors.muted,
                       ),
                     ),
-                    const SizedBox(height: 2),
                     Text(
-                      appState.formatNumber(appState.previewValue),
+                      'Puntaje: $score',
                       style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 22,
-                        color: Color(0xFF2F4125),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
                       ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'Calificación: ',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        AlertStatusBadge(level: level, compact: true),
+                      ],
                     ),
                   ],
                 ),
-              ),
-              const Text(
-                'Mts = Neps / 0.09',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: AppColors.textGreen,
-                ),
-              ),
+              ],
             ],
           ),
         );

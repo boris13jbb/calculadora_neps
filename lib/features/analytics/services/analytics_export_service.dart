@@ -60,14 +60,29 @@ class AnalyticsExportService {
     buffer.writeln(
       'Total mts calculados,${_reportExport.formatDecimal(summary.totalMts)}',
     );
-    buffer.writeln('OK,${summary.normalCount}');
-    buffer.writeln('Advertencias,${summary.warningCount}');
-    buffer.writeln('Criticos,${summary.criticalCount}');
+    buffer.writeln('${AlertLevel.ok.displayLabel},${summary.okCount}');
+    buffer.writeln('${AlertLevel.mencion.displayLabel},${summary.mencionCount}');
     buffer.writeln(
-      'Porcentaje normales,${summary.normalPercentage.toStringAsFixed(1)}%',
+      '${AlertLevel.critico.displayLabel},${summary.criticalCount}',
     );
     buffer.writeln(
-      'Porcentaje criticos,${summary.criticalPercentage.toStringAsFixed(1)}%',
+      '${AlertLevel.segundaCalidad.displayLabel},${summary.segundaCalidadCount}',
+    );
+    buffer.writeln(
+      'Porcentaje ${AlertLevel.ok.displayLabel},'
+      '${summary.normalPercentage.toStringAsFixed(1)}%',
+    );
+    buffer.writeln(
+      'Porcentaje ${AlertLevel.mencion.displayLabel},'
+      '${summary.mencionPercentage.toStringAsFixed(1)}%',
+    );
+    buffer.writeln(
+      'Porcentaje ${AlertLevel.critico.displayLabel},'
+      '${summary.criticalPercentage.toStringAsFixed(1)}%',
+    );
+    buffer.writeln(
+      'Porcentaje ${AlertLevel.segundaCalidad.displayLabel},'
+      '${summary.segundaCalidadPercentage.toStringAsFixed(1)}%',
     );
     if (summary.averageNepsPerTelar != null) {
       buffer.writeln(
@@ -131,15 +146,22 @@ class AnalyticsExportService {
     if (groups.isEmpty) return;
     buffer.writeln(title);
     buffer.writeln(
-        'Grupo,Registros,Total neps,Promedio neps,Criticos,Advertencias');
+      'Grupo,Registros,Total neps,Promedio neps,'
+      '${AlertLevel.ok.displayLabel},'
+      '${AlertLevel.mencion.displayLabel},'
+      '${AlertLevel.critico.displayLabel},'
+      '${AlertLevel.segundaCalidad.displayLabel}',
+    );
     for (final group in groups) {
       buffer.writeln(
         '${_reportExport.escapeCsv(group.key)},'
         '${group.recordCount},'
         '${_reportExport.formatDecimal(group.totalNeps)},'
         '${_reportExport.formatNumber(group.averageNeps)},'
+        '${group.okCount},'
+        '${group.mencionCount},'
         '${group.criticalCount},'
-        '${group.warningCount}',
+        '${group.segundaCalidadCount}',
       );
     }
     buffer.writeln();
@@ -197,16 +219,28 @@ class AnalyticsExportService {
       ['Minimo neps', _reportExport.formatDecimal(summary.minNeps)],
       ['Maximo neps', _reportExport.formatDecimal(summary.maxNeps)],
       ['Total mts calculados', _reportExport.formatDecimal(summary.totalMts)],
-      ['OK', '${summary.normalCount}'],
-      ['Menciones', '${summary.warningCount}'],
-      ['Criticos', '${summary.criticalCount}'],
+      [AlertLevel.ok.displayLabel, '${summary.okCount}'],
+      [AlertLevel.mencion.displayLabel, '${summary.mencionCount}'],
+      [AlertLevel.critico.displayLabel, '${summary.criticalCount}'],
       [
-        'Porcentaje normales',
+        AlertLevel.segundaCalidad.displayLabel,
+        '${summary.segundaCalidadCount}',
+      ],
+      [
+        'Porcentaje ${AlertLevel.ok.displayLabel}',
         '${summary.normalPercentage.toStringAsFixed(1)}%',
       ],
       [
-        'Porcentaje criticos',
+        'Porcentaje ${AlertLevel.mencion.displayLabel}',
+        '${summary.mencionPercentage.toStringAsFixed(1)}%',
+      ],
+      [
+        'Porcentaje ${AlertLevel.critico.displayLabel}',
         '${summary.criticalPercentage.toStringAsFixed(1)}%',
+      ],
+      [
+        'Porcentaje ${AlertLevel.segundaCalidad.displayLabel}',
+        '${summary.segundaCalidadPercentage.toStringAsFixed(1)}%',
       ],
       if (summary.averageNepsPerTelar != null)
         [
@@ -286,13 +320,15 @@ class AnalyticsExportService {
   ) {
     if (groups.isEmpty) return;
     final sheet = excel[name];
-    const headers = [
+    final headers = [
       'Grupo',
       'Registros',
       'Total neps',
       'Promedio neps',
-      'Criticos',
-      'Menciones',
+      AlertLevel.ok.displayLabel,
+      AlertLevel.mencion.displayLabel,
+      AlertLevel.critico.displayLabel,
+      AlertLevel.segundaCalidad.displayLabel,
     ];
     _writeExcelHeader(sheet, headers);
 
@@ -304,8 +340,10 @@ class AnalyticsExportService {
         group.recordCount,
         group.totalNeps,
         group.averageNeps,
+        group.okCount,
+        group.mencionCount,
         group.criticalCount,
-        group.warningCount,
+        group.segundaCalidadCount,
       ];
       for (var c = 0; c < values.length; c++) {
         final cell = sheet.cell(
@@ -437,16 +475,28 @@ class AnalyticsExportService {
                 'Total mts calculados',
                 _reportExport.formatDecimal(summary.totalMts),
               ],
-              ['OK', '${summary.normalCount}'],
-              ['Menciones', '${summary.warningCount}'],
-              ['Criticos', '${summary.criticalCount}'],
+              [AlertLevel.ok.displayLabel, '${summary.okCount}'],
+              [AlertLevel.mencion.displayLabel, '${summary.mencionCount}'],
+              [AlertLevel.critico.displayLabel, '${summary.criticalCount}'],
               [
-                'Porcentaje normales',
+                AlertLevel.segundaCalidad.displayLabel,
+                '${summary.segundaCalidadCount}',
+              ],
+              [
+                'Porcentaje ${AlertLevel.ok.displayLabel}',
                 '${summary.normalPercentage.toStringAsFixed(1)}%',
               ],
               [
-                'Porcentaje criticos',
+                'Porcentaje ${AlertLevel.mencion.displayLabel}',
+                '${summary.mencionPercentage.toStringAsFixed(1)}%',
+              ],
+              [
+                'Porcentaje ${AlertLevel.critico.displayLabel}',
                 '${summary.criticalPercentage.toStringAsFixed(1)}%',
+              ],
+              [
+                'Porcentaje ${AlertLevel.segundaCalidad.displayLabel}',
+                '${summary.segundaCalidadPercentage.toStringAsFixed(1)}%',
               ],
               if (summary.averageNepsPerTelar != null)
                 [
@@ -528,22 +578,22 @@ class AnalyticsExportService {
             headers: ['Estado', 'Cantidad', 'Porcentaje'],
             data: [
               [
-                'OK',
-                '${summary.normalCount}',
+                AlertLevel.ok.displayLabel,
+                '${summary.okCount}',
                 '${summary.normalPercentage.toStringAsFixed(1)}%',
               ],
               [
-                'Mención',
-                '${summary.warningCount}',
-                '${summary.alertDistribution.percentage(AlertLevel.mencion).toStringAsFixed(1)}%',
+                AlertLevel.mencion.displayLabel,
+                '${summary.mencionCount}',
+                '${summary.mencionPercentage.toStringAsFixed(1)}%',
               ],
               [
-                'Crítico',
+                AlertLevel.critico.displayLabel,
                 '${summary.criticalCount}',
                 '${summary.criticalPercentage.toStringAsFixed(1)}%',
               ],
               [
-                '2da Calidad',
+                AlertLevel.segundaCalidad.displayLabel,
                 '${summary.segundaCalidadCount}',
                 '${summary.segundaCalidadPercentage.toStringAsFixed(1)}%',
               ],

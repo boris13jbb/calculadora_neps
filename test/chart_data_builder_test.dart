@@ -62,7 +62,7 @@ void main() {
         const ChartConfig(metric: ChartMetric.statusDistribution),
       );
       expect(result.isValid, isTrue);
-      expect(result.labels, ['OK', 'Mención', 'Crítico', '2da Calidad']);
+      expect(result.labels, ['OK', 'Mención', 'Crítico — Realizar Ajuste', '2da Calidad']);
       expect(result.values.length, 4);
     });
 
