@@ -7,6 +7,7 @@ import '../layout/breakpoints.dart';
 import '../navigation/app_navigation.dart';
 import '../theme/app_theme.dart';
 import 'empty_state.dart';
+import 'lazy_indexed_stack.dart';
 import 'status_banner.dart';
 import 'sync_status_banner.dart';
 import 'vicunha_sidebar.dart';
@@ -193,7 +194,9 @@ class _ShellBody extends StatelessWidget {
                 : cloudSyncError,
           ),
         Expanded(
-          child: IndexedStack(
+          // Lazy mount: Informes/Analíticas no ejecutan initState ni
+          // fetchReports() hasta que el usuario abre esa pestaña.
+          child: LazyIndexedStack(
             index: selectedIndex,
             children: navItems.map((item) => item.screen).toList(),
           ),
