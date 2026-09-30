@@ -199,7 +199,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                   ),
                   SizedBox(height: spacing),
                   _AlertSection(
-                    title: 'Advertencias',
+                    title: 'Menciones',
                     emptyMessage: 'No hay advertencias activas.',
                     records: warnings,
                     appState: appState,
@@ -237,7 +237,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                 ),
                                 SizedBox(height: spacing),
                                 _AlertSection(
-                                  title: 'Advertencias',
+                                  title: 'Menciones',
                                   emptyMessage: 'No hay advertencias activas.',
                                   records: warnings,
                                   appState: appState,
@@ -573,7 +573,7 @@ class _SummaryCardsRow extends StatelessWidget {
         ),
         KpiCard(
           compact: compact,
-          label: 'Advertencias',
+          label: 'Menciones',
           value: '$warningCount',
           color: AppColors.statusWarning,
           icon: Icons.warning_amber_outlined,

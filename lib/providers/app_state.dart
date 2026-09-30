@@ -2335,7 +2335,7 @@ class AppState extends ChangeNotifier {
     _clearCaptureInputs();
 
     final level = alertService.getAlertLevel(record.neps);
-    if (level == AlertLevel.critico) {
+    if (level.isSevere) {
       _showCriticalAlertSnackBar(record);
       unawaited(
         notificationService.showCriticalAlert(
@@ -2344,8 +2344,9 @@ class AppState extends ChangeNotifier {
         ),
       );
       showMessage(
-        'Alerta crítica: el telar ${record.telar} registró '
-        '${formatDecimal(record.neps)} neps.',
+        '${level.displayLabel}: el telar ${record.telar} registró '
+        '${formatDecimal(record.neps)} neps '
+        '(${formatDecimal(record.mtsCalculados)} NEPS/m²).',
       );
     } else {
       showMessage('Registro agregado correctamente.');

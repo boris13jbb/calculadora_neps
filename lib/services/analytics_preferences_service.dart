@@ -125,8 +125,14 @@ class AnalyticsPreferencesService {
 
   AlertLevel? _parseAlertLevel(Object? value) {
     if (value is! String) return null;
+    // Compatibilidad con códigos legacy persistidos.
+    final normalized = switch (value) {
+      'normal' => 'ok',
+      'advertencia' => 'mencion',
+      _ => value,
+    };
     for (final level in AlertLevel.values) {
-      if (level.name == value) return level;
+      if (level.name == normalized) return level;
     }
     return null;
   }

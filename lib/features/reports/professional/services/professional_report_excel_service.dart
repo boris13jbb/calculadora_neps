@@ -172,9 +172,10 @@ class ProfessionalReportExcelService {
     final sheet = excel[name];
     final s = data.statistics;
     var row = 0;
-    _writeRow(sheet, row++, ['Normales', s.normalCount]);
-    _writeRow(sheet, row++, ['Advertencias', s.warningCount]);
-    _writeRow(sheet, row++, ['Críticos', s.criticalCount]);
+    _writeRow(sheet, row++, ['OK', s.normalCount]);
+    _writeRow(sheet, row++, ['Menciones', s.warningCount]);
+    _writeRow(sheet, row++, ['Criticos', s.criticalCount]);
+    _writeRow(sheet, row++, ['2da Calidad', s.segundaCalidadCount]);
     _writeRow(sheet, row++, ['Revisados', s.reviewedCount]);
     _writeRow(sheet, row++, ['Pendientes', s.pendingReviewCount]);
   }

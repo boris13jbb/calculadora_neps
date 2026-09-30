@@ -67,7 +67,7 @@ class NepRecord {
   String get estadoAlerta => alertLevel.label;
 
   bool get requiereSeguimiento =>
-      alertLevel != AlertLevel.normal && !revisadoPorSupervisor;
+      alertLevel.requiresFollowUp && !revisadoPorSupervisor;
 
   Map<String, dynamic> toJson() {
     return {

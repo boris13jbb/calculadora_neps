@@ -17,6 +17,7 @@ class TemporalGroupPoint {
     required this.normalCount,
     required this.warningCount,
     required this.criticalCount,
+    required this.segundaCalidadCount,
     required this.reviewedCount,
     required this.correctiveActionCount,
     this.pctChangeFromPrevious,
@@ -32,12 +33,15 @@ class TemporalGroupPoint {
   final int normalCount;
   final int warningCount;
   final int criticalCount;
+  final int segundaCalidadCount;
   final int reviewedCount;
   final int correctiveActionCount;
   final double? pctChangeFromPrevious;
 
   double get criticalPercentage =>
-      recordCount == 0 ? 0 : (criticalCount / recordCount) * 100;
+      recordCount == 0
+          ? 0
+          : ((criticalCount + segundaCalidadCount) / recordCount) * 100;
 }
 
 /// Agrupación detallada por dimensión (telar, tela, etc.).
@@ -54,6 +58,7 @@ class DimensionGroupStats {
     required this.normalCount,
     required this.warningCount,
     required this.criticalCount,
+    required this.segundaCalidadCount,
     required this.pendingReview,
     required this.pendingCorrective,
     this.pctChangeFromPrevious,
@@ -70,12 +75,15 @@ class DimensionGroupStats {
   final int normalCount;
   final int warningCount;
   final int criticalCount;
+  final int segundaCalidadCount;
   final int pendingReview;
   final int pendingCorrective;
   final double? pctChangeFromPrevious;
 
   double get criticalPercentage =>
-      recordCount == 0 ? 0 : (criticalCount / recordCount) * 100;
+      recordCount == 0
+          ? 0
+          : ((criticalCount + segundaCalidadCount) / recordCount) * 100;
 }
 
 /// Servicio de agrupación para análisis por dimensiones y tiempo.
@@ -108,15 +116,17 @@ class ReportGroupingService {
     for (final key in keys) {
       final items = map[key]!;
       final neps = items.map((r) => r.neps).toList();
-      var normal = 0, warn = 0, crit = 0, reviewed = 0, actions = 0;
+      var normal = 0, warn = 0, crit = 0, segunda = 0, reviewed = 0, actions = 0;
       for (final r in items) {
         switch (_alerts.getAlertLevel(r.neps)) {
-          case AlertLevel.normal:
+          case AlertLevel.ok:
             normal++;
-          case AlertLevel.advertencia:
+          case AlertLevel.mencion:
             warn++;
           case AlertLevel.critico:
             crit++;
+          case AlertLevel.segundaCalidad:
+            segunda++;
         }
         if (r.revisadoPorSupervisor) reviewed++;
         if (r.accionCorrectiva.isNotEmpty || r.historialAcciones.isNotEmpty) {
@@ -141,6 +151,7 @@ class ReportGroupingService {
         normalCount: normal,
         warningCount: warn,
         criticalCount: crit,
+        segundaCalidadCount: segunda,
         reviewedCount: reviewed,
         correctiveActionCount: actions,
         pctChangeFromPrevious: pctChange,
@@ -174,21 +185,23 @@ class ReportGroupingService {
     for (final entry in map.entries) {
       final items = entry.value;
       final neps = items.map((r) => r.neps).toList();
-      var normal = 0, warn = 0, crit = 0, pendingRev = 0, pendingCorr = 0;
+      var normal = 0, warn = 0, crit = 0, segunda = 0, pendingRev = 0, pendingCorr = 0;
       for (final r in items) {
         final level = _alerts.getAlertLevel(r.neps);
         switch (level) {
-          case AlertLevel.normal:
+          case AlertLevel.ok:
             normal++;
-          case AlertLevel.advertencia:
+          case AlertLevel.mencion:
             warn++;
           case AlertLevel.critico:
             crit++;
+          case AlertLevel.segundaCalidad:
+            segunda++;
         }
-        if (level != AlertLevel.normal && !r.revisadoPorSupervisor) {
+        if (level != AlertLevel.ok && !r.revisadoPorSupervisor) {
           pendingRev++;
         }
-        if (level != AlertLevel.normal &&
+        if (level != AlertLevel.ok &&
             r.accionCorrectiva.isEmpty &&
             r.historialAcciones.isEmpty) {
           pendingCorr++;
@@ -215,6 +228,7 @@ class ReportGroupingService {
           normalCount: normal,
           warningCount: warn,
           criticalCount: crit,
+          segundaCalidadCount: segunda,
           pendingReview: pendingRev,
           pendingCorrective: pendingCorr,
           pctChangeFromPrevious: pctChange,

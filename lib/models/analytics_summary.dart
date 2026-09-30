@@ -35,14 +35,23 @@ class AnalyticsSummary {
   final GroupNepsSummary? bestTelar;
 
   int get criticalCount => alertDistribution.critico;
-  int get warningCount => alertDistribution.advertencia;
-  int get normalCount => alertDistribution.normal;
+  int get warningCount => alertDistribution.mencion;
+  int get normalCount => alertDistribution.ok;
+  int get mencionCount => alertDistribution.mencion;
+  int get segundaCalidadCount => alertDistribution.segundaCalidad;
+  int get okCount => alertDistribution.ok;
 
   double get normalPercentage =>
-      alertDistribution.percentage(AlertLevel.normal);
+      alertDistribution.percentage(AlertLevel.ok);
 
   double get criticalPercentage =>
       alertDistribution.percentage(AlertLevel.critico);
+
+  double get mencionPercentage =>
+      alertDistribution.percentage(AlertLevel.mencion);
+
+  double get segundaCalidadPercentage =>
+      alertDistribution.percentage(AlertLevel.segundaCalidad);
 
   /// Promedio simple de los promedios por telar (un telar = un valor).
   double? get averageNepsPerTelar {

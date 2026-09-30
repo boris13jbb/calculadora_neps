@@ -351,7 +351,7 @@ class ReportChartBuilder {
 
   Widget? _pieChart(ProcessedReportData data, {bool donut = false}) {
     final dist = data.statistics.alertDistribution;
-    if (dist.normal + dist.advertencia + dist.critico == 0) {
+    if (dist.total == 0) {
       return _emptyChart();
     }
     return PieChart(
@@ -359,9 +359,10 @@ class ReportChartBuilder {
         sectionsSpace: 2,
         centerSpaceRadius: donut ? 48 : 0,
         sections: [
-          _pieSection(dist.normal, AppColors.statusNormal),
-          _pieSection(dist.advertencia, AppColors.statusWarning),
+          _pieSection(dist.ok, AppColors.statusNormal),
+          _pieSection(dist.mencion, AppColors.statusWarning),
           _pieSection(dist.critico, AppColors.statusCritical),
+          _pieSection(dist.segundaCalidad, AppColors.statusSecondQuality),
         ],
       ),
     );

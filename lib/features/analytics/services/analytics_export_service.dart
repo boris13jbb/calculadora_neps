@@ -60,7 +60,7 @@ class AnalyticsExportService {
     buffer.writeln(
       'Total mts calculados,${_reportExport.formatDecimal(summary.totalMts)}',
     );
-    buffer.writeln('Alertas normales,${summary.normalCount}');
+    buffer.writeln('OK,${summary.normalCount}');
     buffer.writeln('Advertencias,${summary.warningCount}');
     buffer.writeln('Criticos,${summary.criticalCount}');
     buffer.writeln(
@@ -197,8 +197,8 @@ class AnalyticsExportService {
       ['Minimo neps', _reportExport.formatDecimal(summary.minNeps)],
       ['Maximo neps', _reportExport.formatDecimal(summary.maxNeps)],
       ['Total mts calculados', _reportExport.formatDecimal(summary.totalMts)],
-      ['Alertas normales', '${summary.normalCount}'],
-      ['Advertencias', '${summary.warningCount}'],
+      ['OK', '${summary.normalCount}'],
+      ['Menciones', '${summary.warningCount}'],
       ['Criticos', '${summary.criticalCount}'],
       [
         'Porcentaje normales',
@@ -292,7 +292,7 @@ class AnalyticsExportService {
       'Total neps',
       'Promedio neps',
       'Criticos',
-      'Advertencias',
+      'Menciones',
     ];
     _writeExcelHeader(sheet, headers);
 
@@ -437,8 +437,8 @@ class AnalyticsExportService {
                 'Total mts calculados',
                 _reportExport.formatDecimal(summary.totalMts),
               ],
-              ['Alertas normales', '${summary.normalCount}'],
-              ['Advertencias', '${summary.warningCount}'],
+              ['OK', '${summary.normalCount}'],
+              ['Menciones', '${summary.warningCount}'],
               ['Criticos', '${summary.criticalCount}'],
               [
                 'Porcentaje normales',
@@ -528,19 +528,24 @@ class AnalyticsExportService {
             headers: ['Estado', 'Cantidad', 'Porcentaje'],
             data: [
               [
-                'Normal',
+                'OK',
                 '${summary.normalCount}',
                 '${summary.normalPercentage.toStringAsFixed(1)}%',
               ],
               [
-                'Advertencia',
+                'Mención',
                 '${summary.warningCount}',
-                '${summary.alertDistribution.percentage(AlertLevel.advertencia).toStringAsFixed(1)}%',
+                '${summary.alertDistribution.percentage(AlertLevel.mencion).toStringAsFixed(1)}%',
               ],
               [
-                'Critico',
+                'Crítico',
                 '${summary.criticalCount}',
                 '${summary.criticalPercentage.toStringAsFixed(1)}%',
+              ],
+              [
+                '2da Calidad',
+                '${summary.segundaCalidadCount}',
+                '${summary.segundaCalidadPercentage.toStringAsFixed(1)}%',
               ],
             ],
           ),

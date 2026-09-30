@@ -22,7 +22,7 @@ void main() {
     expect(record.responsableRevision, '');
     expect(record.historialAcciones, isEmpty);
     expect(record.fechaRevision, isNull);
-    expect(record.estadoAlerta, 'Advertencia');
+    expect(record.estadoAlerta, 'Mención');
   });
 
   test('toJson omite campos vacíos opcionales', () {

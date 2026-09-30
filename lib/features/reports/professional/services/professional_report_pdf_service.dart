@@ -700,19 +700,24 @@ class ProfessionalReportPdfService {
       rows: [
         ['Total alertas', '${s.totalRecords}', '100%'],
         [
-          'Normales',
+          'OK',
           '${s.normalCount}',
           '${s.normalPercentage.toStringAsFixed(1)}%',
         ],
         [
-          'Advertencias',
+          'Menciones',
           '${s.warningCount}',
           '${s.warningPercentage.toStringAsFixed(1)}%',
         ],
         [
-          'Críticos',
+          'Criticos',
           '${s.criticalCount}',
           '${s.criticalPercentage.toStringAsFixed(1)}%',
+        ],
+        [
+          '2da Calidad',
+          '${s.segundaCalidadCount}',
+          '${s.segundaCalidadPercentage.toStringAsFixed(1)}%',
         ],
         ['Revisadas', '${s.reviewedCount}', '—'],
         ['Pendientes', '${s.pendingReviewCount}', '—'],

@@ -24,11 +24,11 @@ void main() {
     final analytics = AnalyticsService();
 
     final records = [
-      _record(telar: '1', neps: 20, tela: 'T1', lote: 'L1'),
-      _record(telar: '2', neps: 80, tela: 'T2', lote: 'L2'),
+      _record(telar: '1', neps: 10, tela: 'T1', lote: 'L1'),
+      _record(telar: '2', neps: 50, tela: 'T2', lote: 'L2'),
       _record(
         telar: '1',
-        neps: 40,
+        neps: 30,
         tela: 'T1',
         lote: 'L1',
         createdAt: DateTime(2026, 6, 30),
@@ -37,18 +37,18 @@ void main() {
 
     test('calcula totales y promedios', () {
       expect(analytics.totalRegistros(records), 3);
-      expect(analytics.totalNeps(records), 140);
-      expect(analytics.promedioNeps(records), closeTo(46.666, 0.01));
+      expect(analytics.totalNeps(records), 90);
+      expect(analytics.promedioNeps(records), closeTo(30, 0.01));
       expect(analytics.totalTelares(records), 2);
     });
 
     test('resumen por tela y lote', () {
       final porTela = analytics.resumenPorTela(records);
       expect(porTela.first.key, 'T2');
-      expect(porTela.first.totalNeps, 80);
+      expect(porTela.first.totalNeps, 50);
 
       final porLote = analytics.resumenPorLoteTrama(records);
-      expect(porLote.first.totalNeps, 80);
+      expect(porLote.first.totalNeps, 50);
     });
 
     test('tendencia diaria agrupa por fecha', () {
@@ -61,9 +61,10 @@ void main() {
     test('porcentaje de críticos y distribución', () {
       expect(analytics.porcentajeCriticos(records), closeTo(33.33, 0.1));
       final dist = analytics.distribucionPorEstado(records);
+      expect(dist.ok, 1);
+      expect(dist.mencion, 1);
       expect(dist.critico, 1);
-      expect(dist.normal, 1);
-      expect(dist.advertencia, 1);
+      expect(dist.segundaCalidad, 0);
     });
 
     test('top telares limita resultados', () {

@@ -310,7 +310,7 @@ class ReportExportService {
       );
       _buildAlertSheet(
         excel,
-        'Advertencias',
+        'Menciones',
         _alerts.detectWarningRecords(sorted),
         sorted,
       );
@@ -462,7 +462,7 @@ class ReportExportService {
       'Total neps',
       'Promedio neps',
       'Críticos',
-      'Advertencias',
+      'Menciones',
     ];
     _writeHeaderRow(sheet, headers);
 
@@ -589,9 +589,10 @@ class ReportExportService {
 
   xls.CellStyle _excelAlertStyle(AlertLevel level, {bool bold = false}) {
     final bgHex = switch (level) {
-      AlertLevel.normal => '#C8E6C9',
-      AlertLevel.advertencia => '#FFE0B2',
+      AlertLevel.ok => '#C8E6C9',
+      AlertLevel.mencion => '#FFE0B2',
       AlertLevel.critico => '#FFCDD2',
+      AlertLevel.segundaCalidad => '#E1BEE7',
     };
     return xls.CellStyle(
       bold: bold,

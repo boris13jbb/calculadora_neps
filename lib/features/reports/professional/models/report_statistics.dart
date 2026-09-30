@@ -43,6 +43,7 @@ class ReportStatistics {
     this.normalCount = 0,
     this.warningCount = 0,
     this.criticalCount = 0,
+    this.segundaCalidadCount = 0,
     this.reviewedCount = 0,
     this.pendingReviewCount = 0,
     this.withCorrectiveActionCount = 0,
@@ -81,6 +82,7 @@ class ReportStatistics {
   final int normalCount;
   final int warningCount;
   final int criticalCount;
+  final int segundaCalidadCount;
   final int reviewedCount;
   final int pendingReviewCount;
   final int withCorrectiveActionCount;
@@ -104,8 +106,11 @@ class ReportStatistics {
   double get criticalPercentage =>
       totalRecords == 0 ? 0 : (criticalCount / totalRecords) * 100;
 
+  double get segundaCalidadPercentage =>
+      totalRecords == 0 ? 0 : (segundaCalidadCount / totalRecords) * 100;
+
   double get reviewComplianceRate {
-    final alertTotal = warningCount + criticalCount;
+    final alertTotal = warningCount + criticalCount + segundaCalidadCount;
     if (alertTotal == 0) return 100;
     return (reviewedCount / alertTotal) * 100;
   }
@@ -350,16 +355,22 @@ class ReportStatistics {
 
 class AlertDistributionStats {
   const AlertDistributionStats({
-    this.normal = 0,
-    this.advertencia = 0,
+    this.ok = 0,
+    this.mencion = 0,
     this.critico = 0,
+    this.segundaCalidad = 0,
   });
 
-  final int normal;
-  final int advertencia;
+  final int ok;
+  final int mencion;
   final int critico;
+  final int segundaCalidad;
 
-  int get total => normal + advertencia + critico;
+  /// Alias históricos.
+  int get normal => ok;
+  int get advertencia => mencion;
+
+  int get total => ok + mencion + critico + segundaCalidad;
 }
 
 /// Indicadores de calidad destacados.

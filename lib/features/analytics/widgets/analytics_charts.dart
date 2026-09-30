@@ -77,7 +77,7 @@ class AnalyticsKpiSection extends StatelessWidget {
         ),
         KpiCard(
           compact: compact,
-          label: 'Advertencias',
+          label: 'Menciones',
           value: '${summary.warningCount}',
           icon: Icons.warning_amber_outlined,
           color: AppColors.statusWarning,
@@ -236,19 +236,24 @@ class AnalyticsAlertPieChart extends StatelessWidget {
                       centerSpaceRadius: 36,
                       sections: [
                         _pieSection(
-                          distribution.normal,
+                          distribution.ok,
                           AppColors.statusNormal,
-                          'Normal',
+                          'OK',
                         ),
                         _pieSection(
-                          distribution.advertencia,
+                          distribution.mencion,
                           AppColors.statusWarning,
-                          'Adv.',
+                          'Men.',
                         ),
                         _pieSection(
                           distribution.critico,
                           AppColors.statusCritical,
                           'Crit.',
+                        ),
+                        _pieSection(
+                          distribution.segundaCalidad,
+                          AppColors.statusSecondQuality,
+                          '2da',
                         ),
                       ],
                     ),
@@ -262,21 +267,27 @@ class AnalyticsAlertPieChart extends StatelessWidget {
                     children: [
                       _legendRow(
                         AppColors.statusNormal,
-                        'Normal',
-                        distribution.normal,
-                        distribution.percentage(AlertLevel.normal),
+                        'OK',
+                        distribution.ok,
+                        distribution.percentage(AlertLevel.ok),
                       ),
                       _legendRow(
                         AppColors.statusWarning,
-                        'Advertencia',
-                        distribution.advertencia,
-                        distribution.percentage(AlertLevel.advertencia),
+                        'Mención',
+                        distribution.mencion,
+                        distribution.percentage(AlertLevel.mencion),
                       ),
                       _legendRow(
                         AppColors.statusCritical,
                         'Crítico',
                         distribution.critico,
                         distribution.percentage(AlertLevel.critico),
+                      ),
+                      _legendRow(
+                        AppColors.statusSecondQuality,
+                        '2da Calidad',
+                        distribution.segundaCalidad,
+                        distribution.percentage(AlertLevel.segundaCalidad),
                       ),
                     ],
                   ),

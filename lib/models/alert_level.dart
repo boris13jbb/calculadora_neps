@@ -1,14 +1,7 @@
+export 'neps_classification.dart';
+
 import '../core/constants.dart';
-
-/// Nivel de alerta según cantidad de neps.
-enum AlertLevel {  normal('Normal'),
-  advertencia('Advertencia'),
-  critico('Crítico');
-
-  const AlertLevel(this.label);
-
-  final String label;
-}
+import 'neps_classification.dart';
 
 /// Resultado de evaluación de alerta para un registro.
 class AlertEvaluation {
@@ -29,8 +22,10 @@ class GroupNepsSummary {
     this.totalMts = 0,
     required this.recordCount,
     required this.averageNeps,
+    this.okCount = 0,
+    this.mencionCount = 0,
     this.criticalCount = 0,
-    this.warningCount = 0,
+    this.segundaCalidadCount = 0,
   });
 
   final String key;
@@ -38,8 +33,13 @@ class GroupNepsSummary {
   final double totalMts;
   final int recordCount;
   final double averageNeps;
+  final int okCount;
+  final int mencionCount;
   final int criticalCount;
-  final int warningCount;
+  final int segundaCalidadCount;
+
+  /// Alias histórico: “advertencia” → Mención.
+  int get warningCount => mencionCount;
 
   /// Promedio de neps por metro cuadrado (área de prueba = 0.09 m²).
   double get nepsPorM2 =>
@@ -54,8 +54,10 @@ class TelarAlertSummary {
     required this.totalMts,
     required this.recordCount,
     required this.averageNeps,
+    required this.okCount,
+    required this.mencionCount,
     required this.criticalCount,
-    required this.warningCount,
+    required this.segundaCalidadCount,
     required this.isReincident,
   });
 
@@ -64,9 +66,14 @@ class TelarAlertSummary {
   final double totalMts;
   final int recordCount;
   final double averageNeps;
+  final int okCount;
+  final int mencionCount;
   final int criticalCount;
-  final int warningCount;
+  final int segundaCalidadCount;
   final bool isReincident;
+
+  /// Alias histórico: “advertencia” → Mención.
+  int get warningCount => mencionCount;
 
   /// Promedio de neps por metro cuadrado (área de prueba = 0.09 m²).
   double get nepsPorM2 =>
