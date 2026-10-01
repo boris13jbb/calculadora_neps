@@ -2614,10 +2614,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addRecord() async {
+  Future<NepRecord?> addRecord() async {
     final record = buildCaptureRecord();
-    if (record == null) return;
-    await submitCaptureRecord(record);
+    if (record == null) return null;
+    return submitCaptureRecord(record);
   }
 
   Future<void> updateRecord({
