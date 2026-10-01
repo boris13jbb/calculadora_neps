@@ -229,6 +229,74 @@ class AnalyticsService {
     return summaries;
   }
 
+  /// Límites inclusivos del periodo (mismo criterio que el filtro de registros).
+  ///
+  /// Para [AnalyticsPeriod.custom] usa [customFrom]/[customTo] (día completo).
+  /// Devuelve null si el custom no tiene ambas fechas.
+  ({DateTime start, DateTime end})? periodInclusiveBounds(
+    AnalyticsPeriod period, {
+    DateTime? reference,
+    DateTime? customFrom,
+    DateTime? customTo,
+  }) {
+    if (period == AnalyticsPeriod.custom) {
+      if (customFrom == null || customTo == null) return null;
+      final start = DateTime(
+        customFrom.year,
+        customFrom.month,
+        customFrom.day,
+      );
+      final end = DateTime(
+        customTo.year,
+        customTo.month,
+        customTo.day,
+        23,
+        59,
+        59,
+        999,
+      );
+      return (start: start, end: end);
+    }
+
+    final now = reference ?? DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    switch (period) {
+      case AnalyticsPeriod.day:
+        return (
+          start: today,
+          end: DateTime(today.year, today.month, today.day, 23, 59, 59, 999),
+        );
+      case AnalyticsPeriod.week:
+        final start = _weekStart(today);
+        final weekEnd = start.add(const Duration(days: 6));
+        return (
+          start: start,
+          end: DateTime(
+            weekEnd.year,
+            weekEnd.month,
+            weekEnd.day,
+            23,
+            59,
+            59,
+            999,
+          ),
+        );
+      case AnalyticsPeriod.month:
+        return (
+          start: DateTime(now.year, now.month),
+          end: DateTime(now.year, now.month + 1, 0, 23, 59, 59, 999),
+        );
+      case AnalyticsPeriod.year:
+        return (
+          start: DateTime(now.year),
+          end: DateTime(now.year, 12, 31, 23, 59, 59, 999),
+        );
+      case AnalyticsPeriod.custom:
+        return null;
+    }
+  }
+
   /// Filtra registros al periodo calendario actual (día, semana, mes o año).
   List<NepRecord> filterRecordsForCurrentPeriod(
     List<NepRecord> records,
@@ -239,36 +307,11 @@ class AnalyticsService {
       return records;
     }
 
-    final now = reference ?? DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final DateTime start;
-    final DateTime end;
+    final bounds = periodInclusiveBounds(period, reference: reference);
+    if (bounds == null) return records;
 
-    switch (period) {
-      case AnalyticsPeriod.day:
-        start = today;
-        end = DateTime(today.year, today.month, today.day, 23, 59, 59, 999);
-      case AnalyticsPeriod.week:
-        start = _weekStart(today);
-        final weekEnd = start.add(const Duration(days: 6));
-        end = DateTime(
-          weekEnd.year,
-          weekEnd.month,
-          weekEnd.day,
-          23,
-          59,
-          59,
-          999,
-        );
-      case AnalyticsPeriod.month:
-        start = DateTime(now.year, now.month);
-        end = DateTime(now.year, now.month + 1, 0, 23, 59, 59, 999);
-      case AnalyticsPeriod.year:
-        start = DateTime(now.year);
-        end = DateTime(now.year, 12, 31, 23, 59, 59, 999);
-      case AnalyticsPeriod.custom:
-        return records;
-    }
+    final start = bounds.start;
+    final end = bounds.end;
 
     return records
         .where(

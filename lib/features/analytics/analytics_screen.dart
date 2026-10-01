@@ -75,7 +75,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       final appState = context.read<AppState>();
       final uidAtStart = appState.authUid;
       final generation = appState.authGeneration;
-      final bundle = await appState.loadAnalyticsHistoryBundle();
+      final bundle = await appState.loadAnalyticsHistoryBundleForPeriod(
+        period: _period,
+        customFrom: _filters.dateFrom,
+        customTo: _filters.dateTo,
+      );
       if (!mounted) return;
       if (appState.authUid != uidAtStart ||
           appState.authGeneration != generation) {
@@ -145,6 +149,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _prefsLoaded = true;
       _filterPanelKey++;
     });
+    if (mounted) _loadSavedReports(showLoader: false);
   }
 
   void _applyFilters(RecordFilters source) {
@@ -189,12 +194,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     });
     context.read<AnalyticsProvider>().scheduleInvalidate();
     _persistPreferences();
+    // Recalcula candidatos e hidrata solo IDs nuevos (reutiliza caché).
+    _loadSavedReports(showLoader: false);
   }
 
   void _onFiltersChanged() {
+    final customDatesChanged = _period == AnalyticsPeriod.custom;
     setState(() {});
     context.read<AnalyticsProvider>().scheduleInvalidate();
     _persistPreferences();
+    if (customDatesChanged) {
+      _loadSavedReports(showLoader: false);
+    }
   }
 
   void _clearFilters() {

@@ -37,9 +37,11 @@ import '../models/report_list_metrics.dart';
 import '../models/report_summaries_load_result.dart';
 import '../models/reports_load_result.dart';
 import '../models/analytics_history_bundle.dart';
+import '../models/analytics_period.dart';
 import '../models/sync_phase.dart';
 import '../services/alert_config_service.dart';
 import '../services/alert_service.dart';
+import '../services/analytics_service.dart';
 import '../services/cloud_sync_coordinator.dart';
 import '../services/cloud_sync_port.dart';
 import '../services/cloud_sync_service.dart';
@@ -62,6 +64,7 @@ import '../services/siri_shortcut_service.dart';
 import '../utils/file_share_helper.dart';
 import '../utils/filter_description_helper.dart';
 import '../utils/analytics_records_source.dart';
+import '../utils/analytics_report_candidates.dart';
 import '../utils/lote_trama_helper.dart';
 import '../utils/stable_id.dart';
 import '../utils/today_capture_records.dart';
@@ -218,11 +221,26 @@ class AppState extends ChangeNotifier {
   String? _pendingClosedSessionReportId;
   String? _pendingClosedPersonalArchiveId;
 
+  /// Caché en memoria de informes hidratados para Analíticas (PR3).
+  /// Se invalida al cambiar UID o cerrar sesión. No se persiste.
+  final Map<String, SavedReport> _analyticsHydratedReports =
+      <String, SavedReport>{};
+
+  /// Últimas métricas del cargado lazy de Analíticas (debug/tests).
+  AnalyticsHistoryLoadMetrics? lastAnalyticsHistoryMetrics;
+
   String? get authUsername => _authUsername;
   String? get authUid => _authUid;
   String? get activeCaptureSessionId => _activeCaptureSessionId;
   bool get isSessionTransitionBusy => _sessionTransitionBusy;
   int get authGeneration => _authGeneration;
+
+  @visibleForTesting
+  int get analyticsHydratedCacheSize => _analyticsHydratedReports.length;
+
+  @visibleForTesting
+  Set<String> get analyticsHydratedCacheIds =>
+      _analyticsHydratedReports.keys.toSet();
 
   final CaptureFormScope capture = CaptureFormScope();
   final RecordsScope recordsScope = RecordsScope();
@@ -416,6 +434,7 @@ class AppState extends ChangeNotifier {
     if (switched || firstLogin) {
       _authGeneration++;
       final generation = _authGeneration;
+      _clearAnalyticsHydratedCache();
       if (switched) {
         // Retira de la UI los datos del usuario anterior; no los borra del disco.
         recordsScope.clear();
@@ -437,6 +456,7 @@ class AppState extends ChangeNotifier {
     final previousUid = _authUid;
     final previousGeneration = _authGeneration;
     _authGeneration++;
+    _clearAnalyticsHydratedCache();
     if (previousUid != null) {
       unawaited(_persistCaptureDraftForUid(previousUid));
     }
@@ -456,6 +476,11 @@ class AppState extends ChangeNotifier {
     // Descarta cualquier resultado de la generación anterior.
     assert(previousGeneration < _authGeneration);
     notifyListeners();
+  }
+
+  void _clearAnalyticsHydratedCache() {
+    _analyticsHydratedReports.clear();
+    lastAnalyticsHistoryMetrics = null;
   }
 
   bool _isAuthContextValid(int generation, String? uid) {
@@ -922,7 +947,9 @@ class AppState extends ChangeNotifier {
     return source.records;
   }
 
-  /// Historial para gráficas: sesiones personales + informes autorizados.
+  /// Historial legacy (todos los informes). Conservado para otros consumidores.
+  ///
+  /// Analíticas debe usar [loadAnalyticsHistoryBundleForPeriod] (PR3).
   Future<AnalyticsHistoryBundle> loadAnalyticsHistoryBundle() async {
     final generation = _authGeneration;
     final uid = _authUid;
@@ -935,29 +962,16 @@ class AppState extends ChangeNotifier {
       );
     }
 
-    final personalReports = <SavedReport>[];
-    if (uid != null && uid.isNotEmpty) {
-      final archives = await personalSessionArchiveService.loadForUid(uid);
-      if (!_isAuthContextValid(generation, uid)) {
-        return const AnalyticsHistoryBundle(
-          historyReports: [],
-          isPartial: true,
-          partialMessage: 'La sesión cambió durante la carga.',
-        );
-      }
-      for (final archive in archives) {
-        personalReports.add(
-          SavedReport(
-            id: archive.id,
-            name: archive.name.isEmpty
-                ? 'Sesión ${archive.captureSessionId}'
-                : archive.name,
-            createdAt: archive.savedAt,
-            records: archive.records,
-            createdByUid: archive.ownerUid,
-          ),
-        );
-      }
+    final personalReports = await _loadPersonalArchiveReports(
+      generation: generation,
+      uid: uid,
+    );
+    if (!_isAuthContextValid(generation, uid)) {
+      return const AnalyticsHistoryBundle(
+        historyReports: [],
+        isPartial: true,
+        partialMessage: 'La sesión cambió durante la carga.',
+      );
     }
 
     return AnalyticsHistoryBundle(
@@ -966,6 +980,203 @@ class AppState extends ChangeNotifier {
       partialMessage: reportsResult.cloudError,
       skippedReportCount: reportsResult.skippedCount,
     );
+  }
+
+  /// Historial analítico lazy por periodo (PR3).
+  ///
+  /// Flujo: summaries → candidatos por intersección → cache →
+  /// [CloudSyncPort.fetchReportsByIds]. **No** llama a [fetchReports] /
+  /// [refreshReportsResult].
+  Future<AnalyticsHistoryBundle> loadAnalyticsHistoryBundleForPeriod({
+    required AnalyticsPeriod period,
+    DateTime? customFrom,
+    DateTime? customTo,
+    DateTime? reference,
+    AnalyticsService? analytics,
+  }) async {
+    final started = DateTime.now();
+    final generation = _authGeneration;
+    final uid = _authUid;
+    final service = analytics ?? analyticsService;
+
+    await _cloud.bootstrapReportsIfNeeded();
+    if (!_isAuthContextValid(generation, uid)) {
+      return const AnalyticsHistoryBundle(
+        historyReports: [],
+        isPartial: true,
+        partialMessage: 'La sesión cambió durante la carga.',
+      );
+    }
+
+    final summariesResult = await refreshReportSummariesResult();
+    if (!_isAuthContextValid(generation, uid)) {
+      return const AnalyticsHistoryBundle(
+        historyReports: [],
+        isPartial: true,
+        partialMessage: 'La sesión cambió durante la carga.',
+      );
+    }
+
+    final bounds = service.periodInclusiveBounds(
+      period,
+      reference: reference,
+      customFrom: customFrom,
+      customTo: customTo,
+    );
+
+    // Summaries ya vienen filtrados por visibilidad; reaplicar es idempotente.
+    final candidateIds = selectAnalyticsReportCandidateIds(
+      summaries: summariesResult.summaries,
+      periodStart: bounds?.start,
+      periodEnd: bounds?.end,
+      viewerUid: uid,
+      canViewTeamReports: canManageReports,
+    );
+
+    var reusedFromCache = 0;
+    final missingFromCache = <String>[];
+    for (final id in candidateIds) {
+      if (_analyticsHydratedReports.containsKey(id)) {
+        reusedFromCache++;
+      } else {
+        missingFromCache.add(id);
+      }
+    }
+
+    var reportsHydrated = 0;
+    var recordsDeserialized = 0;
+    var reportsMissingSummary = 0;
+    String? hydrateError;
+
+    if (missingFromCache.isNotEmpty) {
+      final cloud = cloudSyncService;
+      if (cloud != null) {
+        try {
+          final fetched = await cloud.fetchReportsByIds(missingFromCache);
+          if (!_isAuthContextValid(generation, uid)) {
+            return const AnalyticsHistoryBundle(
+              historyReports: [],
+              isPartial: true,
+              partialMessage: 'La sesión cambió durante la carga.',
+            );
+          }
+          for (final report in fetched) {
+            if (!_canViewHydratedReport(report, uid)) continue;
+            _analyticsHydratedReports[report.id] = report;
+            reportsHydrated++;
+            recordsDeserialized += report.records.length;
+          }
+        } catch (error, stackTrace) {
+          ErrorHandler.log(error, stackTrace, 'analyticsFetchReportsByIds');
+          hydrateError = ErrorHandler.userMessage(error);
+        }
+      }
+
+      // Legacy / local: informe completo en disco sin summary cloud.
+      final stillMissing = missingFromCache
+          .where((id) => !_analyticsHydratedReports.containsKey(id))
+          .toList(growable: false);
+      if (stillMissing.isNotEmpty) {
+        final localById = await reportStorageService.loadLocalReportsById();
+        if (!_isAuthContextValid(generation, uid)) {
+          return const AnalyticsHistoryBundle(
+            historyReports: [],
+            isPartial: true,
+            partialMessage: 'La sesión cambió durante la carga.',
+          );
+        }
+        for (final id in stillMissing) {
+          final local = localById[id];
+          if (local != null && _canViewHydratedReport(local, uid)) {
+            _analyticsHydratedReports[id] = local;
+            reportsHydrated++;
+            recordsDeserialized += local.records.length;
+          } else {
+            // No hay summary usable ni full local/cloud → no fetchReports global.
+            reportsMissingSummary++;
+          }
+        }
+      }
+    }
+
+    final hydratedReports = <SavedReport>[
+      for (final id in candidateIds)
+        if (_analyticsHydratedReports[id] != null)
+          _analyticsHydratedReports[id]!,
+    ];
+
+    final personalReports = await _loadPersonalArchiveReports(
+      generation: generation,
+      uid: uid,
+    );
+    if (!_isAuthContextValid(generation, uid)) {
+      return const AnalyticsHistoryBundle(
+        historyReports: [],
+        isPartial: true,
+        partialMessage: 'La sesión cambió durante la carga.',
+      );
+    }
+
+    final metrics = AnalyticsHistoryLoadMetrics(
+      reportsCandidates: candidateIds.length,
+      reportsHydrated: reportsHydrated,
+      reportsReusedFromCache: reusedFromCache,
+      reportsMissingSummary: reportsMissingSummary,
+      recordsDeserialized: recordsDeserialized,
+      duration: DateTime.now().difference(started),
+      usedFetchReports: false,
+    );
+    lastAnalyticsHistoryMetrics = metrics;
+
+    final cloudError = summariesResult.cloudError ?? hydrateError;
+    final isPartial = summariesResult.isPartial ||
+        hydrateError != null ||
+        reportsMissingSummary > 0;
+
+    return AnalyticsHistoryBundle(
+      historyReports: [...personalReports, ...hydratedReports],
+      isPartial: isPartial,
+      partialMessage: cloudError ??
+          (reportsMissingSummary > 0
+              ? 'Algunos informes sin summary no pudieron hidratarse.'
+              : null),
+      skippedReportCount: summariesResult.skippedCount + reportsMissingSummary,
+      metrics: metrics,
+    );
+  }
+
+  bool _canViewHydratedReport(SavedReport report, String? uid) {
+    return canViewSavedReport(
+      report,
+      viewerUid: uid,
+      canViewTeamReports: canManageReports,
+    );
+  }
+
+  Future<List<SavedReport>> _loadPersonalArchiveReports({
+    required int generation,
+    required String? uid,
+  }) async {
+    final personalReports = <SavedReport>[];
+    if (uid == null || uid.isEmpty) return personalReports;
+
+    final archives = await personalSessionArchiveService.loadForUid(uid);
+    if (!_isAuthContextValid(generation, uid)) return personalReports;
+
+    for (final archive in archives) {
+      personalReports.add(
+        SavedReport(
+          id: archive.id,
+          name: archive.name.isEmpty
+              ? 'Sesión ${archive.captureSessionId}'
+              : archive.name,
+          createdAt: archive.savedAt,
+          records: archive.records,
+          createdByUid: archive.ownerUid,
+        ),
+      );
+    }
+    return personalReports;
   }
 
   Future<AnalyticsRecordsSource> loadAnalyticsRecordsSource() async {

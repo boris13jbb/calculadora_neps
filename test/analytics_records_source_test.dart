@@ -49,6 +49,56 @@ void main() {
       expect(source.records.first.id, 'a');
       expect(source.savedReportCount, 1);
     });
+
+    test('paridad: live gana sobre histórico con el mismo record.id', () {
+      final live = [
+        record(id: 'same', createdAt: DateTime(2026, 7, 10), neps: 12),
+      ];
+      final reports = [
+        SavedReport(
+          id: 'hist',
+          name: 'Histórico',
+          createdAt: DateTime(2026, 6, 1),
+          records: [
+            record(id: 'same', createdAt: DateTime(2026, 6, 1), neps: 99),
+            record(id: 'only-hist', createdAt: DateTime(2026, 6, 2), neps: 5),
+          ],
+        ),
+      ];
+
+      final source = buildAnalyticsRecordsSource(
+        liveRecords: live,
+        savedReports: reports,
+      );
+
+      final same = source.records.firstWhere((r) => r.id == 'same');
+      expect(same.neps, 12);
+      expect(source.records.map((r) => r.id).toList(), ['same', 'only-hist']);
+    });
+
+    test('orden: createdAt descendente tras fusión', () {
+      final source = buildAnalyticsRecordsSource(
+        liveRecords: [
+          record(id: 'l1', createdAt: DateTime(2026, 7, 1)),
+        ],
+        savedReports: [
+          SavedReport(
+            id: 'r',
+            name: 'R',
+            createdAt: DateTime(2026, 1, 1),
+            records: [
+              record(id: 'h1', createdAt: DateTime(2026, 8, 1)),
+              record(id: 'h2', createdAt: DateTime(2026, 6, 1)),
+            ],
+          ),
+        ],
+      );
+
+      expect(
+        source.records.map((r) => r.id).toList(),
+        ['h1', 'l1', 'h2'],
+      );
+    });
   });
 
   group('applyAnalyticsFilters', () {
