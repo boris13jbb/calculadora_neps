@@ -11,8 +11,11 @@ import '../core/permissions/report_visibility.dart';
 import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
 import '../models/record_filters.dart';
+import '../models/report_list_metrics.dart';
+import '../models/report_summaries_load_result.dart';
 import '../models/reports_load_result.dart';
 import '../models/saved_report.dart';
+import '../models/saved_report_summary.dart';
 import '../utils/firebase_session_helper.dart';
 import '../utils/stable_id.dart';
 import 'cloud_sync_port.dart';
@@ -22,15 +25,20 @@ class ReportStorageService {
   ReportStorageService({
     CloudSyncPort? cloudSync,
     ReportExportService? exportService,
+    bool Function()? isSessionActive,
   })  : _cloudSync = cloudSync,
+        _isSessionActive = isSessionActive ?? (() => isFirebaseSessionActive),
         exportService = exportService ?? ReportExportService();
 
   CloudSyncPort? _cloudSync;
+  final bool Function() _isSessionActive;
   final ReportExportService exportService;
 
   void attachCloudSync(CloudSyncPort? cloudSync) {
     _cloudSync = cloudSync;
   }
+
+  bool get _sessionActive => _isSessionActive();
 
   /// Carga informes. Persiste el merge completo por id; filtra solo la vista.
   /// No oculta fallos: si hay datos parciales, [ReportsLoadResult.isPartial] es true.
@@ -46,8 +54,7 @@ class ReportStorageService {
     var isPartial = localParse.skippedCount > 0;
 
     final cloudSync = _cloudSync;
-    final shouldFetchCloud =
-        fetchCloud && cloudSync != null && isFirebaseSessionActive;
+    final shouldFetchCloud = fetchCloud && cloudSync != null && _sessionActive;
 
     if (shouldFetchCloud) {
       try {
@@ -100,6 +107,110 @@ class ReportStorageService {
       throw StateError(result.cloudError!);
     }
     return result.reports;
+  }
+
+  /// Listado liviano PR2: cloud summaries + puente sintético local.
+  ///
+  /// **No** llama a [CloudSyncPort.fetchReports] (evita descargar todos los
+  /// `records[]` solo para pintar la lista).
+  Future<ReportSummariesLoadResult> loadReportSummariesResult({
+    String? viewerUid,
+    bool canViewTeamReports = false,
+    bool fetchCloud = true,
+  }) async {
+    final started = DateTime.now();
+    final localParse = await _loadReportsLocallyDetailed();
+    var cloudSummaries = <SavedReportSummary>[];
+    String? cloudError;
+    var isPartial = localParse.skippedCount > 0;
+    var cloudSummaryDocs = 0;
+
+    final cloudSync = _cloudSync;
+    final shouldFetchCloud = fetchCloud && cloudSync != null && _sessionActive;
+
+    if (shouldFetchCloud) {
+      try {
+        await cloudSync.bootstrap();
+        cloudSummaries = await cloudSync.fetchReportSummaries();
+        cloudSummaryDocs = cloudSummaries.length;
+      } catch (error, stackTrace) {
+        cloudError = ErrorHandler.userMessage(error);
+        ErrorHandler.log(error, stackTrace, 'loadReportSummariesFirebase');
+        isPartial = true;
+      }
+    }
+
+    final byId = <String, SavedReportSummary>{
+      for (final summary in cloudSummaries) summary.id: summary,
+    };
+
+    var localSynthetic = 0;
+    for (final report in localParse.reports) {
+      if (byId.containsKey(report.id)) continue;
+      byId[report.id] = SavedReportSummary.fromSavedReport(report);
+      localSynthetic++;
+    }
+
+    var merged = byId.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final visible = viewerUid == null
+        ? merged
+        : filterVisibleReportSummariesByOwner(
+            merged,
+            viewerUid: viewerUid,
+            canViewTeamReports: canViewTeamReports,
+          );
+
+    final metrics = ReportListMetrics(
+      listLoadDuration: DateTime.now().difference(started),
+      cloudSummaryDocs: cloudSummaryDocs,
+      localSyntheticSummaries: localSynthetic,
+      cloudFullFetches: 0,
+      cloudRecordsDeserializedOnList: 0,
+      localBridgeReportsRead: localParse.reports.length,
+      usedFetchReportsForList: false,
+    );
+
+    return ReportSummariesLoadResult(
+      summaries: visible,
+      metrics: metrics,
+      skippedCount: localParse.skippedCount,
+      cloudError: cloudError,
+      isPartial: isPartial || cloudError != null,
+    );
+  }
+
+  /// Resuelve un informe completo: cache local primero, luego cloud por id.
+  Future<SavedReport?> resolveFullReport(String id) async {
+    final reportId = id.trim();
+    if (reportId.isEmpty) return null;
+
+    final local = await _loadReportsLocally();
+    for (final report in local) {
+      if (report.id == reportId) return report;
+    }
+
+    final cloudSync = _cloudSync;
+    if (cloudSync == null || !_sessionActive) return null;
+
+    try {
+      await cloudSync.bootstrap();
+      final remote = await cloudSync.fetchReportById(reportId);
+      if (remote != null) {
+        await _upsertReportLocally(remote);
+      }
+      return remote;
+    } catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'resolveFullReport');
+      return null;
+    }
+  }
+
+  /// Fulls locales indexados por id (para filtros de contenido sin fetch masivo).
+  Future<Map<String, SavedReport>> loadLocalReportsById() async {
+    final local = await _loadReportsLocally();
+    return {for (final report in local) report.id: report};
   }
 
   /// Sube informes locales a Firestore la primera vez que hay nube disponible.

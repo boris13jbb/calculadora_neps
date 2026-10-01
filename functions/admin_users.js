@@ -7,6 +7,7 @@ const {logger} = require("firebase-functions");
 const {
   readCreationSecretPassword,
 } = require("./read_creation_secret_password");
+const {runReportSummaryBackfill} = require("./report_summary_backfill");
 
 const callOptions = {region: "us-central1", invoker: "public"};
 
@@ -1299,8 +1300,29 @@ const deleteRole = onCall(callOptions, async (request) => {
   return toCallablePayload({ok: true, code});
 });
 
+/**
+ * Migración metadata-only controlada (super_admin).
+ * dryRun=true por defecto: no escribe. No modifica reports/{id}.
+ */
+const backfillReportSummaries = onCall(callOptions, async (request) => {
+  const {db} = await assertSuperAdmin(request);
+  const data = request.data || {};
+  const dryRun = data.dryRun !== false;
+  const batchSize =
+    typeof data.batchSize === "number" ? data.batchSize : undefined;
+  const maxDocs = typeof data.maxDocs === "number" ? data.maxDocs : undefined;
+
+  const result = await runReportSummaryBackfill(db, WORKSPACE_ID, {
+    dryRun,
+    batchSize,
+    maxDocs,
+  });
+  return toCallablePayload({ok: true, ...result});
+});
+
 // Exportaciones con nombres nuevos
 exports.createAppUser = createAppUser;
+exports.backfillReportSummaries = backfillReportSummaries;
 exports.updateAppUser = updateAppUser;
 exports.changeUserRole = changeUserRole;
 exports.disableAppUser = disableAppUser;

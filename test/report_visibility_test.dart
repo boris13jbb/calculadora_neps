@@ -1,6 +1,7 @@
 import 'package:calculadora_neps/core/permissions/report_visibility.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
 import 'package:calculadora_neps/models/saved_report.dart';
+import 'package:calculadora_neps/models/saved_report_summary.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 SavedReport _report({required String id, String? createdByUid}) {
@@ -43,5 +44,31 @@ void main() {
     );
 
     expect(visible.length, 2);
+  });
+
+  test('misma política UID aplica a SavedReportSummary', () {
+    final summaries = [
+      SavedReportSummary(
+        id: 'a',
+        name: 'A',
+        createdAt: DateTime(2026, 1, 1),
+        recordCount: 1,
+        createdByUid: 'uid-a',
+      ),
+      SavedReportSummary(
+        id: 'b',
+        name: 'B',
+        createdAt: DateTime(2026, 1, 1),
+        recordCount: 1,
+        createdByUid: 'uid-b',
+      ),
+    ];
+
+    final visible = filterVisibleReportSummariesByOwner(
+      summaries,
+      viewerUid: 'uid-a',
+      canViewTeamReports: false,
+    );
+    expect(visible.map((s) => s.id), ['a']);
   });
 }

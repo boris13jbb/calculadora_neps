@@ -17,12 +17,14 @@ import '../../core/widgets/status_banner.dart';
 import '../../models/nep_record.dart';
 import '../../models/pdf_report_style.dart';
 import '../../models/record_filters.dart';
+import '../../models/report_list_metrics.dart';
 import '../../models/saved_report.dart';
+import '../../models/saved_report_summary.dart';
 import '../../providers/app_state.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/file_share_helper.dart';
-import '../../utils/record_filter_helper.dart';
 import '../../utils/report_share_helper.dart';
+import '../../utils/report_summary_filters.dart';
 import '../../core/widgets/record_filters_panel.dart';
 
 /// Formatos CSV+Excel+PDF usados por «Compartir completo/clásico».
@@ -98,7 +100,10 @@ class ReportsScreen extends StatefulWidget {
 
 class _ReportsScreenState extends State<ReportsScreen> {
   late final ReportShareHelper shareHelper;
-  List<SavedReport> reports = [];
+  List<SavedReportSummary> summaries = [];
+  Map<String, SavedReport> _localFullById = {};
+  ReportListMetrics? lastListMetrics;
+  int cloudFullFetchCount = 0;
   final Set<String> selectedReportIds = {};
   RecordFilters reportFilters = RecordFilters();
   bool isLoading = true;
@@ -144,22 +149,38 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
     try {
       final appState = context.read<AppState>();
-      final loaded = await appState.refreshReports();
+      final loaded = await appState.refreshReportSummariesResult();
+      final localFulls =
+          await appState.reportStorageService.loadLocalReportsById();
       selectedReportIds.removeWhere(
-        (id) => !loaded.any((report) => report.id == id),
+        (id) => !loaded.summaries.any((summary) => summary.id == id),
       );
       if (mounted) {
         setState(() {
-          reports = loaded;
-          loadError = null;
+          summaries = loaded.summaries;
+          _localFullById = localFulls;
+          lastListMetrics = loaded.metrics;
+          loadError = loaded.summaries.isEmpty ? loaded.cloudError : null;
+          if (loaded.cloudError != null && loaded.summaries.isNotEmpty) {
+            // Parcial usable: no bloquea la lista.
+            loadError = null;
+          }
         });
       }
+      assert(
+        loaded.metrics.usedFetchReportsForList == false,
+        'PR2 no debe usar fetchReports para el listado',
+      );
+      assert(
+        loaded.metrics.cloudRecordsDeserializedOnList == 0,
+        'PR2 no debe deserializar records[] cloud al listar',
+      );
     } catch (error, stack) {
-      ErrorHandler.log(error, stack, 'loadReports');
+      ErrorHandler.log(error, stack, 'loadReportSummaries');
       if (mounted) {
         final syncError = context.read<AppState>().cloudSyncError;
         setState(() {
-          reports = [];
+          summaries = [];
           loadError = syncError ?? ErrorHandler.userMessage(error);
         });
       }
@@ -168,62 +189,49 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }
   }
 
-  List<SavedReport> get visibleReports {
-    if (!reportFilters.hasActiveFilters) return reports;
-    return reports.where((report) {
-      final search = reportFilters.searchText.trim().toLowerCase();
-      if (search.isNotEmpty &&
-          !report.name.toLowerCase().contains(search) &&
-          !report.records.any((record) {
-            final haystack = [
-              record.tela,
-              record.loteTrama,
-              record.telar,
-            ].join(' ').toLowerCase();
-            return haystack.contains(search);
-          })) {
-        return false;
-      }
+  List<SavedReportSummary> get visibleSummaries => filterVisibleReportSummaries(
+        summaries,
+        reportFilters,
+        fullById: _localFullById,
+      );
 
-      if (reportFilters.dateFrom != null &&
-          report.createdAt.isBefore(reportFilters.dateFrom!)) {
-        return false;
-      }
-
-      if (reportFilters.dateTo != null) {
-        final to = DateTime(
-          reportFilters.dateTo!.year,
-          reportFilters.dateTo!.month,
-          reportFilters.dateTo!.day,
-          23,
-          59,
-          59,
-        );
-        if (report.createdAt.isAfter(to)) return false;
-      }
-
-      if (reportFilters.tela != null ||
-          reportFilters.loteTrama != null ||
-          reportFilters.telar != null ||
-          reportFilters.nepsMin != null ||
-          reportFilters.nepsMax != null ||
-          reportFilters.mtsMin != null ||
-          reportFilters.mtsMax != null) {
-        final filteredRecords =
-            RecordFilterHelper.apply(report.records, reportFilters);
-        return filteredRecords.isNotEmpty;
-      }
-
-      return true;
-    }).toList();
-  }
-
-  List<SavedReport> get selectedReports => visibleReports
-      .where((report) => selectedReportIds.contains(report.id))
+  List<SavedReportSummary> get selectedSummaries => visibleSummaries
+      .where((summary) => selectedReportIds.contains(summary.id))
       .toList();
 
+  /// Solo fulls locales: panel de filtros no dispara fetch masivo.
   List<NepRecord> get _filterSourceRecords =>
-      reports.expand((report) => report.records).toList();
+      _localFullById.values.expand((report) => report.records).toList();
+
+  Future<SavedReport?> _resolveFullReport(String id) async {
+    final cached = _localFullById[id];
+    if (cached != null) return cached;
+
+    final appState = context.read<AppState>();
+    final remote = await appState.resolveFullSavedReport(id);
+    cloudFullFetchCount++;
+    if (remote != null && mounted) {
+      setState(() => _localFullById[id] = remote);
+    }
+    return remote;
+  }
+
+  Future<List<SavedReport>> _resolveFullReports(
+    Iterable<SavedReportSummary> items,
+  ) async {
+    final resolved = <SavedReport>[];
+    for (final summary in items) {
+      final full = await _resolveFullReport(summary.id);
+      if (full != null) {
+        resolved.add(full);
+      } else if (mounted) {
+        _showMessage(
+          'No se pudo cargar el informe "${summary.name}".',
+        );
+      }
+    }
+    return resolved;
+  }
 
   void _toggleSelection(String reportId, bool? value) {
     setState(() {
@@ -237,8 +245,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   void _selectAllVisible() {
     setState(() {
-      for (final report in visibleReports) {
-        selectedReportIds.add(report.id);
+      for (final summary in visibleSummaries) {
+        selectedReportIds.add(summary.id);
       }
     });
   }
@@ -252,13 +260,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
-  Future<void> _deleteReport(SavedReport report) async {
+  Future<void> _deleteReport(SavedReportSummary summary) async {
     final storage = context.read<AppState>().reportStorageService;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Eliminar informe'),
-        content: Text('Desea eliminar "${report.name}"?'),
+        content: Text('Desea eliminar "${summary.name}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -273,8 +281,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
 
     if (confirmed != true || !mounted) return;
-    await storage.deleteReport(report.id);
-    selectedReportIds.remove(report.id);
+    await storage.deleteReport(summary.id);
+    selectedReportIds.remove(summary.id);
+    _localFullById.remove(summary.id);
     await _loadReports();
     _showMessage('Informe eliminado.');
   }
@@ -363,7 +372,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
     }).join(', ');
   }
 
-  Future<void> _shareSingle(SavedReport report, String action) async {
+  Future<void> _shareSingle(SavedReportSummary summary, String action) async {
+    final reports = await _resolveFullReports([summary]);
+    if (reports.isEmpty) return;
+    final report = reports.first;
     switch (action) {
       case 'csv':
         await _shareReports([report], formats: {ReportShareFormat.csv});
@@ -389,7 +401,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   /// Vista read-only del informe histórico (no toca registros operativos).
-  Future<void> _viewSavedReport(SavedReport report) async {
+  Future<void> _viewSavedReport(SavedReportSummary summary) async {
+    final report = await _resolveFullReport(summary.id);
+    if (report == null) {
+      _showMessage('No se pudo cargar el informe "${summary.name}".');
+      return;
+    }
+    if (!mounted) return;
     final appState = context.read<AppState>();
     await runSavedReportViewLifecycle(
       appState: appState,
@@ -457,21 +475,30 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 TextButton(
                   onPressed: () async {
                     Navigator.pop(dialogContext);
-                    await _shareSingle(viewed, 'csv');
+                    await _shareReports(
+                      [viewed],
+                      formats: {ReportShareFormat.csv},
+                    );
                   },
                   child: const Text('CSV'),
                 ),
                 TextButton(
                   onPressed: () async {
                     Navigator.pop(dialogContext);
-                    await _shareSingle(viewed, 'excel');
+                    await _shareReports(
+                      [viewed],
+                      formats: {ReportShareFormat.excel},
+                    );
                   },
                   child: const Text('Excel'),
                 ),
                 TextButton(
                   onPressed: () async {
                     Navigator.pop(dialogContext);
-                    await _shareSingle(viewed, 'pdf');
+                    await _shareReports(
+                      [viewed],
+                      formats: {ReportShareFormat.pdf},
+                    );
                   },
                   child: const Text('PDF'),
                 ),
@@ -484,50 +511,60 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Future<void> _shareBatch(String action) async {
-    final targets = selectedReports;
+    final selected = selectedSummaries;
+    final visible = visibleSummaries;
     switch (action) {
       case 'csv':
-        await _shareReports(targets, formats: {ReportShareFormat.csv});
+        await _shareReports(
+          await _resolveFullReports(selected),
+          formats: {ReportShareFormat.csv},
+        );
       case 'excel':
-        await _shareReports(targets, formats: {ReportShareFormat.excel});
+        await _shareReports(
+          await _resolveFullReports(selected),
+          formats: {ReportShareFormat.excel},
+        );
       case 'pdf':
-        await _shareReports(targets, formats: {ReportShareFormat.pdf});
+        await _shareReports(
+          await _resolveFullReports(selected),
+          formats: {ReportShareFormat.pdf},
+        );
       case 'all':
         await _shareReports(
-          targets,
+          await _resolveFullReports(selected),
           formats: kSavedReportAllShareFormats,
           reportStyle: PdfReportStyle.completo,
         );
       case 'classic':
         await _shareReports(
-          targets,
+          await _resolveFullReports(selected),
           formats: kSavedReportAllShareFormats,
           reportStyle: PdfReportStyle.clasico,
         );
       case 'filtered_csv':
         await _shareReports(
-          visibleReports,
+          await _resolveFullReports(visible),
           formats: {ReportShareFormat.csv},
         );
       case 'filtered_excel':
         await _shareReports(
-          visibleReports,
+          await _resolveFullReports(visible),
           formats: {ReportShareFormat.excel},
         );
       case 'filtered_pdf':
         await _shareReports(
-          visibleReports,
+          await _resolveFullReports(visible),
           formats: {ReportShareFormat.pdf},
         );
       case 'filtered_all':
         await _shareReports(
-          visibleReports,
+          await _resolveFullReports(visible),
           formats: kSavedReportAllShareFormats,
           reportStyle: PdfReportStyle.completo,
         );
       case 'filtered_classic':
         await _shareReports(
-          visibleReports,
+          await _resolveFullReports(visible),
           formats: kSavedReportAllShareFormats,
           reportStyle: PdfReportStyle.clasico,
         );
@@ -540,8 +577,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _batchShareBar({required bool phone}) {
-    final selectedCount = selectedReports.length;
-    final filteredCount = visibleReports.length;
+    final selectedCount = selectedSummaries.length;
+    final filteredCount = visibleSummaries.length;
 
     return Container(
       padding: EdgeInsets.all(phone ? 8 : 12),
@@ -567,7 +604,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 children: [
                   TextButton(
                     onPressed:
-                        visibleReports.isEmpty ? null : _selectAllVisible,
+                        visibleSummaries.isEmpty ? null : _selectAllVisible,
                     child: const Text('Seleccionar visibles'),
                   ),
                   TextButton(
@@ -751,7 +788,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _reportsListPanel({
-    required List<SavedReport> filtered,
+    required List<SavedReportSummary> filtered,
     required bool phone,
   }) {
     final appState = context.read<AppState>();
@@ -770,11 +807,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                   : Icons.folder_open_outlined,
               title: loadError != null
                   ? 'Error al cargar informes'
-                  : (reports.isEmpty
+                  : (summaries.isEmpty
                       ? 'Sin informes guardados'
                       : 'Sin coincidencias'),
               message: loadError ??
-                  (reports.isEmpty
+                  (summaries.isEmpty
                       ? 'Guarde un informe desde Captura o Exportar para compartirlo con el equipo.'
                       : 'Ningún informe coincide con los filtros activos.'),
               iconColor: loadError != null ? AppColors.danger : AppColors.muted,
@@ -785,7 +822,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     icon: Icons.refresh,
                     onPressed: _loadReports,
                   )
-                else if (reports.isNotEmpty)
+                else if (summaries.isNotEmpty)
                   EmptyStateAction(
                     label: 'Limpiar filtros',
                     icon: Icons.clear_all,
@@ -805,8 +842,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
               itemCount: filtered.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, index) {
-                final report = filtered[index];
-                final isSelected = selectedReportIds.contains(report.id);
+                final summary = filtered[index];
+                final isSelected = selectedReportIds.contains(summary.id);
 
                 return AppMaterialListTile(
                   dense: phone,
@@ -816,10 +853,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     value: isSelected,
                     onChanged: isWorking
                         ? null
-                        : (value) => _toggleSelection(report.id, value),
+                        : (value) => _toggleSelection(summary.id, value),
                   ),
                   title: Text(
-                    report.name,
+                    summary.name,
                     style: TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: phone ? 13 : 15,
@@ -828,7 +865,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text(
-                    '${_formatDate(report.createdAt)} · ${report.records.length} reg.',
+                    '${_formatDate(summary.createdAt)} · ${summary.recordCount} reg.',
                     style: TextStyle(fontSize: phone ? 11 : 13),
                   ),
                   trailing: isWorking
@@ -840,11 +877,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       : PopupMenuButton<String>(
                           onSelected: (value) async {
                             if (value == 'view') {
-                              await _viewSavedReport(report);
+                              await _viewSavedReport(summary);
                             } else if (value == 'delete') {
-                              await _deleteReport(report);
+                              await _deleteReport(summary);
                             } else {
-                              await _shareSingle(report, value);
+                              await _shareSingle(summary, value);
                             }
                           },
                           itemBuilder: (context) =>
@@ -857,9 +894,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   /// Resumen superior de la biblioteca de informes.
-  Widget _reportsKpis(List<SavedReport> filtered) {
+  Widget _reportsKpis(List<SavedReportSummary> filtered) {
     final totalRecords =
-        reports.fold<int>(0, (sum, report) => sum + report.records.length);
+        summaries.fold<int>(0, (sum, item) => sum + item.recordCount);
     return KpiStrip(
       minCardWidth: 180,
       compact: true,
@@ -867,7 +904,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         KpiCard(
           compact: true,
           label: 'Informes',
-          value: '${reports.length}',
+          value: '${summaries.length}',
           icon: Icons.folder_special_outlined,
           color: AppColors.primaryBlue,
         ),
@@ -881,7 +918,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         KpiCard(
           compact: true,
           label: 'Seleccionados',
-          value: '${selectedReports.length}',
+          value: '${selectedSummaries.length}',
           icon: Icons.check_box_outlined,
           color: AppColors.primaryGreen,
         ),
@@ -900,7 +937,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
     _scheduleReloadIfNeeded(appState);
-    final filtered = visibleReports;
+    final filtered = visibleSummaries;
 
     final phone = isPhoneLayout(context);
     final spacing = screenSpacing(context);
