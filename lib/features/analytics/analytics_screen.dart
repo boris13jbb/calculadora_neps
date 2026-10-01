@@ -24,6 +24,7 @@ import '../../services/analytics_service.dart';
 import '../../services/analytics_preferences_service.dart';
 import '../../utils/analytics_filter_description.dart';
 import '../../utils/analytics_records_source.dart';
+import '../../utils/analytics_reload_coordinator.dart';
 import 'models/chart_config.dart';
 import 'widgets/analytics_charts.dart';
 import 'widgets/analytics_export_actions.dart';
@@ -49,7 +50,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   ChartConfig _chartConfig = const ChartConfig();
   List<SavedReport> _historyReports = [];
   bool _reportsLoading = false;
-  bool _reportsReloadBusy = false;
+
+  /// Latest-request-wins: no descarta solicitudes durante una carga en curso.
+  final LatestWinsReloadGate _analyticsReloadGate = LatestWinsReloadGate();
   String? _reportsLoadError;
   bool _reportsPartial = false;
   int _skippedReportCount = 0;
@@ -65,22 +68,60 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     });
   }
 
+  /// Solicita hidratación del historial con el período UI vigente.
+  ///
+  /// Si ya hay una carga en curso, marca pendiente y retorna; al terminar la
+  /// pasada actual se rehidrata con el último período (sin paralelismo).
   Future<void> _loadSavedReports({bool showLoader = true}) async {
-    if (_reportsReloadBusy) return;
-    _reportsReloadBusy = true;
+    if (_analyticsReloadGate.isBusy) {
+      _analyticsReloadGate.markPending();
+      return;
+    }
+
     if (showLoader && mounted) {
       setState(() => _reportsLoading = true);
     }
+
     try {
-      final appState = context.read<AppState>();
-      final uidAtStart = appState.authUid;
-      final generation = appState.authGeneration;
-      final bundle = await appState.loadAnalyticsHistoryBundle();
+      await _analyticsReloadGate.run(_hydrateAnalyticsHistoryOnce);
+    } finally {
+      if (mounted) setState(() => _reportsLoading = false);
+    }
+  }
+
+  /// Una pasada de hidratación. Lee [_period] al inicio; si cambia durante el
+  /// await, no aplica el resultado y marca otra pasada pendiente.
+  Future<void> _hydrateAnalyticsHistoryOnce() async {
+    if (!mounted) return;
+
+    final appState = context.read<AppState>();
+    final uidAtStart = appState.authUid;
+    final generation = appState.authGeneration;
+    final period = _period;
+    final customFrom = _filters.dateFrom;
+    final customTo = _filters.dateTo;
+
+    try {
+      final bundle = await appState.loadAnalyticsHistoryBundleForPeriod(
+        period: period,
+        customFrom: customFrom,
+        customTo: customTo,
+      );
       if (!mounted) return;
       if (appState.authUid != uidAtStart ||
           appState.authGeneration != generation) {
         return;
       }
+
+      // Período/fechas UI cambiaron durante la carga → descartar y reintentar.
+      final superseded = period != _period ||
+          customFrom != _filters.dateFrom ||
+          customTo != _filters.dateTo;
+      if (superseded) {
+        _analyticsReloadGate.markPending();
+        return;
+      }
+
       setState(() {
         _historyReports = bundle.historyReports;
         _reportsPartial = bundle.isPartial;
@@ -90,16 +131,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 'Algunas fuentes de informes no pudieron cargarse por completo.')
             : null;
       });
+      // Resultado alineado con la UI: coalescer solicitudes del mismo período.
+      _analyticsReloadGate.clearPending();
     } catch (error, stack) {
       ErrorHandler.log(error, stack, 'analyticsLoadReports');
       if (!mounted) return;
+
+      final superseded = period != _period ||
+          customFrom != _filters.dateFrom ||
+          customTo != _filters.dateTo;
+      if (superseded) {
+        _analyticsReloadGate.markPending();
+        return;
+      }
+
       setState(() {
         _reportsLoadError = ErrorHandler.userMessage(error);
         _reportsPartial = true;
       });
-    } finally {
-      _reportsReloadBusy = false;
-      if (mounted) setState(() => _reportsLoading = false);
+      _analyticsReloadGate.clearPending();
     }
   }
 
@@ -145,6 +195,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       _prefsLoaded = true;
       _filterPanelKey++;
     });
+    if (mounted) _loadSavedReports(showLoader: false);
   }
 
   void _applyFilters(RecordFilters source) {
@@ -189,12 +240,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     });
     context.read<AnalyticsProvider>().scheduleInvalidate();
     _persistPreferences();
+    // Recalcula candidatos e hidrata solo IDs nuevos (reutiliza caché).
+    _loadSavedReports(showLoader: false);
   }
 
   void _onFiltersChanged() {
+    final customDatesChanged = _period == AnalyticsPeriod.custom;
     setState(() {});
     context.read<AnalyticsProvider>().scheduleInvalidate();
     _persistPreferences();
+    if (customDatesChanged) {
+      _loadSavedReports(showLoader: false);
+    }
   }
 
   void _clearFilters() {
@@ -338,8 +395,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 message: _reportsPartial
                     ? 'Resultados parciales: $_reportsLoadError'
                     : 'No se pudieron cargar todos los informes guardados: $_reportsLoadError',
-                actionLabel: _reportsReloadBusy ? null : 'Reintentar',
-                onAction: _reportsReloadBusy ? null : () => _loadSavedReports(),
+                actionLabel:
+                    _analyticsReloadGate.isBusy ? null : 'Reintentar',
+                onAction: _analyticsReloadGate.isBusy
+                    ? null
+                    : () => _loadSavedReports(),
               ),
             ),
           Padding(
