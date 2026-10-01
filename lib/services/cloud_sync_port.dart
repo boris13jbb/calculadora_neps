@@ -5,6 +5,7 @@ import '../models/record_filters.dart';
 import '../models/record_tombstone.dart';
 import '../models/records_page_result.dart';
 import '../models/saved_report.dart';
+import '../models/saved_report_summary.dart';
 
 /// Contrato de sincronizacion sin dependencias de Firebase en el arranque.
 abstract class CloudSyncPort {
@@ -77,6 +78,18 @@ abstract class CloudSyncPort {
   Future<void> replaceRecords(List<NepRecord> records);
 
   Future<List<SavedReport>> fetchReports();
+
+  /// Metadata ligera desde `reportSummaries` (sin descargar `records[]`).
+  ///
+  /// Informes históricos sin summary no aparecen aquí; usar [fetchReportById]
+  /// / [fetchReports] como fallback legacy (sin materialización automática).
+  Future<List<SavedReportSummary>> fetchReportSummaries();
+
+  /// Informe completo por id (`reports/{id}`). Null si no existe.
+  Future<SavedReport?> fetchReportById(String id);
+
+  /// Informes completos para una lista explícita de ids (sin listado masivo).
+  Future<List<SavedReport>> fetchReportsByIds(List<String> ids);
 
   Future<SavedReport> saveReport(SavedReport report);
 

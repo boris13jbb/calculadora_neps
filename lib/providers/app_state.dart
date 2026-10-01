@@ -33,6 +33,8 @@ import '../models/record_filters.dart';
 import '../models/record_import_result.dart';
 import '../models/record_tombstone.dart';
 import '../models/saved_report.dart';
+import '../models/report_list_metrics.dart';
+import '../models/report_summaries_load_result.dart';
 import '../models/reports_load_result.dart';
 import '../models/analytics_history_bundle.dart';
 import '../models/sync_phase.dart';
@@ -889,6 +891,29 @@ class AppState extends ChangeNotifier {
       viewerUid: uid,
       canViewTeamReports: canManageReports,
     );
+  }
+
+  /// Listado liviano de Informes (summaries). No usa fetchReports masivo.
+  Future<ReportSummariesLoadResult> refreshReportSummariesResult() async {
+    final generation = _authGeneration;
+    final uid = _authUid;
+    await _cloud.bootstrapReportsIfNeeded();
+    if (!_isAuthContextValid(generation, uid)) {
+      return const ReportSummariesLoadResult(
+        summaries: [],
+        metrics: ReportListMetrics(listLoadDuration: Duration.zero),
+        isPartial: true,
+      );
+    }
+    return reportStorageService.loadReportSummariesResult(
+      viewerUid: uid,
+      canViewTeamReports: canManageReports,
+    );
+  }
+
+  /// Carga full perezosa para Ver/Export (cache local o fetchReportById).
+  Future<SavedReport?> resolveFullSavedReport(String id) {
+    return reportStorageService.resolveFullReport(id);
   }
 
   /// Registros unificados (vivos + archivo personal + informes autorizados).
