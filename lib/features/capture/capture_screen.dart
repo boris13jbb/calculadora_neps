@@ -34,30 +34,30 @@ Future<void> _editCaptureRecord(
   );
 }
 
-Future<void> submitCaptureWithChecks(
+Future<NepRecord?> submitCaptureWithChecks(
   BuildContext context,
   AppState appState,
 ) async {
   final record = appState.buildCaptureRecord();
-  if (record == null) return;
+  if (record == null) return null;
 
   if (record.neps > 100) {
-    if (!context.mounted) return;
+    if (!context.mounted) return null;
     if (!await confirmHighNepsValue(
       context,
       neps: record.neps,
       telar: record.telar,
     )) {
-      return;
+      return null;
     }
   }
 
   if (appState.isRecentDuplicate(record)) {
-    if (!context.mounted) return;
-    if (!await confirmDuplicateRecord(context)) return;
+    if (!context.mounted) return null;
+    if (!await confirmDuplicateRecord(context)) return null;
   }
 
-  await appState.submitCaptureRecord(record);
+  return appState.submitCaptureRecord(record);
 }
 
 class CaptureScreen extends StatefulWidget {
@@ -70,6 +70,43 @@ class CaptureScreen extends StatefulWidget {
 class _CaptureScreenState extends State<CaptureScreen>
     with SingleTickerProviderStateMixin {
   TabController? _tabController;
+
+  /// ID exacto del último registro creado en esta pantalla (no persistente).
+  String? _newlyCreatedRecordId;
+
+  Future<NepRecord?> _submitRecord(
+    BuildContext context,
+    AppState appState,
+  ) async {
+    final created = await submitCaptureWithChecks(context, appState);
+    if (created != null && mounted) {
+      setState(() => _newlyCreatedRecordId = created.id);
+    }
+    return created;
+  }
+
+  Future<void> _shareRecords(
+    BuildContext context,
+    AppState appState, {
+    NepRecord? initiallySelectedRecord,
+  }) {
+    return showShareReportMenu(
+      context,
+      appState,
+      initiallySelectedRecord: initiallySelectedRecord,
+      newlyCreatedRecordId: _newlyCreatedRecordId,
+    );
+  }
+
+  Future<void> _openNewSession(BuildContext context, AppState appState) async {
+    final sessionBefore = appState.activeCaptureSessionId;
+    await promptNewCaptureSession(context, appState);
+    if (!mounted) return;
+    // Solo limpiar si realmente rotó la sesión (cancelar no debe perder el ID).
+    if (appState.activeCaptureSessionId != sessionBefore) {
+      setState(() => _newlyCreatedRecordId = null);
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -115,12 +152,30 @@ class _CaptureScreenState extends State<CaptureScreen>
         actions:
             showHeaderActions ? _buildHeaderActions(context, appState) : null,
         child: useWideCapture
-            ? _DesktopCaptureLayout(appState: appState)
+            ? _DesktopCaptureLayout(
+                appState: appState,
+                onSubmitRecord: () => _submitRecord(context, appState),
+                onShare: (record) => _shareRecords(
+                  context,
+                  appState,
+                  initiallySelectedRecord: record,
+                ),
+                onShareSession: () => _shareRecords(context, appState),
+                onNewSession: () => _openNewSession(context, appState),
+              )
             : _tabController == null
                 ? const Center(child: CircularProgressIndicator())
                 : _MobileCaptureLayout(
                     appState: appState,
                     tabController: _tabController!,
+                    onSubmitRecord: () => _submitRecord(context, appState),
+                    onShare: (record) => _shareRecords(
+                      context,
+                      appState,
+                      initiallySelectedRecord: record,
+                    ),
+                    onShareSession: () => _shareRecords(context, appState),
+                    onNewSession: () => _openNewSession(context, appState),
                   ),
       ),
     );
@@ -189,14 +244,14 @@ class _CaptureScreenState extends State<CaptureScreen>
       ),
       actionButton(
         onPressed: captureActionsEnabled(appState)
-            ? () => showShareReportMenu(context, appState)
+            ? () => _shareRecords(context, appState)
             : null,
         icon: Icons.ios_share,
         label: 'Compartir',
         background: AppColors.primaryGreen,
       ),
       actionButton(
-        onPressed: () => promptNewCaptureSession(context, appState),
+        onPressed: () => _openNewSession(context, appState),
         icon: Icons.note_add_outlined,
         label: 'Nueva sesión',
         background: AppColors.accent,
@@ -242,9 +297,19 @@ class _CaptureScreenState extends State<CaptureScreen>
 }
 
 class _DesktopCaptureLayout extends StatelessWidget {
-  const _DesktopCaptureLayout({required this.appState});
+  const _DesktopCaptureLayout({
+    required this.appState,
+    required this.onSubmitRecord,
+    required this.onShare,
+    required this.onShareSession,
+    required this.onNewSession,
+  });
 
   final AppState appState;
+  final Future<NepRecord?> Function() onSubmitRecord;
+  final void Function(NepRecord record) onShare;
+  final VoidCallback onShareSession;
+  final VoidCallback onNewSession;
 
   @override
   Widget build(BuildContext context) {
@@ -255,18 +320,17 @@ class _DesktopCaptureLayout extends StatelessWidget {
           includeSessionFields: true,
           showAddButton: true,
           showSessionActions: true,
+          onSubmitRecord: onSubmitRecord,
+          onShareSession: onShareSession,
+          onNewSession: onNewSession,
         );
         final recordsPanel = CompactRecordsPanel(
           appState: appState,
           records: appState.captureSessionRecords,
           onDelete: appState.deleteRecord,
           onEdit: (record) => _editCaptureRecord(context, appState, record),
-          onShare: (record) => showShareReportMenu(
-            context,
-            appState,
-            initiallySelectedRecord: record,
-          ),
-          onClearAll: () => promptNewCaptureSession(context, appState),
+          onShare: onShare,
+          onClearAll: onNewSession,
         );
 
         // Formulario amplio (~45–50%), nunca columna fija de 300 px.
@@ -324,10 +388,18 @@ class _MobileCaptureLayout extends StatelessWidget {
   const _MobileCaptureLayout({
     required this.appState,
     required this.tabController,
+    required this.onSubmitRecord,
+    required this.onShare,
+    required this.onShareSession,
+    required this.onNewSession,
   });
 
   final AppState appState;
   final TabController tabController;
+  final Future<NepRecord?> Function() onSubmitRecord;
+  final void Function(NepRecord record) onShare;
+  final VoidCallback onShareSession;
+  final VoidCallback onNewSession;
 
   @override
   Widget build(BuildContext context) {
@@ -383,19 +455,20 @@ class _MobileCaptureLayout extends StatelessWidget {
           child: TabBarView(
             controller: tabController,
             children: [
-              _MobileCaptureTab(appState: appState),
+              _MobileCaptureTab(
+                appState: appState,
+                onSubmitRecord: onSubmitRecord,
+                onShareSession: onShareSession,
+                onNewSession: onNewSession,
+              ),
               CompactRecordsPanel(
                 appState: appState,
                 records: appState.captureSessionRecords,
                 onDelete: appState.deleteRecord,
                 onEdit: (record) =>
                     _editCaptureRecord(context, appState, record),
-                onShare: (record) => showShareReportMenu(
-                  context,
-                  appState,
-                  initiallySelectedRecord: record,
-                ),
-                onClearAll: () => promptNewCaptureSession(context, appState),
+                onShare: onShare,
+                onClearAll: onNewSession,
               ),
             ],
           ),
@@ -406,13 +479,17 @@ class _MobileCaptureLayout extends StatelessWidget {
 }
 
 class _MobileCaptureTab extends StatelessWidget {
-  const _MobileCaptureTab({required this.appState});
+  const _MobileCaptureTab({
+    required this.appState,
+    required this.onSubmitRecord,
+    required this.onShareSession,
+    required this.onNewSession,
+  });
 
   final AppState appState;
-
-  Future<void> _addRecord(BuildContext context) async {
-    await submitCaptureWithChecks(context, appState);
-  }
+  final Future<NepRecord?> Function() onSubmitRecord;
+  final VoidCallback onShareSession;
+  final VoidCallback onNewSession;
 
   @override
   Widget build(BuildContext context) {
@@ -435,6 +512,7 @@ class _MobileCaptureTab extends StatelessWidget {
                     showAddButton: false,
                     showSessionActions: false,
                     forceStacked: true,
+                    onSubmitRecord: onSubmitRecord,
                   ),
                 ),
               );
@@ -443,7 +521,9 @@ class _MobileCaptureTab extends StatelessWidget {
         ),
         _MobileCaptureActionBar(
           appState: appState,
-          onAdd: () => _addRecord(context),
+          onAdd: () => onSubmitRecord(),
+          onShareSession: onShareSession,
+          onNewSession: onNewSession,
         ),
       ],
     );
@@ -454,10 +534,14 @@ class _MobileCaptureActionBar extends StatelessWidget {
   const _MobileCaptureActionBar({
     required this.appState,
     required this.onAdd,
+    required this.onShareSession,
+    required this.onNewSession,
   });
 
   final AppState appState;
   final VoidCallback onAdd;
+  final VoidCallback onShareSession;
+  final VoidCallback onNewSession;
 
   @override
   Widget build(BuildContext context) {
@@ -573,9 +657,9 @@ class _MobileCaptureActionBar extends StatelessWidget {
       case _MobileMoreAction.save:
         promptSaveCaptureSessionReport(context, appState);
       case _MobileMoreAction.share:
-        showShareReportMenu(context, appState);
+        onShareSession();
       case _MobileMoreAction.newSession:
-        promptNewCaptureSession(context, appState);
+        onNewSession();
       case _MobileMoreAction.clear:
         appState.clearCaptureFields();
       case _MobileMoreAction.fabrics:
@@ -952,6 +1036,9 @@ class _CaptureFormPanel extends StatelessWidget {
     this.showAddButton = true,
     this.showSessionActions = true,
     this.forceStacked = false,
+    this.onSubmitRecord,
+    this.onShareSession,
+    this.onNewSession,
   });
 
   final AppState appState;
@@ -959,6 +1046,33 @@ class _CaptureFormPanel extends StatelessWidget {
   final bool showAddButton;
   final bool showSessionActions;
   final bool forceStacked;
+  final Future<NepRecord?> Function()? onSubmitRecord;
+  final VoidCallback? onShareSession;
+  final VoidCallback? onNewSession;
+
+  Future<NepRecord?> _submit(BuildContext context) {
+    final submit = onSubmitRecord;
+    if (submit != null) return submit();
+    return submitCaptureWithChecks(context, appState);
+  }
+
+  void _share(BuildContext context) {
+    final share = onShareSession;
+    if (share != null) {
+      share();
+      return;
+    }
+    showShareReportMenu(context, appState);
+  }
+
+  void _newSession(BuildContext context) {
+    final open = onNewSession;
+    if (open != null) {
+      open();
+      return;
+    }
+    promptNewCaptureSession(context, appState);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1017,13 +1131,21 @@ class _CaptureFormPanel extends StatelessWidget {
                   children: [
                     Expanded(child: _TelarField(appState: appState)),
                     SizedBox(width: fieldGap),
-                    Expanded(child: _NepsField(appState: appState)),
+                    Expanded(
+                      child: _NepsField(
+                        appState: appState,
+                        onSubmitRecord: () => _submit(context),
+                      ),
+                    ),
                   ],
                 )
               else ...[
                 _TelarField(appState: appState),
                 SizedBox(height: fieldGap),
-                _NepsField(appState: appState),
+                _NepsField(
+                  appState: appState,
+                  onSubmitRecord: () => _submit(context),
+                ),
               ],
               SizedBox(height: fieldGap),
               CaptureOptionalFields(appState: appState),
@@ -1038,7 +1160,7 @@ class _CaptureFormPanel extends StatelessWidget {
                     minimumSize: const Size.fromHeight(56),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  onPressed: () => submitCaptureWithChecks(context, appState),
+                  onPressed: () => _submit(context),
                   icon: const Icon(Icons.add, size: 22),
                   label: const Text(
                     'Agregar registro',
@@ -1066,7 +1188,7 @@ class _CaptureFormPanel extends StatelessWidget {
                   ),
                   onPressed: appState.captureSessionRecords.isEmpty
                       ? null
-                      : () => promptNewCaptureSession(context, appState),
+                      : () => _newSession(context),
                   icon: const Icon(Icons.delete_sweep, size: 18),
                   label: const Text('Vaciar registros'),
                 ),
@@ -1105,7 +1227,7 @@ class _CaptureFormPanel extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       onPressed: captureActionsEnabled(appState)
-                          ? () => showShareReportMenu(context, appState)
+                          ? () => _share(context)
                           : null,
                       icon: const Icon(Icons.ios_share, size: 18),
                       label: const Text('Compartir'),
@@ -1180,9 +1302,13 @@ class _TelarField extends StatelessWidget {
 }
 
 class _NepsField extends StatelessWidget {
-  const _NepsField({required this.appState});
+  const _NepsField({
+    required this.appState,
+    this.onSubmitRecord,
+  });
 
   final AppState appState;
+  final Future<NepRecord?> Function()? onSubmitRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -1205,7 +1331,14 @@ class _NepsField extends StatelessWidget {
               'Ej: 53',
               size: AppInputSize.prominent,
             ),
-            onSubmitted: (_) => submitCaptureWithChecks(context, appState),
+            onSubmitted: (_) {
+              final submit = onSubmitRecord;
+              if (submit != null) {
+                submit();
+              } else {
+                submitCaptureWithChecks(context, appState);
+              }
+            },
           ),
         ),
       ],

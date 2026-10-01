@@ -56,6 +56,59 @@ void main() {
       expect(latest?.id, 'r3');
     });
 
+    test('prioridad: newlyCreatedRecordId sobre latestToday', () {
+      final eligible = [
+        _rec(id: 'r3', createdAt: todayEvening, uid: 'A'),
+        _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
+        _rec(id: 'r1', createdAt: todayMorning, uid: 'A'),
+      ];
+      final selectedId = resolveShareInitialSelectedId(
+        eligibleRecords: eligible,
+        newlyCreatedRecordId: 'r2',
+        latestTodayCaptureRecord: eligible.first,
+      );
+      expect(selectedId, 'r2');
+    });
+
+    test('prioridad: initiallySelectedRecord sobre newlyCreatedRecordId', () {
+      final eligible = [
+        _rec(id: 'r3', createdAt: todayEvening, uid: 'A'),
+        _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
+        _rec(id: 'r1', createdAt: todayMorning, uid: 'A'),
+      ];
+      final selectedId = resolveShareInitialSelectedId(
+        eligibleRecords: eligible,
+        initiallySelectedRecord: eligible[2], // r1
+        newlyCreatedRecordId: 'r3',
+        latestTodayCaptureRecord: eligible.first,
+      );
+      expect(selectedId, 'r1');
+    });
+
+    test('fallback: latestToday cuando no hay fila ni newlyCreated', () {
+      final eligible = [
+        _rec(id: 'r3', createdAt: todayEvening, uid: 'A'),
+        _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
+        _rec(id: 'r1', createdAt: todayMorning, uid: 'A'),
+      ];
+      final selectedId = resolveShareInitialSelectedId(
+        eligibleRecords: eligible,
+        latestTodayCaptureRecord: eligible.first,
+      );
+      expect(selectedId, 'r3');
+    });
+
+    test('ninguno si newlyCreated no es elegible', () {
+      final eligible = [
+        _rec(id: 'r1', createdAt: todayMorning, uid: 'A'),
+      ];
+      final selectedId = resolveShareInitialSelectedId(
+        eligibleRecords: eligible,
+        newlyCreatedRecordId: 'missing',
+      );
+      expect(selectedId, isNull);
+    });
+
     test('E) ayer excluido de la lista', () {
       final records = [
         _rec(id: 'r0', createdAt: yesterday, uid: 'A'),
@@ -167,6 +220,133 @@ void main() {
         find.byType(ShareCaptureRecordsDialog),
       );
       expect(state.selectedRecords.map((r) => r.id), ['r3']);
+    });
+
+    testWidgets('TEST1) solo registro recién creado (newlyCreated=r3)',
+        (tester) async {
+      final eligibleList = eligible();
+      final initialId = resolveShareInitialSelectedId(
+        eligibleRecords: eligibleList,
+        newlyCreatedRecordId: 'r3',
+        latestTodayCaptureRecord: eligibleList.first,
+      );
+      await pumpDialog(tester, initialSelectedId: initialId);
+
+      final state = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      expect(state.selectedRecords.map((r) => r.id).toSet(), {'r3'});
+      expect(state.selectedRecords.map((r) => r.id), isNot(contains('r1')));
+      expect(state.selectedRecords.map((r) => r.id), isNot(contains('r2')));
+    });
+
+    testWidgets('TEST2) newlyCreated no selecciona todos los de hoy',
+        (tester) async {
+      final eligibleList = eligible();
+      final initialId = resolveShareInitialSelectedId(
+        eligibleRecords: eligibleList,
+        newlyCreatedRecordId: 'r3',
+        latestTodayCaptureRecord: eligibleList.first,
+      );
+      await pumpDialog(tester, initialSelectedId: initialId);
+
+      final state = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      expect(state.selectedCount, 1);
+      expect(find.text('Compartir 1 registro'), findsOneWidget);
+    });
+
+    testWidgets('TEST3) fila tiene prioridad sobre newlyCreated',
+        (tester) async {
+      final eligibleList = eligible();
+      final initialId = resolveShareInitialSelectedId(
+        eligibleRecords: eligibleList,
+        initiallySelectedRecord: eligibleList.firstWhere((r) => r.id == 'r2'),
+        newlyCreatedRecordId: 'r3',
+        latestTodayCaptureRecord: eligibleList.first,
+      );
+      await pumpDialog(tester, initialSelectedId: initialId);
+
+      final state = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      expect(state.selectedRecords.map((r) => r.id).toSet(), {'r2'});
+    });
+
+    testWidgets('TEST4) seleccionar todos los de hoy sigue funcionando',
+        (tester) async {
+      await pumpDialog(tester, initialSelectedId: 'r3');
+      expect(
+        tester
+            .state<ShareCaptureRecordsDialogState>(
+              find.byType(ShareCaptureRecordsDialog),
+            )
+            .selectedRecords
+            .map((r) => r.id)
+            .toSet(),
+        {'r3'},
+      );
+
+      await tester.tap(find.text('Seleccionar todos los de hoy'));
+      await tester.pump();
+
+      final state = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      expect(
+          state.selectedRecords.map((r) => r.id).toSet(), {'r1', 'r2', 'r3'});
+      expect(find.text('Compartir 3 registros'), findsOneWidget);
+    });
+
+    testWidgets('TEST5) limpiar deja selección vacía', (tester) async {
+      await pumpDialog(tester, initialSelectedId: 'r3');
+      await tester.tap(find.text('Limpiar selección'));
+      await tester.pump();
+
+      final state = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      expect(state.selectedRecords, isEmpty);
+      expect(state.selectedCount, 0);
+    });
+
+    testWidgets('TEST6) fallback latestToday sin newlyCreated ni fila',
+        (tester) async {
+      final eligibleList = eligible();
+      final initialId = resolveShareInitialSelectedId(
+        eligibleRecords: eligibleList,
+        latestTodayCaptureRecord: eligibleList.first,
+      );
+      expect(initialId, 'r3');
+      await pumpDialog(tester, initialSelectedId: initialId);
+
+      final state = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      expect(state.selectedRecords.map((r) => r.id), ['r3']);
+    });
+
+    testWidgets('TEST7) sourceRecords exportables son solo el recién creado',
+        (tester) async {
+      final eligibleList = eligible();
+      final initialId = resolveShareInitialSelectedId(
+        eligibleRecords: eligibleList,
+        newlyCreatedRecordId: 'r3',
+        latestTodayCaptureRecord: eligibleList.first,
+      );
+      await pumpDialog(tester, initialSelectedId: initialId);
+
+      final state = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      final sourceRecords = state.selectedRecords;
+      expect(sourceRecords.map((r) => r.id), ['r3']);
+      expect(sourceRecords.length, 1);
+      expect(
+        sourceRecords.map((r) => r.id).toSet(),
+        isNot(equals({'r1', 'r2', 'r3'})),
+      );
     });
 
     testWidgets('C) selección manual r1+r3 sin r2', (tester) async {

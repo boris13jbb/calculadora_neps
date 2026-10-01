@@ -40,3 +40,31 @@ NepRecord? resolveLatestTodayCaptureRecord({
   if (today.isEmpty) return null;
   return today.first;
 }
+
+/// ID inicial para Captura → Compartir, con prioridad explícita.
+///
+/// 1. [initiallySelectedRecord] (Compartir desde fila)
+/// 2. [newlyCreatedRecordId] (registro recién creado en Captura)
+/// 3. [latestTodayCaptureRecord] (fallback toolbar)
+/// 4. null si ninguno es elegible
+String? resolveShareInitialSelectedId({
+  required List<NepRecord> eligibleRecords,
+  NepRecord? initiallySelectedRecord,
+  String? newlyCreatedRecordId,
+  NepRecord? latestTodayCaptureRecord,
+}) {
+  bool isEligible(String? id) {
+    if (id == null || id.isEmpty) return false;
+    return eligibleRecords.any((record) => record.id == id);
+  }
+
+  final fromRow = initiallySelectedRecord?.id;
+  if (isEligible(fromRow)) return fromRow;
+
+  if (isEligible(newlyCreatedRecordId)) return newlyCreatedRecordId;
+
+  final fromLatest = latestTodayCaptureRecord?.id;
+  if (isEligible(fromLatest)) return fromLatest;
+
+  return null;
+}

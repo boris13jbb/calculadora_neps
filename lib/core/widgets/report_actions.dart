@@ -4,6 +4,7 @@ import '../../models/export_column.dart';
 import '../../models/nep_record.dart';
 import '../../models/pdf_report_style.dart';
 import '../../providers/app_state.dart';
+import '../../utils/today_capture_records.dart';
 import '../theme/app_theme.dart';
 import 'export_column_selector.dart';
 import 'report_style_selector.dart';
@@ -456,12 +457,15 @@ class _ShareReportResult {
 
 /// Compartir desde Captura: solo registros de hoy del usuario, por selección.
 ///
-/// [initiallySelectedRecord] fija la selección inicial (p. ej. fila Compartir).
-/// Si es null, se selecciona únicamente [AppState.latestTodayCaptureRecord].
+/// Prioridad de selección inicial:
+/// 1. [initiallySelectedRecord] (Compartir desde fila)
+/// 2. [newlyCreatedRecordId] (ID exacto del registro recién creado)
+/// 3. [AppState.latestTodayCaptureRecord] (fallback toolbar)
 Future<void> showShareReportMenu(
   BuildContext context,
   AppState appState, {
   NepRecord? initiallySelectedRecord,
+  String? newlyCreatedRecordId,
 }) async {
   final eligible = appState.todayCaptureRecords;
   if (eligible.isEmpty) {
@@ -471,14 +475,18 @@ Future<void> showShareReportMenu(
 
   if (appState.isExporting) return;
 
-  final defaultRecord =
-      initiallySelectedRecord ?? appState.latestTodayCaptureRecord;
+  final initialSelectedId = resolveShareInitialSelectedId(
+    eligibleRecords: eligible,
+    initiallySelectedRecord: initiallySelectedRecord,
+    newlyCreatedRecordId: newlyCreatedRecordId,
+    latestTodayCaptureRecord: appState.latestTodayCaptureRecord,
+  );
 
   final result = await showDialog<_ShareReportResult>(
     context: context,
     builder: (context) => ShareCaptureRecordsDialog(
       eligibleRecords: eligible,
-      initialSelectedId: defaultRecord?.id,
+      initialSelectedId: initialSelectedId,
       initialColumns: appState.exportColumns,
       initialStyle: appState.pdfReportStyle,
       formatDateTime: appState.formatDateTime,
@@ -559,9 +567,12 @@ class ShareCaptureRecordsDialogState extends State<ShareCaptureRecordsDialog> {
   void initState() {
     super.initState();
     final initialId = widget.initialSelectedId;
-    final hasInitial = initialId != null &&
-        widget.eligibleRecords.any((record) => record.id == initialId);
-    _selectedIds = hasInitial ? {initialId!} : <String>{};
+    if (initialId != null &&
+        widget.eligibleRecords.any((record) => record.id == initialId)) {
+      _selectedIds = {initialId};
+    } else {
+      _selectedIds = <String>{};
+    }
     _selectedColumns = Set<ExportColumn>.from(widget.initialColumns);
     _style = widget.initialStyle;
   }
