@@ -251,6 +251,35 @@ service cloud.firestore {
           && hasPermission('manageReports');
       }
 
+      // Metadata ligera de informes. Misma política que /reports/{reportId}.
+      // No amplía ni reduce permisos; ownership via createdByUid en create/update.
+      match /reportSummaries/{reportId} {
+        allow read: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && (
+            hasPermission('manageReports') ||
+            hasPermission('exportReports') ||
+            hasPermission('viewRecords')
+          );
+        allow create: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && hasPermission('manageReports')
+          && (
+            !('createdByUid' in request.resource.data) ||
+            request.resource.data.createdByUid == request.auth.uid
+          );
+        allow update: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && hasPermission('manageReports')
+          && (
+            !('createdByUid' in request.resource.data.diff(resource.data).affectedKeys()) ||
+            request.resource.data.createdByUid == resource.data.createdByUid
+          );
+        allow delete: if isAuthenticated()
+          && workspaceIdOk(workspaceId)
+          && hasPermission('manageReports');
+      }
+
       match /meta/fabrics {
         allow read: if isAuthenticated() && workspaceIdOk(workspaceId);
         allow write: if isAuthenticated()

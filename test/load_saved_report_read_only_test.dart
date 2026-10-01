@@ -9,6 +9,7 @@ import 'package:calculadora_neps/models/record_filters.dart';
 import 'package:calculadora_neps/models/records_page_result.dart';
 import 'package:calculadora_neps/models/record_tombstone.dart';
 import 'package:calculadora_neps/models/saved_report.dart';
+import 'package:calculadora_neps/models/saved_report_summary.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
 import 'package:calculadora_neps/services/cloud_sync_port.dart';
 import 'package:calculadora_neps/services/saved_capture_ids_storage_service.dart';
@@ -29,9 +30,10 @@ class _TrackingCloudSync implements CloudSyncPort {
   Stream<List<NepRecord>> watchRecords({
     AppUserRole viewerRole = AppUserRole.operario,
     String? viewerRoleCode,
-  }) =>
-      watchRecentRecords(viewerRole: viewerRole, viewerRoleCode: viewerRoleCode)
-          .map((page) => page.records);
+  }) => watchRecentRecords(
+    viewerRole: viewerRole,
+    viewerRoleCode: viewerRoleCode,
+  ).map((page) => page.records);
 
   @override
   Stream<RecordsPageResult> watchRecentRecords({
@@ -72,8 +74,7 @@ class _TrackingCloudSync implements CloudSyncPort {
     AppUserRole viewerRole = AppUserRole.operario,
     String? viewerRoleCode,
     int limit = 50,
-  }) async =>
-      const RecordsPageResult(records: []);
+  }) async => const RecordsPageResult(records: []);
 
   @override
   Stream<List<String>> watchFabrics() => Stream.value(const []);
@@ -124,6 +125,15 @@ class _TrackingCloudSync implements CloudSyncPort {
 
   @override
   Future<List<SavedReport>> fetchReports() async => [];
+
+  @override
+  Future<List<SavedReportSummary>> fetchReportSummaries() async => [];
+
+  @override
+  Future<SavedReport?> fetchReportById(String id) async => null;
+
+  @override
+  Future<List<SavedReport>> fetchReportsByIds(List<String> ids) async => [];
 
   @override
   Future<SavedReport> saveReport(SavedReport report) async => report;
@@ -541,24 +551,26 @@ void main() {
       state.dispose();
     });
 
-    test('LEGACY-5 loadReport deja viewingSavedReport para vista read-only',
-        () async {
-      final state = await readyState();
-      await state.loadReport(
-        SavedReport(
-          id: 'rep-legacy',
-          name: 'Histórico legacy',
-          createdAt: DateTime(2026, 8, 2),
-          records: [_hist(id: 'HIST1')],
-          createdByUid: 'admin-uid',
-        ),
-      );
+    test(
+      'LEGACY-5 loadReport deja viewingSavedReport para vista read-only',
+      () async {
+        final state = await readyState();
+        await state.loadReport(
+          SavedReport(
+            id: 'rep-legacy',
+            name: 'Histórico legacy',
+            createdAt: DateTime(2026, 8, 2),
+            records: [_hist(id: 'HIST1')],
+            createdByUid: 'admin-uid',
+          ),
+        );
 
-      expect(state.viewingSavedReport, isNotNull);
-      expect(state.viewingSavedReport!.id, 'rep-legacy');
-      expect(state.viewingSavedReport!.records.map((r) => r.id), ['HIST1']);
-      state.dispose();
-    });
+        expect(state.viewingSavedReport, isNotNull);
+        expect(state.viewingSavedReport!.id, 'rep-legacy');
+        expect(state.viewingSavedReport!.records.map((r) => r.id), ['HIST1']);
+        state.dispose();
+      },
+    );
   });
 
   group('VIEW-LIFECYCLE visor', () {
