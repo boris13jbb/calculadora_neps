@@ -10,7 +10,7 @@
  * @return {string|null}
  */
 function toIsoDate(value) {
-  if (value == null) return null;
+  if (value === null || value === undefined) return null;
   if (typeof value === "string") {
     const parsed = Date.parse(value);
     return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
@@ -18,7 +18,7 @@ function toIsoDate(value) {
   if (typeof value.toDate === "function") {
     try {
       return value.toDate().toISOString();
-    } catch (_) {
+    } catch {
       return null;
     }
   }
@@ -42,8 +42,8 @@ function buildSummaryPayload(reportId, reportData) {
     if (!record || typeof record !== "object") continue;
     const iso = toIsoDate(record.createdAt);
     if (!iso) continue;
-    if (minIso == null || iso < minIso) minIso = iso;
-    if (maxIso == null || iso > maxIso) maxIso = iso;
+    if (minIso === null || iso < minIso) minIso = iso;
+    if (maxIso === null || iso > maxIso) maxIso = iso;
   }
 
   const createdAt = toIsoDate(data.createdAt) || new Date().toISOString();
