@@ -6,6 +6,7 @@ import 'package:calculadora_neps/models/record_filters.dart';
 import 'package:calculadora_neps/models/record_tombstone.dart';
 import 'package:calculadora_neps/models/records_page_result.dart';
 import 'package:calculadora_neps/models/saved_report.dart';
+import 'package:calculadora_neps/models/saved_report_summary.dart';
 import 'package:calculadora_neps/services/cloud_sync_coordinator.dart';
 import 'package:calculadora_neps/services/cloud_sync_port.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -104,6 +105,15 @@ class FakeCloudSyncPort implements CloudSyncPort {
 
   @override
   Future<List<SavedReport>> fetchReports() async => [];
+
+  @override
+  Future<List<SavedReportSummary>> fetchReportSummaries() async => [];
+
+  @override
+  Future<SavedReport?> fetchReportById(String id) async => null;
+
+  @override
+  Future<List<SavedReport>> fetchReportsByIds(List<String> ids) async => [];
 
   @override
   Future<SavedReport> saveReport(SavedReport report) async => report;

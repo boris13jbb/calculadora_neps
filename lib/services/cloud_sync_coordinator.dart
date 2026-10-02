@@ -6,6 +6,7 @@ import '../models/record_filters.dart';
 import '../models/record_tombstone.dart';
 import '../models/records_page_result.dart';
 import '../models/saved_report.dart';
+import '../models/saved_report_summary.dart';
 import 'cloud_sync_port.dart';
 import 'firestore_record_query_builder.dart';
 
@@ -70,6 +71,14 @@ class CloudSyncCoordinator {
       _cloud.hasRecordTombstone(recordId);
 
   Future<List<SavedReport>> fetchReports() => _cloud.fetchReports();
+
+  Future<List<SavedReportSummary>> fetchReportSummaries() =>
+      _cloud.fetchReportSummaries();
+
+  Future<SavedReport?> fetchReportById(String id) => _cloud.fetchReportById(id);
+
+  Future<List<SavedReport>> fetchReportsByIds(List<String> ids) =>
+      _cloud.fetchReportsByIds(ids);
 
   Future<SavedReport> saveReport(SavedReport report) =>
       _cloud.saveReport(report);

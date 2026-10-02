@@ -12,6 +12,7 @@ import 'package:calculadora_neps/models/record_filters.dart';
 import 'package:calculadora_neps/models/records_page_result.dart';
 import 'package:calculadora_neps/models/record_tombstone.dart';
 import 'package:calculadora_neps/models/saved_report.dart';
+import 'package:calculadora_neps/models/saved_report_summary.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
 import 'package:calculadora_neps/services/cloud_sync_port.dart';
 import 'package:calculadora_neps/services/cloud_sync_service.dart';
@@ -47,9 +48,10 @@ class _TrackingCloudSync implements CloudSyncPort {
   Stream<List<NepRecord>> watchRecords({
     AppUserRole viewerRole = AppUserRole.operario,
     String? viewerRoleCode,
-  }) =>
-      watchRecentRecords(viewerRole: viewerRole, viewerRoleCode: viewerRoleCode)
-          .map((page) => page.records);
+  }) => watchRecentRecords(
+    viewerRole: viewerRole,
+    viewerRoleCode: viewerRoleCode,
+  ).map((page) => page.records);
 
   @override
   Stream<RecordsPageResult> watchRecentRecords({
@@ -90,8 +92,7 @@ class _TrackingCloudSync implements CloudSyncPort {
     AppUserRole viewerRole = AppUserRole.operario,
     String? viewerRoleCode,
     int limit = 50,
-  }) async =>
-      const RecordsPageResult(records: []);
+  }) async => const RecordsPageResult(records: []);
 
   @override
   Stream<List<String>> watchFabrics() => Stream.value(const []);
@@ -143,6 +144,15 @@ class _TrackingCloudSync implements CloudSyncPort {
 
   @override
   Future<List<SavedReport>> fetchReports() async => [];
+
+  @override
+  Future<List<SavedReportSummary>> fetchReportSummaries() async => [];
+
+  @override
+  Future<SavedReport?> fetchReportById(String id) async => null;
+
+  @override
+  Future<List<SavedReport>> fetchReportsByIds(List<String> ids) async => [];
 
   @override
   Future<SavedReport> saveReport(SavedReport report) async => report;
@@ -231,32 +241,27 @@ void main() {
   group('Permisos UI', () {
     test('A) super_admin canDeleteRecords = true', () {
       expect(
-        RoleCatalog.instance
-            .hasPermission('super_admin', Permission.deleteRecords),
+        RoleCatalog.instance.hasPermission(
+          'super_admin',
+          Permission.deleteRecords,
+        ),
         isTrue,
       );
       final state = AppState();
       state.applyAuthProfile(
-        AppUser(
-          uid: 'sa',
-          username: 'admin',
-          role: AppUserRole.superAdmin,
-        ),
+        AppUser(uid: 'sa', username: 'admin', role: AppUserRole.superAdmin),
       );
       expect(state.authRoleCode, 'super_admin');
       expect(state.canDeleteRecords, isTrue);
       state.dispose();
     });
 
-    testWidgets('B) sin deleteRecords botón disabled y sin callback',
-        (tester) async {
+    testWidgets('B) sin deleteRecords botón disabled y sin callback', (
+      tester,
+    ) async {
       final state = AppState();
       state.applyAuthProfile(
-        AppUser(
-          uid: 'op',
-          username: 'oper',
-          role: AppUserRole.operario,
-        ),
+        AppUser(uid: 'op', username: 'oper', role: AppUserRole.operario),
       );
       expect(state.canDeleteRecords, isFalse);
 
@@ -344,11 +349,7 @@ void main() {
         );
       final state = AppState(cloudSyncService: cloud);
       state.applyAuthProfile(
-        AppUser(
-          uid: 'sa',
-          username: 'sa',
-          role: AppUserRole.superAdmin,
-        ),
+        AppUser(uid: 'sa', username: 'sa', role: AppUserRole.superAdmin),
       );
       await state.initialize();
       state.records = [_record(id: 'r3', ownerUid: 'user_A')];
@@ -388,11 +389,7 @@ void main() {
       final cloud = _TrackingCloudSync();
       final state = AppState(cloudSyncService: cloud);
       state.applyAuthProfile(
-        AppUser(
-          uid: 'sa',
-          username: 'sa',
-          role: AppUserRole.superAdmin,
-        ),
+        AppUser(uid: 'sa', username: 'sa', role: AppUserRole.superAdmin),
       );
       await state.initialize();
       final record = _record(id: 'r5', ownerUid: 'user_A');
@@ -443,23 +440,25 @@ void main() {
       state.dispose();
     });
 
-    test('CLEAR: no llama deleteReport (informes históricos intactos)',
-        () async {
-      final cloud = _TrackingCloudSync()
-        ..actorUidForClear = 'user_A'
-        ..ownedRecordIdsForClear.add('A');
-      final state = AppState(cloudSyncService: cloud);
-      state.applyAuthProfile(
-        AppUser(uid: 'user_A', username: 'a', role: AppUserRole.admin),
-      );
-      await state.initialize();
-      state.records = [_record(id: 'A', ownerUid: 'user_A')];
+    test(
+      'CLEAR: no llama deleteReport (informes históricos intactos)',
+      () async {
+        final cloud = _TrackingCloudSync()
+          ..actorUidForClear = 'user_A'
+          ..ownedRecordIdsForClear.add('A');
+        final state = AppState(cloudSyncService: cloud);
+        state.applyAuthProfile(
+          AppUser(uid: 'user_A', username: 'a', role: AppUserRole.admin),
+        );
+        await state.initialize();
+        state.records = [_record(id: 'A', ownerUid: 'user_A')];
 
-      await state.clearTable();
+        await state.clearTable();
 
-      expect(cloud.deletedReportIds, isEmpty);
-      cloud.dispose();
-      state.dispose();
-    });
+        expect(cloud.deletedReportIds, isEmpty);
+        cloud.dispose();
+        state.dispose();
+      },
+    );
   });
 }

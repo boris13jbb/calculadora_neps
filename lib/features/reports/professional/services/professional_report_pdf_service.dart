@@ -5,8 +5,10 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../../../../models/nep_record.dart';
+import '../../../../models/neps_classification.dart';
 import '../../../../services/alert_service.dart';
 import '../../../../services/report_export_service.dart';
+import '../../../../utils/pdf_official_neps_criteria.dart';
 import '../models/report_chart_type.dart';
 import '../models/report_detail_column.dart';
 import '../models/report_export_options.dart';
@@ -609,8 +611,7 @@ class ProfessionalReportPdfService {
       'Turno mayor incidencia': q.turnoMayorPromedio,
       'Índice de calidad': '${q.indiceCalidadGeneral.toStringAsFixed(1)}%',
       'Tendencia': q.tendenciaGeneral.label,
-      '% OK':
-          '${q.porcentajeDentroLimite.toStringAsFixed(1)}%',
+      '% OK': '${q.porcentajeDentroLimite.toStringAsFixed(1)}%',
     };
     return _buildPdfTable(
       headers: const ['Indicador', 'Valor'],
@@ -695,40 +696,47 @@ class ProfessionalReportPdfService {
 
   pw.Widget _buildAlertsSection(ProcessedReportData data) {
     final s = data.statistics;
-    return _buildPdfTable(
-      headers: const ['Categoría', 'Cantidad', 'Porcentaje'],
-      rows: [
-        ['Total alertas', '${s.totalRecords}', '100%'],
-        [
-          'OK',
-          '${s.normalCount}',
-          '${s.normalPercentage.toStringAsFixed(1)}%',
-        ],
-        [
-          'Menciones',
-          '${s.warningCount}',
-          '${s.warningPercentage.toStringAsFixed(1)}%',
-        ],
-        [
-          'Criticos',
-          '${s.criticalCount}',
-          '${s.criticalPercentage.toStringAsFixed(1)}%',
-        ],
-        [
-          '2da Calidad',
-          '${s.segundaCalidadCount}',
-          '${s.segundaCalidadPercentage.toStringAsFixed(1)}%',
-        ],
-        ['Revisadas', '${s.reviewedCount}', '—'],
-        ['Pendientes', '${s.pendingReviewCount}', '—'],
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        PdfOfficialNepsCriteria.buildLegend(),
+        pw.SizedBox(height: 10),
+        _buildPdfTable(
+          headers: const ['Categoría', 'Cantidad', 'Porcentaje'],
+          rows: [
+            ['Total alertas', '${s.totalRecords}', '100%'],
+            [
+              NepsClassification.ok.displayLabel,
+              '${s.normalCount}',
+              '${s.normalPercentage.toStringAsFixed(1)}%',
+            ],
+            [
+              NepsClassification.mencion.displayLabel,
+              '${s.warningCount}',
+              '${s.warningPercentage.toStringAsFixed(1)}%',
+            ],
+            [
+              NepsClassification.critico.displayLabel,
+              '${s.criticalCount}',
+              '${s.criticalPercentage.toStringAsFixed(1)}%',
+            ],
+            [
+              NepsClassification.segundaCalidad.displayLabel,
+              '${s.segundaCalidadCount}',
+              '${s.segundaCalidadPercentage.toStringAsFixed(1)}%',
+            ],
+            ['Revisadas', '${s.reviewedCount}', '—'],
+            ['Pendientes', '${s.pendingReviewCount}', '—'],
+          ],
+          columnFlex: const [2.0, 0.8, 0.8],
+          columnAlignments: const [
+            pw.TextAlign.left,
+            pw.TextAlign.right,
+            pw.TextAlign.right,
+          ],
+          fontSize: 9,
+        ),
       ],
-      columnFlex: const [2.0, 0.8, 0.8],
-      columnAlignments: const [
-        pw.TextAlign.left,
-        pw.TextAlign.right,
-        pw.TextAlign.right,
-      ],
-      fontSize: 9,
     );
   }
 

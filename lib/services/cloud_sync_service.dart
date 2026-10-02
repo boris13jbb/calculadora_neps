@@ -17,8 +17,10 @@ import '../models/record_tombstone.dart';
 import '../models/records_page_result.dart';
 import '../utils/firestore_json_helper.dart';
 import '../models/saved_report.dart';
+import '../models/saved_report_summary.dart';
 import 'cloud_sync_port.dart';
 import 'firestore_record_query_builder.dart';
+import 'report_dual_write_plan.dart';
 
 /// Una escritura delete-wins por registro al vaciar (clearRecords).
 @visibleForTesting
@@ -42,11 +44,9 @@ class ClearRecordsWrite {
 }
 
 class CloudSyncService implements CloudSyncPort {
-  CloudSyncService({
-    FirebaseFirestore? firestore,
-    FirebaseAuth? auth,
-  })  : _firestoreOverride = firestore,
-        _authOverride = auth;
+  CloudSyncService({FirebaseFirestore? firestore, FirebaseAuth? auth})
+    : _firestoreOverride = firestore,
+      _authOverride = auth;
 
   final FirebaseFirestore? _firestoreOverride;
   final FirebaseAuth? _authOverride;
@@ -110,6 +110,12 @@ class CloudSyncService implements CloudSyncPort {
 
   CollectionReference<Map<String, dynamic>> get _reports =>
       _workspace.collection('reports');
+
+  CollectionReference<Map<String, dynamic>> get _reportSummaries =>
+      _workspace.collection('reportSummaries');
+
+  /// Tamaño de lote para lecturas puntuales por id (sin whereIn masivo).
+  static const int _reportIdsChunkSize = 30;
 
   DocumentReference<Map<String, dynamic>> get _fabricsDoc =>
       _workspace.collection('meta').doc('fabrics');
@@ -396,13 +402,10 @@ class CloudSyncService implements CloudSyncPort {
     await bootstrap();
 
     final normalized = _normalizeFabrics(fabrics);
-    await _fabricsDoc.set(
-      {
-        'items': normalized,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _fabricsDoc.set({
+      'items': normalized,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
     return normalized;
   }
 
@@ -538,7 +541,8 @@ class CloudSyncService implements CloudSyncPort {
     if (deletedAtRaw is Timestamp) {
       deletedAt = deletedAtRaw.toDate();
     } else {
-      deletedAt = DateTime.tryParse(deletedAtRaw?.toString() ?? '') ??
+      deletedAt =
+          DateTime.tryParse(deletedAtRaw?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0);
     }
     final recordId = data['recordId']?.toString().trim();
@@ -576,8 +580,9 @@ class CloudSyncService implements CloudSyncPort {
     try {
       QueryDocumentSnapshot<Map<String, dynamic>>? cursor;
       while (true) {
-        Query<Map<String, dynamic>> query =
-            _workspaceRecords.where('ownerUid', isEqualTo: userId).limit(200);
+        Query<Map<String, dynamic>> query = _workspaceRecords
+            .where('ownerUid', isEqualTo: userId)
+            .limit(200);
         if (cursor != null) {
           query = query.startAfterDocument(cursor);
         }
@@ -684,35 +689,169 @@ class CloudSyncService implements CloudSyncPort {
   }
 
   @override
+  Future<List<SavedReportSummary>> fetchReportSummaries() async {
+    await bootstrap();
+
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await _reportSummaries
+          .orderBy('createdAt', descending: true)
+          .get();
+    } on FirebaseException catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'fetchReportSummariesOrderBy');
+      if (error.code == 'failed-precondition' ||
+          error.code == 'invalid-argument') {
+        snapshot = await _reportSummaries.get();
+      } else {
+        rethrow;
+      }
+    } catch (error, stackTrace) {
+      ErrorHandler.log(
+        error,
+        stackTrace,
+        'fetchReportSummariesOrderByFallback',
+      );
+      snapshot = await _reportSummaries.get();
+    }
+
+    final summaries = <SavedReportSummary>[];
+    var skipped = 0;
+    for (final doc in snapshot.docs) {
+      try {
+        final data = FirestoreJsonHelper.normalizeMap(
+          Map<String, dynamic>.from(doc.data()),
+        );
+        data['id'] ??= doc.id;
+        final parsed = SavedReportSummary.tryFromJson(data);
+        if (parsed == null) {
+          skipped++;
+          continue;
+        }
+        summaries.add(parsed);
+      } catch (error, stackTrace) {
+        skipped++;
+        ErrorHandler.log(error, stackTrace, 'fetchReportSummariesDoc');
+      }
+    }
+    if (skipped > 0) {
+      ErrorHandler.log(
+        StateError(
+          'fetchReportSummaries omitió $skipped documento(s) inválidos',
+        ),
+        StackTrace.current,
+        'fetchReportSummaries',
+      );
+    }
+
+    summaries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return summaries;
+  }
+
+  @override
+  Future<SavedReport?> fetchReportById(String id) async {
+    await bootstrap();
+    final reportId = id.trim();
+    if (reportId.isEmpty) return null;
+
+    final snap = await _reports.doc(reportId).get();
+    if (!snap.exists || snap.data() == null) return null;
+    return _parseSavedReportDoc(snap.id, snap.data()!);
+  }
+
+  @override
+  Future<List<SavedReport>> fetchReportsByIds(List<String> ids) async {
+    await bootstrap();
+    final unique = <String>{};
+    for (final raw in ids) {
+      final id = raw.trim();
+      if (id.isNotEmpty) unique.add(id);
+    }
+    if (unique.isEmpty) return [];
+
+    final orderedIds = unique.toList(growable: false);
+    final byId = <String, SavedReport>{};
+
+    for (
+      var offset = 0;
+      offset < orderedIds.length;
+      offset += _reportIdsChunkSize
+    ) {
+      final end = (offset + _reportIdsChunkSize < orderedIds.length)
+          ? offset + _reportIdsChunkSize
+          : orderedIds.length;
+      final chunk = orderedIds.sublist(offset, end);
+      final snaps = await Future.wait(
+        chunk.map((id) => _reports.doc(id).get()),
+      );
+      for (final snap in snaps) {
+        if (!snap.exists || snap.data() == null) continue;
+        final parsed = _parseSavedReportDoc(snap.id, snap.data()!);
+        if (parsed != null) byId[parsed.id] = parsed;
+      }
+    }
+
+    // Conserva el orden de la lista de ids solicitada (únicos).
+    return [
+      for (final id in orderedIds)
+        if (byId.containsKey(id)) byId[id]!,
+    ];
+  }
+
+  SavedReport? _parseSavedReportDoc(String docId, Map<String, dynamic> raw) {
+    try {
+      final data = FirestoreJsonHelper.normalizeMap(
+        Map<String, dynamic>.from(raw),
+      );
+      data['id'] ??= docId;
+      return SavedReport.tryFromJson(data);
+    } catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'parseSavedReportDoc');
+      return null;
+    }
+  }
+
+  @override
   Future<SavedReport> saveReport(SavedReport report) async {
     await bootstrap();
     final uid = await _requireUserId();
     final stamped =
         (report.createdByUid == null || report.createdByUid!.trim().isEmpty)
-            ? SavedReport(
-                id: report.id,
-                name: report.name,
-                createdAt: report.createdAt,
-                records: report.records,
-                appliedFilters: report.appliedFilters,
-                createdByUid: uid,
-              )
-            : report;
+        ? SavedReport(
+            id: report.id,
+            name: report.name,
+            createdAt: report.createdAt,
+            records: report.records,
+            appliedFilters: report.appliedFilters,
+            createdByUid: uid,
+          )
+        : report;
 
-    await _reports.doc(stamped.id).set(
-      {
-        ...stamped.toJson(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    final plan = ReportDualWritePlan.fromReport(stamped);
+    final batch = _firestore.batch();
+    batch.set(_reports.doc(plan.reportId), {
+      ...plan.reportData,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    batch.set(_reportSummaries.doc(plan.reportId), {
+      ...plan.summaryData,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    await batch.commit();
     return stamped;
   }
 
   @override
   Future<void> deleteReport(String reportId) async {
     await bootstrap();
-    await _reports.doc(reportId).delete();
+    final id = reportId.trim();
+    if (id.isEmpty) return;
+
+    // Firestore delete de docs inexistentes no falla: cubre los 4 casos
+    // (ambos, solo summary, solo full, ninguno).
+    final batch = _firestore.batch();
+    batch.delete(_reports.doc(id));
+    batch.delete(_reportSummaries.doc(id));
+    await batch.commit();
   }
 
   @override
@@ -732,25 +871,19 @@ class CloudSyncService implements CloudSyncPort {
   @override
   Future<void> saveAlertConfig(Map<String, dynamic> config) async {
     await bootstrap();
-    await _configDoc.set(
-      {
-        ...config,
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _configDoc.set({
+      ...config,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   @override
   Future<void> registerFcmToken(String token) async {
     final userId = await _requireUserId();
-    await _workspace.collection('users').doc(userId).set(
-      {
-        'fcmToken': token,
-        'fcmUpdatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await _workspace.collection('users').doc(userId).set({
+      'fcmToken': token,
+      'fcmUpdatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Map<String, dynamic> _recordData(NepRecord record, String ownerUid) {
@@ -764,8 +897,9 @@ class CloudSyncService implements CloudSyncPort {
     return {
       ...payload,
       'ownerUid': ownerUid,
-      'createdByUid':
-          (createdBy != null && createdBy.isNotEmpty) ? createdBy : ownerUid,
+      'createdByUid': (createdBy != null && createdBy.isNotEmpty)
+          ? createdBy
+          : ownerUid,
       'alertLevel': record.alertLevel.name,
       'mtsCalculados': record.mtsCalculados,
       'updatedAt': FieldValue.serverTimestamp(),
