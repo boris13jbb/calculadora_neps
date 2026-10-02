@@ -455,16 +455,18 @@ class _ShareReportResult {
   final List<NepRecord> selectedRecords;
 }
 
-/// Compartir desde Captura: solo registros de hoy del usuario, por selección.
+/// Compartir desde Captura: pool de hoy; visibilidad inicial = sesión actual.
 ///
 /// Prioridad de selección inicial:
 /// 1. [initiallySelectedRecord] (Compartir desde fila)
 /// 2. [newlyCreatedRecordId] (ID exacto del registro recién creado)
-/// 3. [AppState.latestTodayCaptureRecord] (fallback toolbar)
+/// 3. Más reciente de la sesión actual (fallback toolbar)
+/// 4. [AppState.latestTodayCaptureRecord] si la sesión no aporta elegibles
 ///
 /// Visibilidad inicial (independiente de la selección):
 /// - Tras crear: solo el registro con [newlyCreatedRecordId].
-/// - Desde fila / menú general: listado completo de hoy.
+/// - Con sesión activa: solo registros de esa sesión (no todo el día).
+/// - «Seleccionar todos los de hoy» amplía al pool completo de hoy.
 Future<void> showShareReportMenu(
   BuildContext context,
   AppState appState, {
@@ -479,14 +481,30 @@ Future<void> showShareReportMenu(
 
   if (appState.isExporting) return;
 
+  final sessionRecords = appState.captureSessionRecords;
+  final sessionEligible = intersectEligibleSessionRecords(
+    eligibleRecords: eligible,
+    sessionRecords: sessionRecords,
+  );
+  final latestSession = resolveLatestRecord(sessionEligible);
+
   final initialSelectedId = resolveShareInitialSelectedId(
     eligibleRecords: eligible,
     initiallySelectedRecord: initiallySelectedRecord,
     newlyCreatedRecordId: newlyCreatedRecordId,
-    latestTodayCaptureRecord: appState.latestTodayCaptureRecord,
+    latestTodayCaptureRecord:
+        latestSession ?? appState.latestTodayCaptureRecord,
   );
   final initialVisibleRecords = resolveShareInitialVisibleRecords(
     eligibleRecords: eligible,
+    sessionRecords: sessionRecords,
+    initiallySelectedRecord: initiallySelectedRecord,
+    newlyCreatedRecordId: newlyCreatedRecordId,
+  );
+  final initialListMode = resolveShareInitialListMode(
+    eligibleRecords: eligible,
+    visibleRecords: initialVisibleRecords,
+    sessionRecords: sessionRecords,
     initiallySelectedRecord: initiallySelectedRecord,
     newlyCreatedRecordId: newlyCreatedRecordId,
   );
@@ -496,6 +514,7 @@ Future<void> showShareReportMenu(
     builder: (context) => ShareCaptureRecordsDialog(
       eligibleRecords: eligible,
       initialVisibleRecords: initialVisibleRecords,
+      initialListMode: initialListMode,
       initialSelectedId: initialSelectedId,
       initialColumns: appState.exportColumns,
       initialStyle: appState.pdfReportStyle,
@@ -546,8 +565,8 @@ bool captureSaveEnabled(AppState appState) =>
 ///
 /// [eligibleRecords] es el pool completo de hoy (selección múltiple / export).
 /// [initialVisibleRecords] define qué filas se muestran al abrir; puede ser
-/// un subconjunto (p. ej. solo el recién creado). "Seleccionar todos los de hoy"
-/// amplía la lista visible al pool completo.
+/// un subconjunto (sesión actual o solo el recién creado).
+/// "Seleccionar todos los de hoy" amplía la lista visible al pool completo.
 ///
 /// Público para pruebas de widget; los checkboxes son solo estado temporal.
 class ShareCaptureRecordsDialog extends StatefulWidget {
@@ -559,6 +578,7 @@ class ShareCaptureRecordsDialog extends StatefulWidget {
     required this.formatDateTime,
     required this.formatNeps,
     this.initialSelectedId,
+    this.initialListMode = ShareInitialListMode.today,
     List<NepRecord>? initialVisibleRecords,
   }) : initialVisibleRecords = initialVisibleRecords ?? eligibleRecords;
 
@@ -567,6 +587,9 @@ class ShareCaptureRecordsDialog extends StatefulWidget {
 
   /// Filas visibles al abrir el diálogo (puede ser un subconjunto).
   final List<NepRecord> initialVisibleRecords;
+
+  /// Controla el texto de ayuda inicial (sesión vs recién creado vs hoy).
+  final ShareInitialListMode initialListMode;
   final String? initialSelectedId;
   final Set<ExportColumn> initialColumns;
   final PdfReportStyle initialStyle;
@@ -583,11 +606,13 @@ class ShareCaptureRecordsDialogState extends State<ShareCaptureRecordsDialog> {
   late List<NepRecord> _visibleRecords;
   late Set<ExportColumn> _selectedColumns;
   late PdfReportStyle _style;
+  late ShareInitialListMode _listMode;
 
   @override
   void initState() {
     super.initState();
     _visibleRecords = List<NepRecord>.from(widget.initialVisibleRecords);
+    _listMode = widget.initialListMode;
     final initialId = widget.initialSelectedId;
     if (initialId != null &&
         widget.eligibleRecords.any((record) => record.id == initialId)) {
@@ -612,7 +637,7 @@ class ShareCaptureRecordsDialogState extends State<ShareCaptureRecordsDialog> {
   bool get canShare =>
       selectedCount > 0 && ExportColumn.isValidSelection(_selectedColumns);
 
-  bool get _isFocusedNewRecordView =>
+  bool get canExpandToToday =>
       _visibleRecords.length < widget.eligibleRecords.length;
 
   void selectAllToday() {
@@ -620,6 +645,7 @@ class ShareCaptureRecordsDialogState extends State<ShareCaptureRecordsDialog> {
       // Ampliar al pool completo de hoy y seleccionar todos.
       _visibleRecords = List<NepRecord>.from(widget.eligibleRecords);
       _selectedIds = widget.eligibleRecords.map((r) => r.id).toSet();
+      _listMode = ShareInitialListMode.today;
     });
   }
 
@@ -674,6 +700,23 @@ class ShareCaptureRecordsDialogState extends State<ShareCaptureRecordsDialog> {
     return 'Compartir $count registros';
   }
 
+  String _helpText() {
+    switch (_listMode) {
+      case ShareInitialListMode.newRecord:
+        return 'Se muestra el registro recién creado.\n'
+            'Usa «Seleccionar todos los de hoy» para ver y '
+            'compartir más registros del día.';
+      case ShareInitialListMode.session:
+        return 'Se muestran los registros de la sesión actual.\n'
+            'Usa «Seleccionar todos los de hoy» solo si necesitas '
+            'incluir otros registros del día.';
+      case ShareInitialListMode.today:
+        return 'El registro indicado está seleccionado.\n'
+            'Puedes elegir otros registros de hoy si deseas '
+            'compartirlos juntos.';
+    }
+  }
+
   String _rowLabel(NepRecord record) {
     final time = widget.formatDateTime(record.createdAt).split(' ').last;
     return '$time | Telar ${record.telar} | Tela ${record.tela} | '
@@ -704,13 +747,7 @@ class ShareCaptureRecordsDialogState extends State<ShareCaptureRecordsDialog> {
               ),
               const SizedBox(height: 6),
               Text(
-                _isFocusedNewRecordView
-                    ? 'Se muestra el registro recién creado.\n'
-                        'Usa «Seleccionar todos los de hoy» para ver y '
-                        'compartir más registros.'
-                    : 'El registro indicado está seleccionado.\n'
-                        'Puedes elegir otros registros de hoy si deseas '
-                        'compartirlos juntos.',
+                _helpText(),
                 style: const TextStyle(fontSize: 12.5, color: AppColors.muted),
               ),
               const SizedBox(height: 12),
@@ -719,7 +756,10 @@ class ShareCaptureRecordsDialogState extends State<ShareCaptureRecordsDialog> {
                 runSpacing: 8,
                 children: [
                   OutlinedButton(
-                    onPressed: selectAllToday,
+                    onPressed: canExpandToToday ||
+                            _selectedIds.length < widget.eligibleRecords.length
+                        ? selectAllToday
+                        : null,
                     child: const Text('Seleccionar todos los de hoy'),
                   ),
                   OutlinedButton(
