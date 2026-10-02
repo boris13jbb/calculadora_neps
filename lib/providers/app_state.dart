@@ -2571,7 +2571,8 @@ class AppState extends ChangeNotifier {
     _clearCaptureInputs();
 
     final level = alertService.getAlertLevel(record.neps);
-    if (level.isSevere) {
+    // Clasificación siempre oficial; notificaciones solo si alertas activas.
+    if (alertService.shouldRaiseAlert(level) && level.isSevere) {
       _showCriticalAlertSnackBar(record);
       unawaited(
         notificationService.showCriticalAlert(

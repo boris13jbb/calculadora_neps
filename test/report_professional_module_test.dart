@@ -8,6 +8,7 @@ import 'package:calculadora_neps/features/reports/professional/models/report_con
 import 'package:calculadora_neps/features/reports/professional/models/report_filter_configuration.dart';
 import 'package:calculadora_neps/features/reports/professional/models/report_period_preset.dart';
 import 'package:calculadora_neps/features/reports/professional/models/report_section_type.dart';
+import 'package:calculadora_neps/features/reports/professional/services/professional_report_excel_service.dart';
 import 'package:calculadora_neps/features/reports/professional/services/professional_report_pdf_service.dart';
 import 'package:calculadora_neps/features/reports/professional/services/report_comparison_service.dart';
 import 'package:calculadora_neps/features/reports/professional/services/report_conclusion_engine.dart';
@@ -16,6 +17,9 @@ import 'package:calculadora_neps/features/reports/professional/services/report_g
 import 'package:calculadora_neps/features/reports/professional/services/report_period_resolver.dart';
 import 'package:calculadora_neps/features/reports/professional/services/report_statistics_service.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
+import 'package:calculadora_neps/models/neps_classification.dart';
+import 'package:calculadora_neps/utils/pdf_official_neps_criteria.dart';
+import 'package:excel/excel.dart' as xls;
 
 NepRecord _record({
   required String telar,
@@ -322,6 +326,92 @@ void main() {
 
       expect(bytes, isNotEmpty);
       expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+    });
+
+    test(
+      'buildPdf sección alertas genera PDF válido con fuente de leyenda oficial',
+      () async {
+        final records = [
+          _record(telar: '1', neps: 10),
+          _record(telar: '2', neps: 30),
+          _record(telar: '3', neps: 50),
+          _record(telar: '4', neps: 80),
+        ];
+        final config = ReportConfiguration(
+          periodPreset: ReportPeriodPreset.todos,
+        );
+        config.sections
+          ..clear()
+          ..add(ReportSectionType.alertas);
+        final data = builder.build(config: config, sourceRecords: records);
+
+        final bytes = await pdfService.buildPdf(
+          data,
+          generatedBy: 'Test',
+          userRole: 'admin',
+        );
+
+        expect(bytes, isNotEmpty);
+        expect(String.fromCharCodes(bytes.take(4)), '%PDF');
+        // Contenido textual comprimido en PDF; la fuente central garantiza
+        // displayLabel + umbrales oficiales (también usados en Excel/Settings).
+        final labels =
+            PdfOfficialNepsCriteria.rows().map((r) => r.calificacion).toList();
+        expect(labels, [
+          NepsClassification.ok.displayLabel,
+          NepsClassification.mencion.displayLabel,
+          NepsClassification.critico.displayLabel,
+          NepsClassification.segundaCalidad.displayLabel,
+        ]);
+        expect(labels, isNot(contains('Criticos')));
+        expect(labels, isNot(contains('Menciones')));
+        expect(
+          NepsClassification.critico.displayLabel,
+          'Crítico — Realizar Ajuste',
+        );
+      },
+    );
+  });
+
+  group('ProfessionalReportExcelService', () {
+    final excelService = ProfessionalReportExcelService();
+    final builder = ReportDataBuilder();
+
+    test('hoja Alertas usa displayLabel de NepsClassification', () {
+      final records = [
+        _record(telar: '1', neps: 10),
+        _record(telar: '2', neps: 30),
+        _record(telar: '3', neps: 50),
+        _record(telar: '4', neps: 80),
+      ];
+      final config = ReportConfiguration(
+        periodPreset: ReportPeriodPreset.todos,
+      );
+      config.sections
+        ..clear()
+        ..add(ReportSectionType.alertas);
+      final data = builder.build(config: config, sourceRecords: records);
+
+      final bytes = excelService.buildExcel(data);
+      expect(bytes, isNotNull);
+
+      final excel = xls.Excel.decodeBytes(bytes!);
+      expect(excel.sheets.containsKey('Alertas'), isTrue);
+      final sheet = excel['Alertas'];
+
+      String cellText(int row, int col) {
+        final value = sheet
+            .cell(
+                xls.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: row))
+            .value;
+        return value?.toString() ?? '';
+      }
+
+      expect(cellText(0, 0), NepsClassification.ok.displayLabel);
+      expect(cellText(1, 0), NepsClassification.mencion.displayLabel);
+      expect(cellText(2, 0), NepsClassification.critico.displayLabel);
+      expect(cellText(3, 0), NepsClassification.segundaCalidad.displayLabel);
+      expect(cellText(2, 0), 'Crítico — Realizar Ajuste');
     });
   });
 

@@ -14,6 +14,7 @@ import '../../providers/app_state.dart';
 import '../../services/alert_config_service.dart';
 import '../../services/notification_preferences_service.dart';
 import '../../services/notification_service.dart';
+import '../../utils/pdf_official_neps_criteria.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -110,9 +111,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       navId: AppNavId.settings,
       child: AppPage(
         title: 'Configuración',
-        subtitle: phone
-            ? null
-            : 'Criterios oficiales NEPS y parámetros de alertas',
+        subtitle:
+            phone ? null : 'Criterios oficiales NEPS y parámetros de alertas',
         maxContentWidth: 1080,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -169,7 +169,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// Criterios oficiales de calificación (solo lectura).
+  ///
+  /// Filas desde [PdfOfficialNepsCriteria.rows] (umbrales de
+  /// [NepsQualityCriteria] + etiquetas de [NepsClassification]).
   Widget _criteriaSection() {
+    final criteriaRows = PdfOfficialNepsCriteria.rows();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -200,42 +205,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: AppColors.border.withValues(alpha: 0.7),
                   ),
                 ),
-                children: const [
-                  TableRow(
+                children: [
+                  const TableRow(
                     children: [
                       _TableHeader('Calificación'),
                       _TableHeader('Puntaje'),
                       _TableHeader('NEPS/m²'),
                     ],
                   ),
-                  TableRow(
-                    children: [
-                      _TableCell('OK'),
-                      _TableCell('0 – 18'),
-                      _TableCell('≤ 200'),
-                    ],
-                  ),
-                  TableRow(
-                    children: [
-                      _TableCell('Mención'),
-                      _TableCell('19 – 45'),
-                      _TableCell('200 < … ≤ 500'),
-                    ],
-                  ),
-                  TableRow(
-                    children: [
-                      _TableCell('Crítico — Realizar Ajuste'),
-                      _TableCell('46 – 54'),
-                      _TableCell('500 < … ≤ 600'),
-                    ],
-                  ),
-                  TableRow(
-                    children: [
-                      _TableCell('2da Calidad'),
-                      _TableCell('≥ 55'),
-                      _TableCell('> 600'),
-                    ],
-                  ),
+                  for (final row in criteriaRows)
+                    TableRow(
+                      children: [
+                        _TableCell(row.calificacion),
+                        _TableCell(row.puntaje),
+                        _TableCell(row.nepsPerM2),
+                      ],
+                    ),
                 ],
               ),
               const SizedBox(height: 12),

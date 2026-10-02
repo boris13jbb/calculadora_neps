@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:excel/excel.dart' as xls;
 
 import '../../../../core/constants.dart';
+import '../../../../models/neps_classification.dart';
 import '../models/report_detail_column.dart';
 import '../models/report_section_type.dart';
 import 'report_data_builder.dart';
@@ -172,10 +173,23 @@ class ProfessionalReportExcelService {
     final sheet = excel[name];
     final s = data.statistics;
     var row = 0;
-    _writeRow(sheet, row++, ['OK', s.normalCount]);
-    _writeRow(sheet, row++, ['Menciones', s.warningCount]);
-    _writeRow(sheet, row++, ['Criticos', s.criticalCount]);
-    _writeRow(sheet, row++, ['2da Calidad', s.segundaCalidadCount]);
+    _writeRow(
+        sheet, row++, [NepsClassification.ok.displayLabel, s.normalCount]);
+    _writeRow(
+      sheet,
+      row++,
+      [NepsClassification.mencion.displayLabel, s.warningCount],
+    );
+    _writeRow(
+      sheet,
+      row++,
+      [NepsClassification.critico.displayLabel, s.criticalCount],
+    );
+    _writeRow(
+      sheet,
+      row++,
+      [NepsClassification.segundaCalidad.displayLabel, s.segundaCalidadCount],
+    );
     _writeRow(sheet, row++, ['Revisados', s.reviewedCount]);
     _writeRow(sheet, row++, ['Pendientes', s.pendingReviewCount]);
   }
