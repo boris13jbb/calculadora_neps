@@ -12,6 +12,7 @@ import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
 import '../services/alert_service.dart';
 import '../services/analytics_service.dart';
+import '../utils/excel_cell_value.dart';
 import '../utils/pdf_official_neps_criteria.dart';
 import '../utils/record_filter_helper.dart';
 
@@ -138,7 +139,8 @@ class ReportExportService {
         ExportColumn.tela => item.tela,
         ExportColumn.telar => item.telar,
         ExportColumn.neps => item.neps,
-        ExportColumn.mts => calculateMts(item.neps),
+        // Mts se exporta redondeado (decimals=0) para evitar 355.555… / 356.0.
+        ExportColumn.mts => calculateMts(item.neps).round(),
         ExportColumn.estadoAlerta => item.estadoAlerta,
         ExportColumn.observacion => item.observacion,
         ExportColumn.recomendacion => _recommendationFor(item, all),
@@ -155,12 +157,15 @@ class ReportExportService {
     List<ExportColumn> columns,
   ) {
     final row = List<String>.filled(columns.length, '');
-    final nroIdx = columns.indexOf(ExportColumn.nro);
+    if (columns.isEmpty) return row;
+    // Layout de referencia: etiqueta en A, conteo en B (Fecha).
+    row[0] = 'TOTAL REGISTROS';
     final fechaIdx = columns.indexOf(ExportColumn.fecha);
-    if (nroIdx >= 0) row[nroIdx] = '$count';
     if (fechaIdx >= 0) {
-      row[fechaIdx] = 'TOTAL REGISTROS';
-    } else if (columns.isNotEmpty) {
+      row[fechaIdx] = '$count';
+    } else if (columns.length > 1) {
+      row[1] = '$count';
+    } else {
       row[0] = 'TOTAL REGISTROS: $count';
     }
     return row;
@@ -362,7 +367,12 @@ class ReportExportService {
         final parsed = double.tryParse(value.replaceAll(',', '.'));
         if (parsed != null &&
             (column == ExportColumn.neps || column == ExportColumn.mts)) {
-          cell.value = xls.DoubleCellValue(parsed);
+          cell.value = excelNumericCellValue(parsed);
+        } else if (parsed != null &&
+            column == ExportColumn.fecha &&
+            int.tryParse(value) != null) {
+          // Conteo de TOTAL REGISTROS en columna Fecha.
+          cell.value = excelNumericCellValue(parsed);
         } else {
           cell.value = xls.TextCellValue(value);
         }
@@ -414,7 +424,7 @@ class ReportExportService {
           xls.CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex),
         );
         if (value is num) {
-          cell.value = xls.DoubleCellValue(value.toDouble());
+          cell.value = excelNumericCellValue(value);
         } else {
           cell.value = xls.TextCellValue(value.toString());
         }
@@ -435,7 +445,7 @@ class ReportExportService {
       sheet
           .cell(xls.CellIndex.indexByColumnRow(
               columnIndex: nepsColIndex, rowIndex: totalRow))
-          .value = xls.DoubleCellValue(_analytics.totalNeps(records));
+          .value = excelNumericCellValue(_analytics.totalNeps(records));
       sheet
           .cell(xls.CellIndex.indexByColumnRow(
               columnIndex: 0, rowIndex: totalRow + 1))
@@ -443,8 +453,8 @@ class ReportExportService {
       sheet
           .cell(xls.CellIndex.indexByColumnRow(
               columnIndex: nepsColIndex, rowIndex: totalRow + 1))
-          .value = xls.DoubleCellValue(
-        _analytics.promedioNeps(records).roundToDouble(),
+          .value = excelNumericCellValue(
+        _analytics.promedioNeps(records).round(),
       );
     }
 
@@ -484,7 +494,7 @@ class ReportExportService {
         );
         final value = values[col];
         if (value is num) {
-          cell.value = xls.DoubleCellValue(value.toDouble());
+          cell.value = excelNumericCellValue(value);
         } else {
           cell.value = xls.TextCellValue(value.toString());
         }
@@ -533,7 +543,7 @@ class ReportExportService {
         );
         final value = values[col];
         if (value is num) {
-          cell.value = xls.DoubleCellValue(value.toDouble());
+          cell.value = excelNumericCellValue(value);
         } else {
           cell.value = xls.TextCellValue(value.toString());
         }
@@ -558,13 +568,13 @@ class ReportExportService {
           .value = xls.TextCellValue(_formatDateOnly(point.date));
       sheet
           .cell(xls.CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
-          .value = xls.IntCellValue(point.recordCount);
+          .value = excelNumericCellValue(point.recordCount);
       sheet
           .cell(xls.CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
-          .value = xls.DoubleCellValue(point.totalNeps);
+          .value = excelNumericCellValue(point.totalNeps);
       sheet
           .cell(xls.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row))
-          .value = xls.DoubleCellValue(point.averageNeps.roundToDouble());
+          .value = excelNumericCellValue(point.averageNeps.round());
     }
     _autoColumnWidths(sheet, headers.length, trend.length + 1);
   }
@@ -577,7 +587,7 @@ class ReportExportService {
     final headerStyle = xls.CellStyle(
       bold: true,
       backgroundColorHex: xls.ExcelColor.fromHexString('#1F2A2E'),
-      fontColorHex: xls.ExcelColor.fromHexString('#F7EAC5'),
+      fontColorHex: xls.ExcelColor.fromHexString('#FFFFFF'),
     );
     for (var i = 0; i < headers.length; i++) {
       final cell = sheet.cell(

@@ -4,6 +4,7 @@ import 'package:excel/excel.dart' as xls;
 
 import '../../../../core/constants.dart';
 import '../../../../models/neps_classification.dart';
+import '../../../../utils/excel_cell_value.dart';
 import '../models/report_detail_column.dart';
 import '../models/report_section_type.dart';
 import 'report_data_builder.dart';
@@ -298,7 +299,7 @@ class ProfessionalReportExcelService {
       ReportDetailColumn.idRegistro => r.id,
       ReportDetailColumn.fecha => r.createdAt.toIso8601String(),
       ReportDetailColumn.neps => r.neps,
-      ReportDetailColumn.mtsCalculados => r.mtsCalculados,
+      ReportDetailColumn.mtsCalculados => r.mtsCalculados.round(),
       ReportDetailColumn.telar => r.telar,
       ReportDetailColumn.tela => r.tela,
       ReportDetailColumn.loteTrama => r.loteTrama,
@@ -327,7 +328,7 @@ class ProfessionalReportExcelService {
       final cell = sheet
           .cell(xls.CellIndex.indexByColumnRow(columnIndex: i, rowIndex: row));
       if (v is num) {
-        cell.value = xls.DoubleCellValue(v.toDouble());
+        cell.value = excelNumericCellValue(v);
       } else {
         cell.value = xls.TextCellValue(v.toString());
       }
