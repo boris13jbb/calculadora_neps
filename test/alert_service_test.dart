@@ -95,11 +95,33 @@ void main() {
       expect(top.first.criticalCount, 1);
     });
 
-    test('alertas inactivas fuerzan OK', () {
-      final inactive = AlertService(
-        config: const AlertConfig(alertasActivas: false),
+    test('alertas activas: clasificación oficial correcta', () {
+      final active = AlertService(
+        config: const AlertConfig(alertasActivas: true),
       );
-      expect(inactive.getAlertLevel(99), AlertLevel.ok);
+      expect(active.getAlertLevel(18), AlertLevel.ok);
+      expect(active.getAlertLevel(30), AlertLevel.mencion);
+      expect(active.getAlertLevel(50), AlertLevel.critico);
+      expect(active.getAlertLevel(99), AlertLevel.segundaCalidad);
+      expect(active.shouldRaiseAlert(AlertLevel.mencion), isTrue);
+      expect(active.shouldRaiseAlert(AlertLevel.ok), isFalse);
     });
+
+    test(
+      'alertas inactivas: clasificación de calidad intacta, sin elevar alerta',
+      () {
+        final inactive = AlertService(
+          config: const AlertConfig(alertasActivas: false),
+        );
+        expect(inactive.getAlertLevel(18), AlertLevel.ok);
+        expect(inactive.getAlertLevel(30), AlertLevel.mencion);
+        expect(inactive.getAlertLevel(50), AlertLevel.critico);
+        expect(inactive.getAlertLevel(99), AlertLevel.segundaCalidad);
+        expect(inactive.alertsEnabled, isFalse);
+        expect(inactive.shouldRaiseAlert(AlertLevel.mencion), isFalse);
+        expect(inactive.shouldRaiseAlert(AlertLevel.critico), isFalse);
+        expect(inactive.shouldRaiseAlert(AlertLevel.segundaCalidad), isFalse);
+      },
+    );
   });
 }

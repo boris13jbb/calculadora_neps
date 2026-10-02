@@ -17,14 +17,27 @@ class AlertService {
     _config = config;
   }
 
+  /// Interruptor operativo de alertas/notificaciones.
+  ///
+  /// No altera la calificación de calidad ([getAlertLevel]).
+  bool get alertsEnabled => _config.alertasActivas;
+
   /// Obtiene la calificación oficial según el puntaje (neps crudos).
   ///
   /// [neps] es el valor capturado en el área de prueba (0.09 m²); equivale al
   /// puntaje 0–55+ de los criterios oficiales.
+  ///
+  /// Siempre usa [classifyNeps]; [alertasActivas] no modifica el resultado.
   AlertLevel getAlertLevel(double neps) {
-    if (!_config.alertasActivas) return AlertLevel.ok;
     return classifyNeps(score: neps.round());
   }
+
+  /// Indica si debe dispararse una alerta/notificación operativa para [level].
+  ///
+  /// Separado de la clasificación de calidad: con alertas desactivadas la
+  /// calificación sigue siendo la oficial, pero no se eleva la alerta.
+  bool shouldRaiseAlert(AlertLevel level) =>
+      _config.alertasActivas && level != AlertLevel.ok;
 
   /// Evaluación completa de un registro con recomendaciones.
   AlertEvaluation evaluateRecord(
