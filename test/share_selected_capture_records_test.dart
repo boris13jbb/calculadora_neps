@@ -109,7 +109,7 @@ void main() {
       expect(selectedId, isNull);
     });
 
-    test('visibilidad: solo newlyCreated cuando no hay fila', () {
+    test('CASO1: sesión con 3 registros → los 3 visibles inicialmente', () {
       final eligible = [
         _rec(id: 'r3', createdAt: todayEvening, uid: 'A'),
         _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
@@ -117,34 +117,106 @@ void main() {
       ];
       final visible = resolveShareInitialVisibleRecords(
         eligibleRecords: eligible,
-        newlyCreatedRecordId: 'r3',
+        sessionRecords: eligible,
       );
-      expect(visible.map((r) => r.id), ['r3']);
+      expect(visible.map((r) => r.id), ['r3', 'r2', 'r1']);
+      expect(
+        resolveShareInitialListMode(
+          eligibleRecords: eligible,
+          visibleRecords: visible,
+          sessionRecords: eligible,
+        ),
+        ShareInitialListMode.session,
+      );
     });
 
-    test('visibilidad: lista completa al compartir desde fila', () {
+    test('CASO2: dos sesiones → solo la sesión actual inicialmente', () {
       final eligible = [
         _rec(id: 'r3', createdAt: todayEvening, uid: 'A'),
         _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
         _rec(id: 'r1', createdAt: todayMorning, uid: 'A'),
       ];
+      final session = [eligible[1], eligible[2]]; // r2, r1 (sesión B)
       final visible = resolveShareInitialVisibleRecords(
         eligibleRecords: eligible,
-        initiallySelectedRecord: eligible[1], // r2
-        newlyCreatedRecordId: 'r3',
+        sessionRecords: session,
+      );
+      expect(visible.map((r) => r.id), ['r2', 'r1']);
+      expect(visible.map((r) => r.id), isNot(contains('r3')));
+      expect(
+        resolveShareInitialListMode(
+          eligibleRecords: eligible,
+          visibleRecords: visible,
+          sessionRecords: session,
+        ),
+        ShareInitialListMode.session,
+      );
+    });
+
+    test('visibilidad: sesión completa aunque exista newlyCreated', () {
+      final eligible = [
+        _rec(id: 'r3', createdAt: todayEvening, uid: 'A'),
+        _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
+        _rec(id: 'r1', createdAt: todayMorning, uid: 'A'),
+      ];
+      // newlyCreated afecta selección, no reduce la lista de sesión.
+      final visible = resolveShareInitialVisibleRecords(
+        eligibleRecords: eligible,
+        sessionRecords: eligible,
       );
       expect(visible.map((r) => r.id), ['r3', 'r2', 'r1']);
     });
 
-    test('visibilidad: lista completa sin newlyCreated', () {
+    test('visibilidad: toolbar muestra solo sesión, no todo el día', () {
+      final eligible = [
+        _rec(id: 'r3', createdAt: todayEvening, uid: 'A'),
+        _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
+        _rec(id: 'r1', createdAt: todayMorning, uid: 'A'),
+      ];
+      final session = [eligible.first]; // solo r3 de la nueva sesión
+      final visible = resolveShareInitialVisibleRecords(
+        eligibleRecords: eligible,
+        sessionRecords: session,
+      );
+      expect(visible.map((r) => r.id), ['r3']);
+      expect(visible.map((r) => r.id), isNot(contains('r1')));
+      expect(visible.map((r) => r.id), isNot(contains('r2')));
+      expect(
+        resolveShareInitialListMode(
+          eligibleRecords: eligible,
+          visibleRecords: visible,
+          sessionRecords: session,
+        ),
+        ShareInitialListMode.session,
+      );
+    });
+
+    test('visibilidad: sin sesión usable → lista completa de hoy', () {
       final eligible = [
         _rec(id: 'r3', createdAt: todayEvening, uid: 'A'),
         _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
       ];
       final visible = resolveShareInitialVisibleRecords(
         eligibleRecords: eligible,
+        sessionRecords: const [],
       );
       expect(visible.map((r) => r.id), ['r3', 'r2']);
+      expect(
+        resolveShareInitialListMode(
+          eligibleRecords: eligible,
+          visibleRecords: visible,
+          sessionRecords: const [],
+        ),
+        ShareInitialListMode.today,
+      );
+    });
+
+    test('latest de sesión prioriza el más reciente de la sesión', () {
+      final session = [
+        _rec(id: 'r2', createdAt: todayNoon, uid: 'A'),
+        _rec(id: 'r1', createdAt: todayMorning, uid: 'A'),
+      ];
+      expect(resolveLatestRecord(session)?.id, 'r2');
     });
 
     test('E) ayer excluido de la lista', () {
@@ -228,15 +300,21 @@ void main() {
       String? initialSelectedId,
       List<NepRecord>? initialVisibleRecords,
       List<NepRecord>? eligibleRecords,
+      Set<String>? sessionRecordIds,
+      ShareInitialListMode initialListMode = ShareInitialListMode.today,
     }) async {
       final pool = eligibleRecords ?? eligible();
+      final visible = initialVisibleRecords ?? pool;
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.build(),
           home: Scaffold(
             body: ShareCaptureRecordsDialog(
               eligibleRecords: pool,
-              initialVisibleRecords: initialVisibleRecords,
+              initialVisibleRecords: visible,
+              sessionRecordIds:
+                  sessionRecordIds ?? visible.map((r) => r.id).toSet(),
+              initialListMode: initialListMode,
               initialSelectedId: initialSelectedId,
               initialColumns: ExportColumn.defaultSelection(),
               initialStyle: PdfReportStyle.completo,
@@ -253,7 +331,8 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Future<void> pumpNewRecordShare(WidgetTester tester) async {
+    /// Sesión actual = los 3 de hoy (CASO1 / tras crear varios).
+    Future<void> pumpFullSessionShare(WidgetTester tester) async {
       final eligibleList = eligible();
       final initialId = resolveShareInitialSelectedId(
         eligibleRecords: eligibleList,
@@ -262,13 +341,37 @@ void main() {
       );
       final visible = resolveShareInitialVisibleRecords(
         eligibleRecords: eligibleList,
-        newlyCreatedRecordId: 'r3',
+        sessionRecords: eligibleList,
       );
       await pumpDialog(
         tester,
         eligibleRecords: eligibleList,
         initialSelectedId: initialId,
         initialVisibleRecords: visible,
+        sessionRecordIds: eligibleList.map((r) => r.id).toSet(),
+        initialListMode: ShareInitialListMode.session,
+      );
+    }
+
+    /// Sesión B solo con r3; r1/r2 son de sesión anterior del mismo día.
+    Future<void> pumpSessionToolbarShare(WidgetTester tester) async {
+      final eligibleList = eligible();
+      final session = [eligibleList.first]; // solo r3
+      final visible = resolveShareInitialVisibleRecords(
+        eligibleRecords: eligibleList,
+        sessionRecords: session,
+      );
+      final initialId = resolveShareInitialSelectedId(
+        eligibleRecords: eligibleList,
+        latestTodayCaptureRecord: resolveLatestRecord(visible),
+      );
+      await pumpDialog(
+        tester,
+        eligibleRecords: eligibleList,
+        initialSelectedId: initialId,
+        initialVisibleRecords: visible,
+        sessionRecordIds: session.map((r) => r.id).toSet(),
+        initialListMode: ShareInitialListMode.session,
       );
     }
 
@@ -284,35 +387,81 @@ void main() {
     });
 
     testWidgets(
-        'TEST1) tras crear: solo C visible y seleccionado (A/B ocultos)',
+        'CASO1 UI: sesión con 3 registros → 3 visibles; recién creado seleccionado',
         (tester) async {
-      await pumpNewRecordShare(tester);
+      await pumpFullSessionShare(tester);
+
+      final state = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      expect(state.visibleRecords.map((r) => r.id).toSet(), {'r1', 'r2', 'r3'});
+      expect(state.selectedRecords.map((r) => r.id).toSet(), {'r3'});
+      expect(find.byType(CheckboxListTile), findsNWidgets(3));
+      expect(find.textContaining('sesión actual'), findsOneWidget);
+    });
+
+    testWidgets(
+        'CASO2/5 UI: segunda sesión → solo sus registros; expandir al día',
+        (tester) async {
+      await pumpSessionToolbarShare(tester);
 
       final state = tester.state<ShareCaptureRecordsDialogState>(
         find.byType(ShareCaptureRecordsDialog),
       );
       expect(state.visibleRecords.map((r) => r.id), ['r3']);
-      expect(state.selectedRecords.map((r) => r.id).toSet(), {'r3'});
       expect(state.visibleRecords.map((r) => r.id), isNot(contains('r1')));
       expect(state.visibleRecords.map((r) => r.id), isNot(contains('r2')));
       expect(find.byType(CheckboxListTile), findsOneWidget);
+
+      await tester.tap(find.text('Seleccionar registros de hoy'));
+      await tester.pump();
+
+      final expanded = tester.state<ShareCaptureRecordsDialogState>(
+        find.byType(ShareCaptureRecordsDialog),
+      );
+      expect(
+        expanded.visibleRecords.map((r) => r.id).toSet(),
+        {'r1', 'r2', 'r3'},
+      );
+      expect(
+        expanded.selectedRecords.map((r) => r.id).toSet(),
+        {'r1', 'r2', 'r3'},
+      );
     });
 
-    testWidgets('TEST2) contador Compartir 1 registro con solo C',
+    testWidgets(
+        'CASO3: seleccionar todos de la sesión (IDs, no otras sesiones)',
         (tester) async {
-      await pumpNewRecordShare(tester);
+      final eligibleList = eligible();
+      // Día: r1,r2,r3 — sesión actual solo r2+r1.
+      final session = eligibleList.where((r) => r.id != 'r3').toList();
+      final visible = resolveShareInitialVisibleRecords(
+        eligibleRecords: eligibleList,
+        sessionRecords: session,
+      );
+      await pumpDialog(
+        tester,
+        eligibleRecords: eligibleList,
+        initialSelectedId: 'r2',
+        initialVisibleRecords: visible,
+        sessionRecordIds: session.map((r) => r.id).toSet(),
+        initialListMode: ShareInitialListMode.session,
+      );
+
+      await tester.tap(find.text('Seleccionar todos de la sesión'));
+      await tester.pump();
 
       final state = tester.state<ShareCaptureRecordsDialogState>(
         find.byType(ShareCaptureRecordsDialog),
       );
-      expect(state.selectedCount, 1);
-      expect(state.visibleRecords.length, 1);
-      expect(find.text('Compartir 1 registro'), findsOneWidget);
+      expect(state.selectedRecords.map((r) => r.id).toSet(), {'r1', 'r2'});
+      expect(state.selectedRecords.map((r) => r.id), isNot(contains('r3')));
+      expect(state.visibleRecords.map((r) => r.id).toSet(), {'r1', 'r2'});
     });
 
-    testWidgets('TEST3) seleccionar todos amplía visibles y selecciona hoy',
+    testWidgets('CASO4: seleccionar registros de hoy amplía el pool',
         (tester) async {
-      await pumpNewRecordShare(tester);
+      await pumpSessionToolbarShare(tester);
       expect(
         tester
             .state<ShareCaptureRecordsDialogState>(
@@ -324,7 +473,7 @@ void main() {
         {'r3'},
       );
 
-      await tester.tap(find.text('Seleccionar todos los de hoy'));
+      await tester.tap(find.text('Seleccionar registros de hoy'));
       await tester.pump();
 
       final state = tester.state<ShareCaptureRecordsDialogState>(
@@ -337,8 +486,8 @@ void main() {
       expect(find.byType(CheckboxListTile), findsNWidgets(3));
     });
 
-    testWidgets('TEST4) limpiar deja 0 seleccionados', (tester) async {
-      await pumpNewRecordShare(tester);
+    testWidgets('CASO7: limpiar deja 0 seleccionados', (tester) async {
+      await pumpFullSessionShare(tester);
       await tester.tap(find.text('Limpiar selección'));
       await tester.pump();
 
@@ -349,10 +498,12 @@ void main() {
       expect(state.selectedCount, 0);
     });
 
-    testWidgets('TEST5) compartir desde fila B: B seleccionado, no C',
+    testWidgets('CASO6: compartir desde fila → solo ese ID seleccionado',
         (tester) async {
       final eligibleList = eligible();
       final fromRow = eligibleList.firstWhere((r) => r.id == 'r2');
+      // Sesión actual: r2 y r1 (r3 es de otra sesión del mismo día).
+      final session = eligibleList.where((r) => r.id != 'r3').toList();
       final initialId = resolveShareInitialSelectedId(
         eligibleRecords: eligibleList,
         initiallySelectedRecord: fromRow,
@@ -361,14 +512,15 @@ void main() {
       );
       final visible = resolveShareInitialVisibleRecords(
         eligibleRecords: eligibleList,
-        initiallySelectedRecord: fromRow,
-        newlyCreatedRecordId: 'r3',
+        sessionRecords: session,
       );
       await pumpDialog(
         tester,
         eligibleRecords: eligibleList,
         initialSelectedId: initialId,
         initialVisibleRecords: visible,
+        sessionRecordIds: session.map((r) => r.id).toSet(),
+        initialListMode: ShareInitialListMode.session,
       );
 
       final state = tester.state<ShareCaptureRecordsDialogState>(
@@ -376,47 +528,37 @@ void main() {
       );
       expect(state.selectedRecords.map((r) => r.id).toSet(), {'r2'});
       expect(state.selectedRecords.map((r) => r.id), isNot(contains('r3')));
-      expect(state.visibleRecords.map((r) => r.id).toSet(), {'r1', 'r2', 'r3'});
+      expect(state.visibleRecords.map((r) => r.id).toSet(), {'r1', 'r2'});
+      expect(state.visibleRecords.map((r) => r.id), isNot(contains('r3')));
     });
 
-    testWidgets('TEST6) fallback latestToday sin newlyCreated ni fila',
+    testWidgets('CASO8: selección por IDs estable aunque el orden cambie',
         (tester) async {
       final eligibleList = eligible();
-      final initialId = resolveShareInitialSelectedId(
-        eligibleRecords: eligibleList,
-        latestTodayCaptureRecord: eligibleList.first,
-      );
-      final visible = resolveShareInitialVisibleRecords(
-        eligibleRecords: eligibleList,
-      );
-      expect(initialId, 'r3');
+      // Orden distinto en la lista visible.
+      final shuffledVisible = [
+        eligibleList[2],
+        eligibleList[0],
+        eligibleList[1],
+      ];
       await pumpDialog(
         tester,
         eligibleRecords: eligibleList,
-        initialSelectedId: initialId,
-        initialVisibleRecords: visible,
+        initialSelectedId: 'r1',
+        initialVisibleRecords: shuffledVisible,
+        sessionRecordIds: eligibleList.map((r) => r.id).toSet(),
+        initialListMode: ShareInitialListMode.session,
       );
 
       final state = tester.state<ShareCaptureRecordsDialogState>(
         find.byType(ShareCaptureRecordsDialog),
       );
-      expect(state.selectedRecords.map((r) => r.id), ['r3']);
-      expect(state.visibleRecords.length, 3);
-    });
-
-    testWidgets('TEST7) sourceRecords exportables son solo el recién creado',
-        (tester) async {
-      await pumpNewRecordShare(tester);
-
-      final state = tester.state<ShareCaptureRecordsDialogState>(
-        find.byType(ShareCaptureRecordsDialog),
-      );
-      final sourceRecords = state.selectedRecords;
-      expect(sourceRecords.map((r) => r.id), ['r3']);
-      expect(sourceRecords.length, 1);
+      expect(state.selectedRecords.map((r) => r.id), ['r1']);
+      await tester.tap(find.text('Seleccionar todos de la sesión'));
+      await tester.pump();
       expect(
-        sourceRecords.map((r) => r.id).toSet(),
-        isNot(equals({'r1', 'r2', 'r3'})),
+        state.selectedRecords.map((r) => r.id).toSet(),
+        {'r1', 'r2', 'r3'},
       );
     });
 
@@ -426,18 +568,17 @@ void main() {
         find.byType(ShareCaptureRecordsDialog),
       );
 
-      // Marcar r1 (tercera fila en lista ordenada desc: r3, r2, r1)
-      final tiles = find.byType(CheckboxListTile);
-      await tester.tap(tiles.at(2));
+      // Selección por ID estable (evita depender de hit-test / scroll).
+      state.toggleRecord('r1', true);
       await tester.pump();
 
       expect(state.selectedRecords.map((r) => r.id).toSet(), {'r3', 'r1'});
       expect(find.text('Compartir 2 registros'), findsOneWidget);
     });
 
-    testWidgets('D) seleccionar todos los de hoy', (tester) async {
+    testWidgets('D) seleccionar registros de hoy', (tester) async {
       await pumpDialog(tester, initialSelectedId: 'r3');
-      await tester.tap(find.text('Seleccionar todos los de hoy'));
+      await tester.tap(find.text('Seleccionar registros de hoy'));
       await tester.pump();
 
       final state = tester.state<ShareCaptureRecordsDialogState>(

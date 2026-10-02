@@ -45,7 +45,8 @@ NepRecord? resolveLatestTodayCaptureRecord({
 ///
 /// 1. [initiallySelectedRecord] (Compartir desde fila)
 /// 2. [newlyCreatedRecordId] (registro recién creado en Captura)
-/// 3. [latestTodayCaptureRecord] (fallback toolbar)
+/// 3. [latestTodayCaptureRecord] (fallback toolbar; suele ser el más reciente
+///    de la sesión si el llamador ya lo acotó)
 /// 4. null si ninguno es elegible
 String? resolveShareInitialSelectedId({
   required List<NepRecord> eligibleRecords,
@@ -69,36 +70,84 @@ String? resolveShareInitialSelectedId({
   return null;
 }
 
+/// Modo de lista inicial en Captura → Compartir (copy / UX).
+enum ShareInitialListMode {
+  /// Registros de la sesión de captura activa.
+  session,
+
+  /// Pool completo de hoy.
+  today,
+}
+
+/// Intersección estable: registros de [sessionRecords] que siguen en [eligible].
+///
+/// Conserva el orden de [eligibleRecords] (típicamente más reciente primero).
+List<NepRecord> intersectEligibleSessionRecords({
+  required List<NepRecord> eligibleRecords,
+  List<NepRecord>? sessionRecords,
+}) {
+  if (sessionRecords == null || sessionRecords.isEmpty) {
+    return const [];
+  }
+  final sessionIds = sessionRecords.map((record) => record.id).toSet();
+  return eligibleRecords
+      .where((record) => sessionIds.contains(record.id))
+      .toList(growable: false);
+}
+
 /// Registros visibles al abrir Captura → Compartir.
 ///
 /// Separa "qué mostrar" de "qué seleccionar":
-/// - Compartir desde fila → lista completa de hoy (la fila define la selección).
-/// - Tras crear un registro (`newlyCreatedRecordId` elegible, sin fila) →
-///   únicamente ese registro por ID estable.
-/// - Menú general / fallback → lista completa de hoy.
+/// - Con [sessionRecords] de la sesión activa → **todos** los de esa sesión
+///   (también tras crear o desde fila), no todo el día.
+/// - Sin sesión usable → pool completo de hoy.
 ///
-/// "Seleccionar todos los de hoy" usa el pool completo [eligibleRecords] y
+/// "Seleccionar registros de hoy" usa el pool completo [eligibleRecords] y
 /// puede ampliar la lista visible en el diálogo.
 List<NepRecord> resolveShareInitialVisibleRecords({
   required List<NepRecord> eligibleRecords,
-  NepRecord? initiallySelectedRecord,
-  String? newlyCreatedRecordId,
+  List<NepRecord>? sessionRecords,
 }) {
-  // Fila: no enfocar; mantener listado general de hoy.
-  final fromRow = initiallySelectedRecord?.id;
-  if (fromRow != null &&
-      fromRow.isNotEmpty &&
-      eligibleRecords.any((record) => record.id == fromRow)) {
-    return List<NepRecord>.from(eligibleRecords);
-  }
-
-  final newId = newlyCreatedRecordId?.trim();
-  if (newId != null && newId.isNotEmpty) {
-    final focused = eligibleRecords
-        .where((record) => record.id == newId)
-        .toList(growable: false);
-    if (focused.isNotEmpty) return focused;
+  // La sesión actual es la unidad de visibilidad inicial (todos sus registros).
+  final sessionVisible = intersectEligibleSessionRecords(
+    eligibleRecords: eligibleRecords,
+    sessionRecords: sessionRecords,
+  );
+  if (sessionVisible.isNotEmpty) {
+    return List<NepRecord>.from(sessionVisible);
   }
 
   return List<NepRecord>.from(eligibleRecords);
+}
+
+/// Modo de lista coherente con [resolveShareInitialVisibleRecords].
+ShareInitialListMode resolveShareInitialListMode({
+  required List<NepRecord> eligibleRecords,
+  required List<NepRecord> visibleRecords,
+  List<NepRecord>? sessionRecords,
+}) {
+  final sessionVisible = intersectEligibleSessionRecords(
+    eligibleRecords: eligibleRecords,
+    sessionRecords: sessionRecords,
+  );
+  if (sessionVisible.isNotEmpty &&
+      visibleRecords.length == sessionVisible.length &&
+      visibleRecords.every(
+        (record) => sessionVisible.any((session) => session.id == record.id),
+      )) {
+    return ShareInitialListMode.session;
+  }
+
+  return ShareInitialListMode.today;
+}
+
+/// Más reciente de una lista ya filtrada, o null.
+NepRecord? resolveLatestRecord(Iterable<NepRecord> records) {
+  NepRecord? latest;
+  for (final record in records) {
+    if (latest == null || record.createdAt.isAfter(latest.createdAt)) {
+      latest = record;
+    }
+  }
+  return latest;
 }
