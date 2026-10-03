@@ -99,6 +99,7 @@ void main() {
 
     expect(find.text('1 seleccionado'), findsOneWidget);
     expect(find.text('Actualizar registro'), findsOneWidget);
+    expect(find.text('Guardar informe'), findsOneWidget);
     expect(find.text('Eliminar seleccionado'), findsOneWidget);
 
     await tester.tap(find.text('Actualizar registro'));
@@ -112,6 +113,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2 seleccionados'), findsOneWidget);
     expect(find.text('Actualizar registro'), findsNothing);
+    expect(find.text('Guardar 2'), findsOneWidget);
 
     await tester.tap(find.text('Eliminar seleccionados'));
     await tester.pumpAndSettle();
@@ -185,6 +187,105 @@ void main() {
     expect(find.byType(Checkbox), findsNothing);
     state.dispose();
   });
+
+  testWidgets(
+    'manageReports sin edit/delete: seleccionar y Guardar; sin Actualizar/Eliminar',
+    (tester) async {
+      // Gerencia base: manageReports + view, sin editRecords/deleteRecords.
+      final state = AppState()
+        ..applyAuthProfile(
+          AppUser(uid: 'g1', username: 'gerencia', role: AppUserRole.gerencia),
+        );
+      expect(state.canManageReports, isTrue);
+      expect(state.canEditRecords, isFalse);
+      expect(state.canDeleteRecords, isFalse);
+
+      var editCalls = 0;
+      final deleted = <String>[];
+      final records = [_rec('R1'), _rec('R2'), _rec('R3')];
+
+      await _pumpTable(
+        tester,
+        state: state,
+        records: records,
+        onDelete: (id) async {
+          deleted.add(id);
+          return RecordDeleteOutcome.deletedRemote;
+        },
+        onEdit: (_) async {
+          editCalls++;
+          return false;
+        },
+      );
+
+      expect(find.byType(Checkbox), findsWidgets);
+
+      final rowCheckboxes = find.byType(Checkbox);
+      await tester.tap(rowCheckboxes.at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(rowCheckboxes.at(2));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2 seleccionados'), findsOneWidget);
+      expect(find.text('Guardar 2'), findsOneWidget);
+      expect(find.text('Actualizar registro'), findsNothing);
+      expect(find.text('Eliminar seleccionados'), findsNothing);
+
+      await tester.tap(find.text('Guardar 2'));
+      await tester.pumpAndSettle();
+
+      // Diálogo de promptSaveReport con recordsOverride de la selección.
+      expect(find.text('Guardar informe'), findsOneWidget);
+      expect(find.text('Se guardarán 2 registros.'), findsOneWidget);
+
+      await tester.tap(find.text('Cancelar'));
+      await tester.pumpAndSettle();
+      expect(find.text('Se guardarán 2 registros.'), findsNothing);
+      expect(editCalls, 0);
+      expect(deleted, isEmpty);
+
+      state.dispose();
+    },
+  );
+
+  testWidgets(
+    'UI Guardar: 2 seleccionados abren promptSaveReport con esa cantidad',
+    (tester) async {
+      final state = AppState()
+        ..applyAuthProfile(
+          AppUser(uid: 'u1', username: 'admin', role: AppUserRole.admin),
+        );
+      final records = List.generate(3, (i) => _rec('R${i + 1}'));
+
+      await _pumpTable(
+        tester,
+        state: state,
+        records: records,
+        onDelete: (_) async => RecordDeleteOutcome.deletedRemote,
+        onEdit: (_) async => false,
+      );
+
+      final rowCheckboxes = find.byType(Checkbox);
+      await tester.tap(rowCheckboxes.at(1));
+      await tester.pumpAndSettle();
+      await tester.tap(rowCheckboxes.at(2));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Guardar 2'), findsOneWidget);
+      await tester.tap(find.text('Guardar 2'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(AlertDialog, 'Guardar informe'), findsOneWidget);
+      expect(find.text('Se guardarán 2 registros.'), findsOneWidget);
+      expect(find.textContaining('Nombre del informe'), findsOneWidget);
+
+      await tester.tap(find.text('Cancelar'));
+      await tester.pumpAndSettle();
+      expect(find.text('Se guardarán 2 registros.'), findsNothing);
+
+      state.dispose();
+    },
+  );
 
   testWidgets('FILTER-4 cambio de selectionResetToken limpia selección',
       (tester) async {
