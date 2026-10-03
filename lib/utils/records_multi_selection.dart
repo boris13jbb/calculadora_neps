@@ -131,6 +131,10 @@ class RecordsMultiSelection {
   bool canBulkDelete({required bool canDeleteRecords}) =>
       canDeleteRecords && selectedRecordIds.isNotEmpty;
 
+  /// Guardar informe con la selección actual (1 o más).
+  bool canSaveReport({required bool canManageReports}) =>
+      canManageReports && selectedRecordIds.isNotEmpty;
+
   String? get singleSelectedId =>
       selectedRecordIds.length == 1 ? selectedRecordIds.single : null;
 
@@ -141,6 +145,14 @@ class RecordsMultiSelection {
       if (record.id == id) return record;
     }
     return null;
+  }
+
+  /// Resuelve los [NepRecord] seleccionados en el orden del dataset visible.
+  List<NepRecord> resolveSelected(List<NepRecord> records) {
+    if (selectedRecordIds.isEmpty) return const [];
+    return records
+        .where((record) => selectedRecordIds.contains(record.id))
+        .toList(growable: false);
   }
 }
 

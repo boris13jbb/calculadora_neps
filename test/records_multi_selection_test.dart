@@ -198,6 +198,66 @@ void main() {
     });
   });
 
+  group('SAVE — guardar informe desde selección', () {
+    test('SAVE-1 0 seleccionados → Guardar no disponible', () {
+      final selection = RecordsMultiSelection();
+      expect(selection.canSaveReport(canManageReports: true), isFalse);
+    });
+
+    test('SAVE-2 1 seleccionado + canManageReports → disponible', () {
+      final selection = RecordsMultiSelection()..toggle('R1');
+      expect(selection.canSaveReport(canManageReports: true), isTrue);
+    });
+
+    test('SAVE-3 N seleccionados + canManageReports → disponible', () {
+      final selection = RecordsMultiSelection()
+        ..toggle('R1')
+        ..toggle('R2')
+        ..toggle('R3');
+      expect(selection.canSaveReport(canManageReports: true), isTrue);
+    });
+
+    test('SAVE-4 sin canManageReports → no disponible', () {
+      final selection = RecordsMultiSelection()..toggle('R1');
+      expect(selection.canSaveReport(canManageReports: false), isFalse);
+    });
+
+    test('SAVE-5 resolveSelected conserva orden del dataset visible', () {
+      final records = [_rec('R1'), _rec('R2'), _rec('R3')];
+      final selection = RecordsMultiSelection()
+        ..toggle('R3')
+        ..toggle('R1');
+      expect(
+        selection.resolveSelected(records).map((r) => r.id),
+        ['R1', 'R3'],
+      );
+    });
+
+    test('SAVE-6 Actualizar y Guardar son independientes', () {
+      final selection = RecordsMultiSelection()
+        ..toggle('R1')
+        ..toggle('R2');
+      expect(selection.canUpdate(canEditRecords: true), isFalse);
+      expect(selection.canSaveReport(canManageReports: true), isTrue);
+
+      selection.toggle('R2');
+      expect(selection.canUpdate(canEditRecords: true), isTrue);
+      expect(selection.canSaveReport(canManageReports: true), isTrue);
+    });
+
+    test(
+      'SAVE-7 manageReports sin edit/delete: Guardar sí; Actualizar/Eliminar no',
+      () {
+        final selection = RecordsMultiSelection()
+          ..toggle('R1')
+          ..toggle('R2');
+        expect(selection.canSaveReport(canManageReports: true), isTrue);
+        expect(selection.canUpdate(canEditRecords: false), isFalse);
+        expect(selection.canBulkDelete(canDeleteRecords: false), isFalse);
+      },
+    );
+  });
+
   group('DEL — eliminación múltiple segura', () {
     test('DEL-1 0 seleccionados → eliminar no disponible', () {
       final selection = RecordsMultiSelection();

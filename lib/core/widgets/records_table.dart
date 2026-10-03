@@ -12,6 +12,7 @@ import 'app_material_list_tile.dart';
 import 'confirm_dialogs.dart';
 import 'corrective_action_dialog.dart';
 import 'empty_state.dart';
+import 'report_actions.dart';
 
 class RecordsTable extends StatefulWidget {
   const RecordsTable({
@@ -52,7 +53,9 @@ class _RecordsTableState extends State<RecordsTable> {
   bool _busy = false;
 
   bool get _canSelect =>
-      widget.appState.canDeleteRecords || widget.appState.canEditRecords;
+      widget.appState.canDeleteRecords ||
+      widget.appState.canEditRecords ||
+      widget.appState.canManageReports;
 
   @override
   void didUpdateWidget(covariant RecordsTable oldWidget) {
@@ -87,6 +90,31 @@ class _RecordsTableState extends State<RecordsTable> {
         records: widget.records,
         canEditRecords: widget.appState.canEditRecords,
         openEditor: widget.onEdit!,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _onSaveSelected() async {
+    if (_busy ||
+        !_selection.canSaveReport(
+          canManageReports: widget.appState.canManageReports,
+        )) {
+      return;
+    }
+    final toSave = _selection.resolveSelected(widget.records);
+    if (toSave.isEmpty) {
+      widget.appState
+          .showMessage('No hay registros seleccionados para guardar.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await promptSaveReport(
+        context,
+        widget.appState,
+        recordsOverride: toSave,
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -157,10 +185,14 @@ class _RecordsTableState extends State<RecordsTable> {
                     showUpdate: _selection.canUpdate(
                       canEditRecords: widget.appState.canEditRecords,
                     ),
+                    showSave: _selection.canSaveReport(
+                      canManageReports: widget.appState.canManageReports,
+                    ),
                     showDelete: _selection.canBulkDelete(
                       canDeleteRecords: widget.appState.canDeleteRecords,
                     ),
                     onUpdate: _onUpdateSelected,
+                    onSave: _onSaveSelected,
                     onDelete: _onBulkDelete,
                     onClear: () => setState(_selection.clear),
                   ),
@@ -212,8 +244,10 @@ class _RecordsSelectionBar extends StatelessWidget {
     required this.compact,
     required this.busy,
     required this.showUpdate,
+    required this.showSave,
     required this.showDelete,
     required this.onUpdate,
+    required this.onSave,
     required this.onDelete,
     required this.onClear,
   });
@@ -222,8 +256,10 @@ class _RecordsSelectionBar extends StatelessWidget {
   final bool compact;
   final bool busy;
   final bool showUpdate;
+  final bool showSave;
   final bool showDelete;
   final VoidCallback onUpdate;
+  final VoidCallback onSave;
   final VoidCallback onDelete;
   final VoidCallback onClear;
 
@@ -231,6 +267,9 @@ class _RecordsSelectionBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = count == 1 ? '1 seleccionado' : '$count seleccionados';
     final updateLabel = compact ? 'Actualizar' : 'Actualizar registro';
+    final saveLabel = count == 1
+        ? (compact ? 'Guardar' : 'Guardar informe')
+        : (compact ? 'Guardar' : 'Guardar $count');
     final deleteLabel = count == 1
         ? (compact ? 'Eliminar' : 'Eliminar seleccionado')
         : (compact ? 'Eliminar' : 'Eliminar seleccionados');
@@ -241,6 +280,13 @@ class _RecordsSelectionBar extends StatelessWidget {
         FilledButton.tonal(
           onPressed: busy ? null : onUpdate,
           child: Text(updateLabel),
+        ),
+      if (showSave)
+        FilledButton(
+          style:
+              FilledButton.styleFrom(backgroundColor: AppColors.primaryGreen),
+          onPressed: busy ? null : onSave,
+          child: Text(saveLabel),
         ),
       if (showDelete)
         FilledButton(
