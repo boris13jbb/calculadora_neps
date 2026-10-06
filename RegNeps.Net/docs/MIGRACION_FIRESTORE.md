@@ -84,3 +84,20 @@ La importación es **idempotente**: puede repetirse sin duplicar registros.
 - Tras migrar usuarios, cambie las contraseñas temporales desde **Usuarios**.
 - Los `createdByUid` de registros se conservan como texto (uid Firebase).
 - Para intranet productiva, apunte `ConnectionStrings:RegNeps` a SQL Server antes de importar.
+
+## Estado cutover (plan intranet 2026-10-02)
+
+**Migración de producción diferida.** No se ejecuta import masivo contra la BD de planta ni se apaga Firebase hasta petición explícita.
+
+Validado en este plan:
+
+- Herramienta CLI `tools/RegNeps.Migrate` compilable.
+- Export de muestra en `FTS/firestore_export_sample.json` (sin secretos).
+- Flujo documentado (UI `/migracion`, CLI, API).
+
+Cuando se autorice cutover de datos:
+
+1. Export fresco con service account (`secrets/`, fuera de git).
+2. Import a SQL Server (recomendado) o SQLite piloto.
+3. Checklist: login usuarios migrados, conteo registros, export PDF/Excel, rotar passwords temporales.
+4. Mantener Flutter/Firebase en paralelo hasta cerrar gaps de paridad (`PARIDAD_FLUTTER.md`).
