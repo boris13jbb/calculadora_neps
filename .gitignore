@@ -89,3 +89,10 @@ RegNeps.Net/**/*.db-wal
 RegNeps.Net/.vs/
 FTS/firestore_export.json
 !FTS/firestore_export_sample.json
+
+# Cursor / agent local
+AGENTS.md
+.cursor/
+
+# Artefacto APK de prueba local
+RegNeps-mobile-kpi-test.apk
