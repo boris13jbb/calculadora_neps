@@ -117,6 +117,8 @@ class ReportStorageService {
     String? viewerUid,
     bool canViewTeamReports = false,
     bool fetchCloud = true,
+    /// Si false, no intenta cloud (evita permission-denied ruidoso en Analíticas).
+    bool canReadCloudReports = true,
   }) async {
     final started = DateTime.now();
     final localParse = await _loadReportsLocallyDetailed();
@@ -126,7 +128,10 @@ class ReportStorageService {
     var cloudSummaryDocs = 0;
 
     final cloudSync = _cloudSync;
-    final shouldFetchCloud = fetchCloud && cloudSync != null && _sessionActive;
+    final shouldFetchCloud = fetchCloud &&
+        canReadCloudReports &&
+        cloudSync != null &&
+        _sessionActive;
 
     if (shouldFetchCloud) {
       try {

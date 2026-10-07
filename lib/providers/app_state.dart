@@ -65,6 +65,7 @@ import '../utils/file_share_helper.dart';
 import '../utils/filter_description_helper.dart';
 import '../utils/analytics_records_source.dart';
 import '../utils/analytics_report_candidates.dart';
+import '../utils/cloud_report_read_access.dart' as cloud_report_access;
 import '../utils/lote_trama_helper.dart';
 import '../utils/stable_id.dart';
 import '../utils/today_capture_records.dart';
@@ -401,6 +402,23 @@ class AppState extends ChangeNotifier {
   bool get canManageReports => _hasPermission(Permission.manageReports);
 
   bool get canExportReports => _hasPermission(Permission.exportReports);
+
+  bool get canViewRecords => _hasPermission(Permission.viewRecords);
+
+  bool get canViewWorkspaceRecords =>
+      _hasPermission(Permission.viewWorkspaceRecords);
+
+  bool get canViewDashboard => _hasPermission(Permission.viewDashboard);
+
+  /// Lectura cloud de informes/`reportSummaries` (alineado a firestore.rules).
+  bool get canReadCloudReportArchive =>
+      cloud_report_access.canReadCloudReportArchive(
+        canViewRecords: canViewRecords,
+        canViewWorkspaceRecords: canViewWorkspaceRecords,
+        canExportReports: canExportReports,
+        canManageReports: canManageReports,
+        canViewDashboard: canViewDashboard,
+      );
 
   bool get canEditRecords => _hasPermission(Permission.editRecords);
 
@@ -933,6 +951,7 @@ class AppState extends ChangeNotifier {
     return reportStorageService.loadReportSummariesResult(
       viewerUid: uid,
       canViewTeamReports: canManageReports,
+      canReadCloudReports: canReadCloudReportArchive,
     );
   }
 
@@ -1050,7 +1069,7 @@ class AppState extends ChangeNotifier {
 
     if (missingFromCache.isNotEmpty) {
       final cloud = cloudSyncService;
-      if (cloud != null) {
+      if (cloud != null && canReadCloudReportArchive) {
         try {
           final fetched = await cloud.fetchReportsByIds(missingFromCache);
           if (!_isAuthContextValid(generation, uid)) {

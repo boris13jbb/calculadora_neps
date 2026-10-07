@@ -96,5 +96,20 @@ void main() {
       expect(source.describe(), contains('Resultados parciales'));
       expect(source.describe(), contains('error nube'));
     });
+
+    test('describe puede omitir detalle parcial (banner dedicado)', () {
+      final source = buildAnalyticsRecordsSource(
+        liveRecords: [
+          NepRecord(id: 'a', telar: '1', neps: 1, loteTrama: 'L', tela: 'T'),
+        ],
+        savedReports: const [],
+        isPartial: true,
+        partialMessage: 'error nube',
+      );
+      final text = source.describe(includePartialDetail: false);
+      expect(text, isNot(contains('Resultados parciales')));
+      expect(text, isNot(contains('error nube')));
+      expect(text, contains('registros'));
+    });
   });
 }
