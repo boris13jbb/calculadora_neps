@@ -132,6 +132,21 @@ service cloud.firestore {
             && roleDocId() in ['admin', 'operario', 'super_admin']);
     }
 
+    // Lectura de informes/reportSummaries: un solo camino (evita N×hasPermission
+    // y el límite de 1000 expresiones al hidratar Analíticas).
+    function canReadReportArchive() {
+      return isSuperAdmin()
+        || (isAuthenticated() && roleExists() && roleData().isActive == true && (
+          'manageReports' in roleData().permissions
+          || 'exportReports' in roleData().permissions
+          || 'viewRecords' in roleData().permissions
+          || 'viewWorkspaceRecords' in roleData().permissions
+          || 'viewDashboard' in roleData().permissions
+        ))
+        // Legacy base sin doc: operario+ ya tenían viewRecords / dashboard.
+        || (isAuthenticated() && !roleExists() && isBaseRole());
+    }
+
     function workspaceIdOk(workspaceId) {
       return workspaceId == 'vicunha';
     }
@@ -225,13 +240,11 @@ service cloud.firestore {
       }
 
       match /reports/{reportId} {
+        // Lectura alineada a Analíticas/Informes: quien ve dashboard o
+        // registros de workspace también puede hidratar historial cloud.
         allow read: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && (
-            hasPermission('manageReports') ||
-            hasPermission('exportReports') ||
-            hasPermission('viewRecords')
-          );
+          && canReadReportArchive();
         allow create: if isAuthenticated()
           && workspaceIdOk(workspaceId)
           && hasPermission('manageReports')
@@ -256,11 +269,7 @@ service cloud.firestore {
       match /reportSummaries/{reportId} {
         allow read: if isAuthenticated()
           && workspaceIdOk(workspaceId)
-          && (
-            hasPermission('manageReports') ||
-            hasPermission('exportReports') ||
-            hasPermission('viewRecords')
-          );
+          && canReadReportArchive();
         allow create: if isAuthenticated()
           && workspaceIdOk(workspaceId)
           && hasPermission('manageReports')

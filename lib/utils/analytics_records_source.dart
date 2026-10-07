@@ -29,7 +29,9 @@ class AnalyticsRecordsSource {
 
   bool get hasAnyData => records.isNotEmpty;
 
-  String describe() {
+  /// [includePartialDetail] false evita duplicar el aviso si ya hay un banner
+  /// dedicado de error (p. ej. Analíticas con «Reintentar»).
+  String describe({bool includePartialDetail = true}) {
     final base = () {
       if (savedReportCount == 0 && liveRecordCount == 0) {
         return 'Sin registros ni informes guardados';
@@ -44,7 +46,7 @@ class AnalyticsRecordsSource {
           '($liveRecordCount actuales + $savedReportRecordCount en historial)';
     }();
 
-    if (!isPartial) return base;
+    if (!includePartialDetail || !isPartial) return base;
     final detail = partialMessage?.trim();
     if (detail != null && detail.isNotEmpty) {
       return '$base · Resultados parciales: $detail';

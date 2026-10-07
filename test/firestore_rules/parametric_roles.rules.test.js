@@ -550,6 +550,46 @@ test("K7) registro+tombstone: UPDATE user mirror DENY", async () => {
   }));
 });
 
+// --- L) reportSummaries: lectura Analíticas (viewDashboard / viewWorkspaceRecords)
+test("L) reportSummaries: viewDashboard y viewWorkspaceRecords permiten lectura", async () => {
+  await seedAdmin(async (db) => {
+    await setDoc(doc(db, rolePath("analista")), baseRoleDoc("analista", [
+      "viewDashboard",
+    ], {isSystem: false}));
+    await setDoc(doc(db, rolePath("visor_ws")), baseRoleDoc("visor_ws", [
+      "viewWorkspaceRecords",
+    ], {isSystem: false}));
+    await setDoc(doc(db, rolePath("solo_captura")), baseRoleDoc("solo_captura", [
+      "captureRecords",
+    ], {isSystem: false}));
+    await setDoc(doc(db, `${WS}/reportSummaries/sum-1`), {
+      id: "sum-1",
+      title: "Informe",
+      createdByUid: "op1",
+      recordCount: 2,
+    });
+    await setDoc(doc(db, `${WS}/reports/sum-1`), {
+      id: "sum-1",
+      title: "Informe",
+      createdByUid: "op1",
+      records: [],
+    });
+  });
+
+  await assertSucceeds(
+      getDoc(doc(authed("a1", "analista"), `${WS}/reportSummaries/sum-1`)),
+  );
+  await assertSucceeds(
+      getDoc(doc(authed("a1", "analista"), `${WS}/reports/sum-1`)),
+  );
+  await assertSucceeds(
+      getDoc(doc(authed("v1", "visor_ws"), `${WS}/reportSummaries/sum-1`)),
+  );
+  await assertFails(
+      getDoc(doc(authed("c1", "solo_captura"), `${WS}/reportSummaries/sum-1`)),
+  );
+});
+
 // Sanity: assert helper used
 test("sanity assert", () => {
   assert.equal(typeof collection, "function");

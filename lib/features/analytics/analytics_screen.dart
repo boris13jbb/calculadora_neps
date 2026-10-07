@@ -405,10 +405,13 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           Padding(
             padding: EdgeInsets.only(bottom: spacing),
             child: StatusBanner(
-              type: source.isPartial
+              // Si ya hay banner de error dedicado, el resumen solo informa conteos.
+              type: (_reportsLoadError == null && source.isPartial)
                   ? StatusBannerType.warning
                   : StatusBannerType.info,
-              message: source.describe(),
+              message: source.describe(
+                includePartialDetail: _reportsLoadError == null,
+              ),
             ),
           ),
           FormulaBox(compact: phone),
