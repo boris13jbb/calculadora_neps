@@ -18,6 +18,7 @@ const {
   updateDoc,
   deleteDoc,
   collection,
+  getDocs,
   addDoc,
 } = require("firebase/firestore");
 
@@ -588,6 +589,108 @@ test("L) reportSummaries: viewDashboard y viewWorkspaceRecords permiten lectura"
   await assertFails(
       getDoc(doc(authed("c1", "solo_captura"), `${WS}/reportSummaries/sum-1`)),
   );
+});
+
+function personalSessionPath(uid, id) {
+  return `${WS}/users/${uid}/personalSessions/${id}`;
+}
+
+function personalSessionDoc(uid, id) {
+  return {
+    id,
+    ownerUid: uid,
+    captureSessionId: "ses-phone",
+    name: "Sesion telefono",
+    savedAt: new Date(),
+    records: [{id: "r1", telar: "10", neps: 4, captureSessionId: "ses-phone"}],
+  };
+}
+
+test("personalSessions: la cuenta sincroniza las suyas; otra cuenta no", async () => {
+  await seedAdmin(async (db) => {
+    await setDoc(doc(db, rolePath("operario")), baseRoleDoc("operario", [
+      "captureRecords",
+      "viewRecords",
+    ]));
+  });
+
+  const owner = authed("op1", "operario");
+  const other = authed("op2", "operario");
+  const path = personalSessionPath("op1", "ps1");
+
+  await assertSucceeds(setDoc(doc(owner, path), personalSessionDoc("op1", "ps1")));
+  await assertSucceeds(getDoc(doc(owner, path)));
+  await assertSucceeds(getDocs(collection(
+      owner,
+      "workspaces",
+      "vicunha",
+      "users",
+      "op1",
+      "personalSessions",
+  )));
+  await assertFails(getDoc(doc(other, path)));
+  await assertFails(getDocs(collection(
+      other,
+      "workspaces",
+      "vicunha",
+      "users",
+      "op1",
+      "personalSessions",
+  )));
+  await assertFails(setDoc(
+      doc(other, personalSessionPath("op1", "ps2")),
+      personalSessionDoc("op1", "ps2"),
+  ));
+  await assertFails(setDoc(
+      doc(owner, personalSessionPath("op2", "ps3")),
+      personalSessionDoc("op2", "ps3"),
+  ));
+});
+
+function manySessionRecords(count) {
+  return Array.from({length: count}, (_, index) => ({
+    id: `r${index}`,
+    neps: 1,
+  }));
+}
+
+test("personalSessions: 400 en el documento; 401 se parte y no se publica a medias", async () => {
+  await seedAdmin(async (db) => {
+    await setDoc(doc(db, rolePath("operario")), baseRoleDoc("operario", [
+      "captureRecords",
+      "viewRecords",
+    ]));
+  });
+
+  const owner = authed("op1", "operario");
+  const other = authed("op2", "operario");
+  const inline = personalSessionDoc("op1", "ps400");
+  inline.records = manySessionRecords(400);
+  await assertSucceeds(setDoc(doc(owner, personalSessionPath("op1", "ps400")), inline));
+
+  const tooBig = personalSessionDoc("op1", "ps401");
+  tooBig.records = manySessionRecords(401);
+  await assertFails(setDoc(doc(owner, personalSessionPath("op1", "ps401")), tooBig));
+
+  const parentPath = personalSessionPath("op1", "ps-chunk");
+  await assertSucceeds(setDoc(doc(owner, `${parentPath}/chunks/0`), {
+    index: 0,
+    records: manySessionRecords(400),
+  }));
+  await assertSucceeds(setDoc(doc(owner, `${parentPath}/chunks/1`), {
+    index: 1,
+    records: manySessionRecords(1),
+  }));
+  const chunked = personalSessionDoc("op1", "ps-chunk");
+  chunked.records = [];
+  chunked.chunkCount = 2;
+  await assertSucceeds(setDoc(doc(owner, parentPath), chunked));
+  await assertSucceeds(getDoc(doc(owner, `${parentPath}/chunks/1`)));
+  await assertFails(getDoc(doc(other, `${parentPath}/chunks/0`)));
+  await assertFails(setDoc(doc(other, `${parentPath}/chunks/2`), {
+    index: 2,
+    records: manySessionRecords(1),
+  }));
 });
 
 // Sanity: assert helper used

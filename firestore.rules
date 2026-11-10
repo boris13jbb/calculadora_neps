@@ -147,6 +147,44 @@ service cloud.firestore {
         || (isAuthenticated() && !roleExists() && isBaseRole());
     }
 
+    // Sesión personal del propio UID. No es archivo de equipo.
+    function personalSessionPayloadOk(userId, archiveId) {
+      return request.resource.data.ownerUid == userId
+        && request.resource.data.id == archiveId
+        && request.resource.data.captureSessionId is string
+        && request.resource.data.captureSessionId.size() > 0
+        && request.resource.data.captureSessionId.size() <= 80
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 160
+        && request.resource.data.savedAt is timestamp
+        && request.resource.data.records is list
+        && request.resource.data.records.size() <= 400
+        && (
+          !('chunkCount' in request.resource.data)
+          || (
+            request.resource.data.chunkCount is int
+            && request.resource.data.chunkCount >= 2
+            && request.resource.data.chunkCount <= 50
+            && request.resource.data.records.size() == 0
+          )
+        )
+        && request.resource.data.keys().hasOnly([
+          'id', 'ownerUid', 'captureSessionId', 'savedAt', 'name', 'records',
+          'chunkCount'
+        ]);
+    }
+
+    function personalSessionChunkOk(chunkId) {
+      return request.resource.data.keys().hasOnly(['index', 'records'])
+        && request.resource.data.index is int
+        && request.resource.data.index >= 0
+        && request.resource.data.index < 50
+        && request.resource.data.index == int(chunkId)
+        && request.resource.data.records is list
+        && request.resource.data.records.size() > 0
+        && request.resource.data.records.size() <= 400;
+    }
+
     function workspaceIdOk(workspaceId) {
       return workspaceId == 'vicunha';
     }
@@ -221,6 +259,43 @@ service cloud.firestore {
           allow delete: if isAuthenticated()
             && workspaceIdOk(workspaceId)
             && canDeleteRecord(userId);
+        }
+
+        match /personalSessions/{archiveId} {
+          allow read: if isAuthenticated()
+            && workspaceIdOk(workspaceId)
+            && request.auth.uid == userId
+            && (canCapture() || canReadRecord(userId));
+
+          allow create: if isAuthenticated()
+            && workspaceIdOk(workspaceId)
+            && request.auth.uid == userId
+            && canCapture()
+            && personalSessionPayloadOk(userId, archiveId);
+
+          allow update: if isAuthenticated()
+            && workspaceIdOk(workspaceId)
+            && request.auth.uid == userId
+            && canCapture()
+            && personalSessionPayloadOk(userId, archiveId)
+            && resource.data.ownerUid == request.resource.data.ownerUid;
+
+          allow delete: if false;
+
+          match /chunks/{chunkId} {
+            allow read: if isAuthenticated()
+              && workspaceIdOk(workspaceId)
+              && request.auth.uid == userId
+              && (canCapture() || canReadRecord(userId));
+
+            allow create, update: if isAuthenticated()
+              && workspaceIdOk(workspaceId)
+              && request.auth.uid == userId
+              && canCapture()
+              && personalSessionChunkOk(chunkId);
+
+            allow delete: if false;
+          }
         }
       }
 
