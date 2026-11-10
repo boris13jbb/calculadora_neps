@@ -45,7 +45,7 @@ Future<void> promptOpenPersonalSessionHistory(
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'No hay sesiones personales guardadas en este dispositivo.',
+          'No hay sesiones personales guardadas para esta cuenta.',
         ),
         behavior: SnackBarBehavior.floating,
       ),
@@ -70,7 +70,8 @@ Future<void> promptOpenPersonalSessionHistory(
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
                 subtitle: Text(
-                  'Sesiones guardadas en este dispositivo (no archivo de equipo).',
+                  'Sesiones de su cuenta, sincronizadas entre el teléfono y la web. '
+                  'No forman parte del archivo de equipo.',
                 ),
               );
             }

@@ -72,6 +72,7 @@ import '../utils/today_capture_records.dart';
 import '../services/capture_draft_storage_service.dart';
 import '../services/saved_capture_ids_storage_service.dart';
 import '../services/personal_session_archive_service.dart';
+import '../services/personal_session_firestore_store.dart';
 import '../core/permissions/record_visibility.dart';
 import 'domain/capture_form_scope.dart';
 import 'domain/cloud_sync_scope.dart';
@@ -176,6 +177,11 @@ class AppState extends ChangeNotifier {
         applyRecordTombstones: _applyRecordTombstones,
       ),
     );
+    if (_supportsCloudSync()) {
+      personalSessionArchiveService.attachCloud(
+        PersonalSessionFirestoreStore(),
+      );
+    }
   }
 
   late final CloudSyncScope _cloud;
@@ -523,7 +529,18 @@ class AppState extends ChangeNotifier {
     if (!_isAuthContextValid(generation, uid)) return;
 
     unawaited(_drainPendingSyncIfCurrent(uid, generation));
+    unawaited(_syncPersonalSessions(uid, generation));
     _notifyIfActive();
+  }
+
+  /// Sube las sesiones guardadas en este dispositivo y trae las de la cuenta.
+  Future<void> _syncPersonalSessions(String uid, int generation) async {
+    if (!_isAuthContextValid(generation, uid)) return;
+    try {
+      await personalSessionArchiveService.loadSynced(uid);
+    } catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'syncPersonalSessions');
+    }
   }
 
   /// Asegura que exista sessionId activo (útil tras login o en tests).
@@ -1179,7 +1196,7 @@ class AppState extends ChangeNotifier {
     final personalReports = <SavedReport>[];
     if (uid == null || uid.isEmpty) return personalReports;
 
-    final archives = await personalSessionArchiveService.loadForUid(uid);
+    final archives = await personalSessionArchiveService.loadSynced(uid);
     if (!_isAuthContextValid(generation, uid)) return personalReports;
 
     for (final archive in archives) {
@@ -2107,7 +2124,9 @@ class AppState extends ChangeNotifier {
       final pendingOps = await pendingSyncQueueService.loadForUid(uid);
       if (!_isAuthContextValid(generation, uid)) return false;
 
-      if (pendingOps.isNotEmpty || !cloudSyncEnabled) {
+      if (pendingOps.isNotEmpty ||
+          !cloudSyncEnabled ||
+          personalSessionArchiveService.lastCloudPushFailed) {
         showMessage(
           'Guardado en este dispositivo; sincronización pendiente.',
         );
@@ -2225,7 +2244,7 @@ class AppState extends ChangeNotifier {
       loadPersonalSessionArchives() async {
     final uid = _authUid;
     if (uid == null || uid.isEmpty) return const [];
-    return personalSessionArchiveService.loadForUid(uid);
+    return personalSessionArchiveService.loadSynced(uid);
   }
 
   /// Abre una sesión personal guardada desde el historial de la UI.
