@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:calculadora_neps/core/constants.dart';
 import 'package:calculadora_neps/models/app_user_role.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
@@ -71,8 +73,7 @@ class _FakeCloud implements CloudSyncPort {
     }
     final localFp = reportContentFingerprint(report);
     final remote = reports[report.id];
-    final remoteFp =
-        remote == null ? null : reportContentFingerprint(remote);
+    final remoteFp = remote == null ? null : reportContentFingerprint(remote);
     final decision = decideReportUpsert(
       localFingerprint: localFp,
       remoteFingerprint: remoteFp,
@@ -108,7 +109,8 @@ class _FakeCloud implements CloudSyncPort {
   @override
   Future<List<SavedReportSummary>> fetchReportSummaries() async {
     return summaries.values
-        .map((m) => SavedReportSummary.tryFromJson(Map<String, dynamic>.from(m)))
+        .map(
+            (m) => SavedReportSummary.tryFromJson(Map<String, dynamic>.from(m)))
         .whereType<SavedReportSummary>()
         .toList();
   }
@@ -317,11 +319,12 @@ void main() {
       expect(cloud.reports, isEmpty);
     });
 
-    test('10-12) ACK perdido: mismo fingerprint → synced sin duplicar', () async {
+    test('10-12) ACK perdido: mismo fingerprint → synced sin duplicar',
+        () async {
       final report = _report();
       cloud.reports[report.id] = report;
-      cloud.summaries[report.id] =
-          Map<String, dynamic>.from(ReportDualWritePlan.fromReport(report).summaryData);
+      cloud.summaries[report.id] = Map<String, dynamic>.from(
+          ReportDualWritePlan.fromReport(report).summaryData);
       await queue.enqueueUpsert(
         uid: 'uid-a',
         report: report,
@@ -361,10 +364,11 @@ void main() {
 
     test('16) conflicto de versiones no sobrescribe', () async {
       final local = _report(name: 'Local');
-      final remote = _report(name: 'Remoto distinto', createdByUid: 'uid-other');
+      final remote =
+          _report(name: 'Remoto distinto', createdByUid: 'uid-other');
       cloud.reports[remote.id] = remote;
-      cloud.summaries[remote.id] =
-          Map<String, dynamic>.from(ReportDualWritePlan.fromReport(remote).summaryData);
+      cloud.summaries[remote.id] = Map<String, dynamic>.from(
+          ReportDualWritePlan.fromReport(remote).summaryData);
 
       await queue.enqueueUpsert(
         uid: 'uid-a',
@@ -386,8 +390,8 @@ void main() {
       final remote = _report(name: 'En nube', createdByUid: 'uid-a');
       final local = _report(name: 'Local distinto', createdByUid: 'uid-a');
       cloud.reports[remote.id] = remote;
-      cloud.summaries[remote.id] =
-          Map<String, dynamic>.from(ReportDualWritePlan.fromReport(remote).summaryData);
+      cloud.summaries[remote.id] = Map<String, dynamic>.from(
+          ReportDualWritePlan.fromReport(remote).summaryData);
 
       final outcome = await storage.saveExistingReport(
         local,
@@ -402,8 +406,8 @@ void main() {
       final v1 = _report(name: 'V1', createdByUid: 'uid-a');
       await storage.saveExistingReport(v1, saveFiles: false, actorUid: 'uid-a');
       final v2 = _report(name: 'V2', createdByUid: 'uid-a');
-      final outcome =
-          await storage.saveExistingReport(v2, saveFiles: false, actorUid: 'uid-a');
+      final outcome = await storage.saveExistingReport(v2,
+          saveFiles: false, actorUid: 'uid-a');
       expect(outcome.status, ReportSyncStatus.synced);
       expect(cloud.reports[v2.id]?.name, 'V2');
     });
@@ -486,7 +490,8 @@ void main() {
       expect(loaded, isEmpty);
     });
 
-    test('20-21) persistencia SharedPreferences (web/android misma capa)', () async {
+    test('20-21) persistencia SharedPreferences (web/android misma capa)',
+        () async {
       await queue.enqueueUpsert(
         uid: 'uid-a',
         report: _report(),
@@ -568,7 +573,8 @@ void main() {
 
     test('28) clave personalSessions no se toca', () async {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(personalSessionsKeyForUid('uid-a'), '[{"keep":true}]');
+      await prefs.setString(
+          personalSessionsKeyForUid('uid-a'), '[{"keep":true}]');
       cloud.sessionActive = false;
       await storage.saveExistingReport(
         _report(),
@@ -605,6 +611,33 @@ void main() {
         reportContentFingerprint(_report(name: 'Otro')),
         isNot(reportContentFingerprint(a)),
       );
+    });
+
+    test('timeout cloud se clasifica reintentable y conserva pendiente',
+        () async {
+      final classified = classifyReportSyncError(
+        TimeoutException('report-sync-timeout'),
+      );
+      expect(classified.status, ReportSyncStatus.retryableError);
+      expect(classified.code, 'network');
+
+      final cloud = _FakeCloud()..failNextSave = true;
+      final storage = ReportStorageService(
+        cloudSync: cloud,
+        pendingReportQueue: PendingReportSyncQueueService(),
+        isSessionActive: () => true,
+      );
+      final outcome = await storage.saveExistingReport(
+        _report(),
+        saveFiles: false,
+        actorUid: 'uid-a',
+      );
+      expect(outcome.status, ReportSyncStatus.retryableError);
+      final pending = await storage.pendingReportQueue.loadForUid('uid-a');
+      expect(pending, isNotEmpty);
+      // Timeout/error NO elimina la op: sigue disponible tras reinicio.
+      final again = PendingReportSyncQueueService();
+      expect(await again.loadForUid('uid-a'), isNotEmpty);
     });
 
     test('clasificador de errores', () {

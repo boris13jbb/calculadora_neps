@@ -46,15 +46,20 @@ class PendingReportSyncOp {
   /// Copia íntegra del informe (upsert). Null en delete.
   final SavedReport? report;
 
+  /// Tope de reintentos automáticos (flush). No borra la pendiente:
+  /// el usuario puede reintentar manualmente tras el límite.
+  static const int maxAutoRetryAttempts = 12;
+
   bool get isTerminal =>
       status == ReportSyncStatus.synced ||
       status == ReportSyncStatus.permanentError ||
       status == ReportSyncStatus.conflict;
 
   bool get canAutoRetry =>
-      status == ReportSyncStatus.localPending ||
-      status == ReportSyncStatus.retryableError ||
-      status == ReportSyncStatus.syncing;
+      attempts < maxAutoRetryAttempts &&
+      (status == ReportSyncStatus.localPending ||
+          status == ReportSyncStatus.retryableError ||
+          status == ReportSyncStatus.syncing);
 
   PendingReportSyncOp copyWith({
     ReportSyncStatus? status,
@@ -143,10 +148,9 @@ class PendingReportSyncOp {
         id: json['id']?.toString() ?? generateStableId(prefix: 'prso'),
         reportId: reportId,
         ownerUid: ownerUid,
-        workspaceId:
-            json['workspaceId']?.toString().trim().isNotEmpty == true
-                ? json['workspaceId'].toString().trim()
-                : cloudWorkspaceId,
+        workspaceId: json['workspaceId']?.toString().trim().isNotEmpty == true
+            ? json['workspaceId'].toString().trim()
+            : cloudWorkspaceId,
         type: type,
         status: status == ReportSyncStatus.synced
             ? ReportSyncStatus.localPending

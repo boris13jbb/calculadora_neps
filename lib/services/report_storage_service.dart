@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -49,6 +50,12 @@ class ReportStorageService {
   final bool Function() _isSessionActive;
   final ReportExportService exportService;
   bool _flushingPendingReports = false;
+
+  /// Tiempo máximo de espera de confirmación cloud.
+  /// Un timeout NO implica que Firestore no recibió la escritura: la op
+  /// permanece pendiente/reintentable (idempotencia por id + huella).
+  @visibleForTesting
+  static const Duration cloudSaveTimeout = Duration(seconds: 45);
 
   void attachCloudSync(CloudSyncPort? cloudSync) {
     _cloudSync = cloudSync;
@@ -135,6 +142,7 @@ class ReportStorageService {
     String? viewerUid,
     bool canViewTeamReports = false,
     bool fetchCloud = true,
+
     /// Si false, no intenta cloud (evita permission-denied ruidoso en Analíticas).
     bool canReadCloudReports = true,
   }) async {
@@ -409,8 +417,7 @@ class ReportStorageService {
         : await _syncMeta.lastSyncedFingerprint(ownerUid, report.id);
     // Base = versión remota conocida (pending.base o última sync), NUNCA el
     // fingerprint del payload local pendiente.
-    final baseFingerprint =
-        existingPending?.baseFingerprint ?? lastSynced;
+    final baseFingerprint = existingPending?.baseFingerprint ?? lastSynced;
 
     // Siempre persistir local primero (incluye intención de sync).
     await _upsertReportLocally(report);
@@ -458,10 +465,18 @@ class ReportStorageService {
     }
 
     try {
-      final saved = await cloudSync.saveReport(
-        report,
-        expectedBaseFingerprint: baseFingerprint,
-      );
+      final saved = await cloudSync
+          .saveReport(
+            report,
+            expectedBaseFingerprint: baseFingerprint,
+          )
+          .timeout(
+            cloudSaveTimeout,
+            onTimeout: () => throw TimeoutException(
+              'report-sync-timeout',
+              cloudSaveTimeout,
+            ),
+          );
       await _upsertReportLocally(saved);
       if (ownerUid.isNotEmpty) {
         await _pendingReportQueue.removeByReportId(ownerUid, saved.id);

@@ -28,6 +28,7 @@ const String _authHost = '127.0.0.1';
 const int _authPort = 9099;
 const String _fsHost = '127.0.0.1';
 const int _fsPort = 8085;
+
 /// Proyecto demo aislado — nunca el ID productivo en estas pruebas.
 const String _projectId = 'demo-vicunha-sync-test';
 const String _apiKey = 'fake-api-key';
@@ -147,6 +148,8 @@ class _EmuUser {
   final String idToken;
 }
 
+/// Crea usuario en Auth emulator y le asigna claim `role=admin` (legacyHas).
+/// El claim se aplica vía Admin SDK local contra el emulador; no toca producción.
 Future<_EmuUser> _createUser(String prefix) async {
   final email = '${prefix}_${DateTime.now().microsecondsSinceEpoch}@test.local';
   final uri = Uri.parse(
@@ -166,10 +169,60 @@ Future<_EmuUser> _createUser(String prefix) async {
     fail('No se pudo crear usuario en Auth emulator: ${res.body}');
   }
   final body = jsonDecode(res.body) as Map<String, dynamic>;
-  return _EmuUser(
-    uid: body['localId']?.toString() ?? '',
-    idToken: body['idToken']?.toString() ?? '',
+  final uid = body['localId']?.toString() ?? '';
+  final refreshToken = body['refreshToken']?.toString() ?? '';
+  if (uid.isEmpty || refreshToken.isEmpty) {
+    fail('Respuesta Auth emulator incompleta: ${res.body}');
+  }
+
+  // Copia el entorno sin credenciales productivas (el helper las rechaza).
+  final env = Map<String, String>.from(Platform.environment);
+  env.removeWhere(
+    (key, _) =>
+        key.toLowerCase() == 'google_application_credentials' ||
+        key.toLowerCase() == 'firebase_config',
   );
+  env['FIREBASE_AUTH_EMULATOR_HOST'] = '$_authHost:$_authPort';
+  env['FIRESTORE_EMULATOR_HOST'] = '$_fsHost:$_fsPort';
+  env['GCLOUD_PROJECT'] = _projectId;
+  env['GOOGLE_CLOUD_PROJECT'] = _projectId;
+
+  final claimResult = await Process.run(
+    'node',
+    [
+      'scripts/seed_emulator_admin_claim.js',
+      uid,
+    ],
+    workingDirectory:
+        '${Directory.current.path}${Platform.pathSeparator}functions',
+    environment: env,
+  );
+  if (claimResult.exitCode != 0) {
+    fail(
+      'No se pudo asignar claim admin en emulator: '
+      '${claimResult.stderr}\n${claimResult.stdout}',
+    );
+  }
+
+  final tokenUri = Uri.parse(
+    'http://$_authHost:$_authPort/securetoken.googleapis.com/v1/token?key=$_apiKey',
+  );
+  final tokenRes = await http.post(
+    tokenUri,
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'grant_type=refresh_token&refresh_token=$refreshToken',
+  );
+  if (tokenRes.statusCode != 200) {
+    fail('No se pudo refrescar idToken con claims: ${tokenRes.body}');
+  }
+  final tokenBody = jsonDecode(tokenRes.body) as Map<String, dynamic>;
+  final idToken = tokenBody['id_token']?.toString() ??
+      tokenBody['idToken']?.toString() ??
+      '';
+  if (idToken.isEmpty) {
+    fail('idToken vacío tras refresh: ${tokenRes.body}');
+  }
+  return _EmuUser(uid: uid, idToken: idToken);
 }
 
 Map<String, dynamic> _reportPayload({
@@ -271,7 +324,8 @@ dynamic _decodeField(dynamic value) {
   if (value is! Map) return value;
   if (value.containsKey('stringValue')) return value['stringValue'];
   if (value.containsKey('integerValue')) {
-    return int.tryParse(value['integerValue'].toString()) ?? value['integerValue'];
+    return int.tryParse(value['integerValue'].toString()) ??
+        value['integerValue'];
   }
   if (value.containsKey('doubleValue')) return value['doubleValue'];
   if (value.containsKey('arrayValue')) {
