@@ -52,6 +52,8 @@ import '../services/notification_preferences_service.dart';
 import '../services/notification_service.dart';
 import '../services/permissions_service.dart';
 import '../services/pending_sync_queue_service.dart';
+import '../models/report_save_outcome.dart';
+import '../models/report_sync_status.dart';
 import '../services/record_export_coordinator.dart';
 import '../services/record_import_service.dart';
 import '../services/record_local_storage_service.dart';
@@ -529,6 +531,7 @@ class AppState extends ChangeNotifier {
     if (!_isAuthContextValid(generation, uid)) return;
 
     unawaited(_drainPendingSyncIfCurrent(uid, generation));
+    unawaited(_drainPendingReportSyncIfCurrent(uid, generation));
     unawaited(_syncPersonalSessions(uid, generation));
     _notifyIfActive();
   }
@@ -697,6 +700,47 @@ class AppState extends ChangeNotifier {
       cloudSyncEnabled = true;
       _notifyIfActive();
     }
+  }
+
+  /// Drena la cola de Informes pendientes (independiente de registros/personalSessions).
+  Future<void> _drainPendingReportSyncIfCurrent(
+    String uid,
+    int generation,
+  ) async {
+    if (!await _ensureCloudReady()) return;
+    if (!_isAuthContextValid(generation, uid)) return;
+
+    await reportStorageService.flushPendingReports(
+      uid: uid,
+      isCurrent: () => _isAuthContextValid(generation, uid),
+    );
+    if (_isAuthContextValid(generation, uid)) {
+      _notifyIfActive();
+    }
+  }
+
+  /// Reintento manual de sync de un informe (mismo ID).
+  Future<ReportSaveOutcome?> retryPendingReportSync(String reportId) async {
+    final uid = _authUid;
+    if (uid == null || uid.isEmpty) return null;
+    if (!_requirePermission(canManageReports, 'sincronizar informes')) {
+      return null;
+    }
+    final outcome = await reportStorageService.retryPendingReport(
+      uid: uid,
+      reportId: reportId,
+    );
+    if (outcome != null) {
+      showMessage(outcome.userMessage);
+      notifyListeners();
+    }
+    return outcome;
+  }
+
+  Future<Map<String, ReportSyncStatus>> pendingReportSyncStatuses() async {
+    final uid = _authUid;
+    if (uid == null || uid.isEmpty) return const {};
+    return reportStorageService.pendingReportStatusesForUid(uid);
   }
 
   Future<void> _applyRecordTombstones(List<RecordTombstone> tombstones) async {
@@ -1485,6 +1529,7 @@ class AppState extends ChangeNotifier {
     final generation = _authGeneration;
     if (uid != null && uid.isNotEmpty) {
       unawaited(_drainPendingSyncIfCurrent(uid, generation));
+      unawaited(_drainPendingReportSyncIfCurrent(uid, generation));
     }
   }
 
@@ -1910,7 +1955,7 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final report = await reportStorageService.saveReport(
+      final outcome = await reportStorageService.saveReport(
         name: name.trim().isEmpty ? 'Informe $timestamp' : name.trim(),
         records: source,
         appliedFilters: recordsOverride == null && filters.hasActiveFilters
@@ -1920,21 +1965,14 @@ class AppState extends ChangeNotifier {
         exportStyle: pdfReportStyle,
         createdByUid: _authUid,
       );
-
-      if (cloudSyncEnabled) {
-        showMessage(
-          'Informe "${report.name}" guardado en la nube.',
-        );
-      } else if (!kIsWeb) {
-        final folder = await reportStorageService.getReportsDirectory();
-        showMessage(
-          'Informe "${report.name}" guardado. Archivos en: ${folder.path}',
-        );
-      } else {
-        showMessage(
-          'Informe "${report.name}" guardado. '
-          'Sincronice con Firebase para compartirlo con el equipo.',
-        );
+      _showReportSaveOutcome(outcome);
+      if (outcome.status == ReportSyncStatus.localPending ||
+          outcome.status == ReportSyncStatus.retryableError) {
+        final uid = _authUid;
+        final generation = _authGeneration;
+        if (uid != null) {
+          unawaited(_drainPendingReportSyncIfCurrent(uid, generation));
+        }
       }
     } catch (error, stack) {
       ErrorHandler.log(error, stack, 'saveReport');
@@ -1942,6 +1980,10 @@ class AppState extends ChangeNotifier {
         'No se pudo guardar el informe: ${ErrorHandler.userMessage(error)}',
       );
     }
+  }
+
+  void _showReportSaveOutcome(ReportSaveOutcome outcome) {
+    showMessage(outcome.userMessage);
   }
 
   /// Guarda un informe desde Captura con [sourceRecords] exactos.
@@ -1974,7 +2016,7 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final report = await reportStorageService.saveReport(
+      final outcome = await reportStorageService.saveReport(
         name: name.trim().isEmpty ? 'Informe $timestamp' : name.trim(),
         records: selected,
         appliedFilters: null,
@@ -2011,23 +2053,7 @@ class AppState extends ChangeNotifier {
         ..addAll(nextSaved);
       notifyListeners();
 
-      try {
-        if (cloudSyncEnabled) {
-          showMessage('Informe "${report.name}" guardado en la nube.');
-        } else if (!kIsWeb) {
-          final folder = await reportStorageService.getReportsDirectory();
-          showMessage(
-            'Informe "${report.name}" guardado. Archivos en: ${folder.path}',
-          );
-        } else {
-          showMessage(
-            'Informe "${report.name}" guardado. '
-            'Sincronice con Firebase para compartirlo con el equipo.',
-          );
-        }
-      } catch (_) {
-        showMessage('Informe "${report.name}" guardado.');
-      }
+      _showReportSaveOutcome(outcome);
       return true;
     } catch (error, stack) {
       ErrorHandler.log(error, stack, 'saveCaptureReport');
@@ -2108,16 +2134,17 @@ class AppState extends ChangeNotifier {
           await reportStorageService.saveExistingReport(
             existing,
             saveFiles: false,
+            actorUid: uid,
           );
         } else {
-          final report = await reportStorageService.saveReport(
+          final outcome = await reportStorageService.saveReport(
             name: archiveName,
             records: sessionRecords,
             saveFiles: false,
             exportStyle: pdfReportStyle,
             createdByUid: uid,
           );
-          _pendingClosedSessionReportId = report.id;
+          _pendingClosedSessionReportId = outcome.report.id;
         }
       }
 

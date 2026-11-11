@@ -10,33 +10,51 @@ import '../core/errors/error_handler.dart';
 import '../core/permissions/report_visibility.dart';
 import '../models/nep_record.dart';
 import '../models/pdf_report_style.dart';
+import '../models/pending_report_sync_op.dart';
 import '../models/record_filters.dart';
 import '../models/report_list_metrics.dart';
+import '../models/report_save_outcome.dart';
 import '../models/report_summaries_load_result.dart';
+import '../models/report_sync_status.dart';
 import '../models/reports_load_result.dart';
 import '../models/saved_report.dart';
 import '../models/saved_report_summary.dart';
 import '../utils/firebase_session_helper.dart';
+import '../utils/report_content_fingerprint.dart';
+import '../utils/report_sync_error_classifier.dart';
+import '../utils/report_upsert_decision.dart';
 import '../utils/stable_id.dart';
 import 'cloud_sync_port.dart';
+import 'pending_report_sync_queue_service.dart';
 import 'report_export_service.dart';
+import 'report_sync_meta_store.dart';
 
 class ReportStorageService {
   ReportStorageService({
     CloudSyncPort? cloudSync,
     ReportExportService? exportService,
+    PendingReportSyncQueueService? pendingReportQueue,
+    ReportSyncMetaStore? syncMetaStore,
     bool Function()? isSessionActive,
   })  : _cloudSync = cloudSync,
+        _pendingReportQueue =
+            pendingReportQueue ?? pendingReportSyncQueueService,
+        _syncMeta = syncMetaStore ?? reportSyncMetaStore,
         _isSessionActive = isSessionActive ?? (() => isFirebaseSessionActive),
         exportService = exportService ?? ReportExportService();
 
   CloudSyncPort? _cloudSync;
+  final PendingReportSyncQueueService _pendingReportQueue;
+  final ReportSyncMetaStore _syncMeta;
   final bool Function() _isSessionActive;
   final ReportExportService exportService;
+  bool _flushingPendingReports = false;
 
   void attachCloudSync(CloudSyncPort? cloudSync) {
     _cloudSync = cloudSync;
   }
+
+  PendingReportSyncQueueService get pendingReportQueue => _pendingReportQueue;
 
   bool get _sessionActive => _isSessionActive();
 
@@ -323,8 +341,16 @@ class ReportStorageService {
 
   Future<void> _persistReportsLocally(List<SavedReport> reports) async {
     final prefs = await SharedPreferences.getInstance();
-    final data = reports.map((report) => report.toJson()).toList();
-    await prefs.setString(savedReportsStorageKey, jsonEncode(data));
+    final encoded =
+        jsonEncode(reports.map((report) => report.toJson()).toList());
+    final ok = await prefs.setString(savedReportsStorageKey, encoded);
+    if (!ok) {
+      throw StateError('No se pudo persistir informes locales');
+    }
+    final readBack = prefs.getString(savedReportsStorageKey);
+    if (readBack != encoded) {
+      throw StateError('Verificación de informes locales falló tras escribir');
+    }
   }
 
   Future<void> _upsertReportLocally(SavedReport report) async {
@@ -340,7 +366,7 @@ class ReportStorageService {
     await _persistReportsLocally(reports);
   }
 
-  Future<SavedReport> saveReport({
+  Future<ReportSaveOutcome> saveReport({
     required String name,
     required List<NepRecord> records,
     RecordFilters? appliedFilters,
@@ -366,24 +392,28 @@ class ReportStorageService {
   }
 
   /// Guarda o actualiza un informe con id estable (reintentos sin duplicar).
-  Future<SavedReport> saveExistingReport(
+  ///
+  /// Solo marca [ReportSyncStatus.synced] tras confirmación cloud del dual-write.
+  Future<ReportSaveOutcome> saveExistingReport(
     SavedReport report, {
     bool saveFiles = true,
     PdfReportStyle exportStyle = PdfReportStyle.completo,
+    String? actorUid,
   }) async {
-    final cloudSync = _cloudSync;
-    if (cloudSync != null) {
-      try {
-        final saved = await cloudSync.saveReport(report);
-        await _upsertReportLocally(saved);
-        return saved;
-      } catch (error, stackTrace) {
-        ErrorHandler.log(error, stackTrace, 'saveReportFirebase');
-      }
-    }
+    final ownerUid = (actorUid ?? report.createdByUid)?.trim() ?? '';
+    final existingPending = ownerUid.isEmpty
+        ? null
+        : await _pendingReportQueue.findByReportId(ownerUid, report.id);
+    final lastSynced = ownerUid.isEmpty
+        ? null
+        : await _syncMeta.lastSyncedFingerprint(ownerUid, report.id);
+    // Base = versión remota conocida (pending.base o última sync), NUNCA el
+    // fingerprint del payload local pendiente.
+    final baseFingerprint =
+        existingPending?.baseFingerprint ?? lastSynced;
 
+    // Siempre persistir local primero (incluye intención de sync).
     await _upsertReportLocally(report);
-
     if (saveFiles && !kIsWeb) {
       try {
         await _saveReportFiles(report, exportStyle: exportStyle);
@@ -392,22 +422,238 @@ class ReportStorageService {
       }
     }
 
-    return report;
+    final cloudSync = _cloudSync;
+    final canAttemptCloud = cloudSync != null && _sessionActive;
+
+    if (!canAttemptCloud) {
+      try {
+        final pending = ownerUid.isEmpty
+            ? null
+            : await _pendingReportQueue.enqueueUpsert(
+                uid: ownerUid,
+                report: report,
+                baseFingerprint: baseFingerprint,
+                status: ReportSyncStatus.localPending,
+              );
+        return ReportSaveOutcome(
+          report: report,
+          status: ReportSyncStatus.localPending,
+          userMessage: ReportSyncUserMessages.forStatus(
+            ReportSyncStatus.localPending,
+            offlineHint: true,
+          ),
+          pendingOp: pending,
+          offlineHint: true,
+        );
+      } catch (error, stackTrace) {
+        ErrorHandler.log(error, stackTrace, 'enqueuePendingReport');
+        return ReportSaveOutcome(
+          report: report,
+          status: ReportSyncStatus.retryableError,
+          userMessage: ReportSyncUserMessages.retryableError,
+          errorCode: 'local_persist_failed',
+          offlineHint: true,
+        );
+      }
+    }
+
+    try {
+      final saved = await cloudSync.saveReport(
+        report,
+        expectedBaseFingerprint: baseFingerprint,
+      );
+      await _upsertReportLocally(saved);
+      if (ownerUid.isNotEmpty) {
+        await _pendingReportQueue.removeByReportId(ownerUid, saved.id);
+        await _syncMeta.setLastSyncedFingerprint(
+          uid: ownerUid,
+          reportId: saved.id,
+          fingerprint: reportContentFingerprint(saved),
+        );
+      }
+      return ReportSaveOutcome(
+        report: saved,
+        status: ReportSyncStatus.synced,
+        userMessage: ReportSyncUserMessages.synced,
+      );
+    } on ReportSyncConflictException catch (error) {
+      PendingReportSyncOp? pending;
+      try {
+        pending = ownerUid.isEmpty
+            ? null
+            : await _pendingReportQueue.enqueueUpsert(
+                uid: ownerUid,
+                report: report,
+                baseFingerprint: baseFingerprint,
+                status: ReportSyncStatus.conflict,
+                errorCode: 'conflict',
+              );
+      } catch (persistError, persistStack) {
+        ErrorHandler.log(persistError, persistStack, 'enqueueConflictPending');
+      }
+      ErrorHandler.log(error, StackTrace.current, 'saveReportConflict');
+      return ReportSaveOutcome(
+        report: report,
+        status: ReportSyncStatus.conflict,
+        userMessage: ReportSyncUserMessages.conflict,
+        errorCode: 'conflict',
+        pendingOp: pending,
+      );
+    } catch (error, stackTrace) {
+      ErrorHandler.log(error, stackTrace, 'saveReportFirebase');
+      final classified = classifyReportSyncError(error);
+      PendingReportSyncOp? pending;
+      try {
+        pending = ownerUid.isEmpty
+            ? null
+            : await _pendingReportQueue.enqueueUpsert(
+                uid: ownerUid,
+                report: report,
+                baseFingerprint: baseFingerprint,
+                status: classified.status,
+                errorCode: classified.code,
+              );
+      } catch (persistError, persistStack) {
+        ErrorHandler.log(persistError, persistStack, 'enqueueErrorPending');
+      }
+      return ReportSaveOutcome(
+        report: report,
+        status: classified.status,
+        userMessage: ReportSyncUserMessages.forStatus(classified.status),
+        errorCode: classified.code,
+        pendingOp: pending,
+        offlineHint: classified.status == ReportSyncStatus.retryableError,
+      );
+    }
   }
 
-  Future<void> deleteReport(String id) async {
+  /// Reintenta un informe pendiente conservando el ID original.
+  Future<ReportSaveOutcome?> retryPendingReport({
+    required String uid,
+    required String reportId,
+  }) async {
+    final owner = uid.trim();
+    final id = reportId.trim();
+    if (owner.isEmpty || id.isEmpty) return null;
+
+    final pending = await _pendingReportQueue.findByReportId(owner, id);
+    final report = pending?.report;
+    if (pending == null || report == null) {
+      final local = await _loadReportsLocally();
+      SavedReport? found;
+      for (final item in local) {
+        if (item.id == id) {
+          found = item;
+          break;
+        }
+      }
+      if (found == null) return null;
+      return saveExistingReport(found, saveFiles: false, actorUid: owner);
+    }
+
+    if (pending.status == ReportSyncStatus.conflict) {
+      // Reintento manual de conflicto: re-evalúa remoto sin sobrescribir a ciegas.
+      return saveExistingReport(
+        report,
+        saveFiles: false,
+        actorUid: owner,
+      );
+    }
+
+    await _pendingReportQueue.upsertOp(
+      owner,
+      pending.copyWith(
+        status: ReportSyncStatus.syncing,
+        lastAttemptAt: DateTime.now(),
+        attempts: pending.attempts + 1,
+        clearErrorCode: true,
+      ),
+    );
+
+    return saveExistingReport(
+      report,
+      saveFiles: false,
+      actorUid: owner,
+    );
+  }
+
+  /// Procesa pendientes del [uid] (sin solaparse con otro flush).
+  Future<List<ReportSaveOutcome>> flushPendingReports({
+    required String uid,
+    bool Function()? isCurrent,
+  }) async {
+    final owner = uid.trim();
+    if (owner.isEmpty) return const [];
+    if (_flushingPendingReports) return const [];
+    if (_cloudSync == null || !_sessionActive) return const [];
+
+    _flushingPendingReports = true;
+    final outcomes = <ReportSaveOutcome>[];
+    try {
+      final pending = await _pendingReportQueue.loadForUid(owner);
+      for (final op in pending) {
+        if (isCurrent != null && !isCurrent()) break;
+        if (op.ownerUid != owner) continue;
+        if (op.workspaceId != cloudWorkspaceId) continue;
+        if (!op.canAutoRetry) continue;
+        if (op.type != PendingReportSyncOpType.upsert || op.report == null) {
+          continue;
+        }
+
+        await _pendingReportQueue.upsertOp(
+          owner,
+          op.copyWith(
+            status: ReportSyncStatus.syncing,
+            lastAttemptAt: DateTime.now(),
+            attempts: op.attempts + 1,
+          ),
+        );
+
+        final outcome = await saveExistingReport(
+          op.report!,
+          saveFiles: false,
+          actorUid: owner,
+        );
+        outcomes.add(outcome);
+      }
+      return outcomes;
+    } finally {
+      _flushingPendingReports = false;
+    }
+  }
+
+  Future<Map<String, ReportSyncStatus>> pendingReportStatusesForUid(
+    String uid,
+  ) {
+    return _pendingReportQueue.statusByReportId(uid);
+  }
+
+  Future<void> deleteReport(String id, {String? actorUid}) async {
+    final reportId = id.trim();
+    if (reportId.isEmpty) return;
+
     final cloudSync = _cloudSync;
-    if (cloudSync != null) {
+    if (cloudSync != null && _sessionActive) {
       try {
-        await cloudSync.deleteReport(id);
-        await _removeReportLocally(id);
+        await cloudSync.deleteReport(reportId);
+        await _removeReportLocally(reportId);
+        final uid = actorUid?.trim();
+        if (uid != null && uid.isNotEmpty) {
+          await _pendingReportQueue.removeByReportId(uid, reportId);
+          await _syncMeta.clearReport(uid, reportId);
+        }
         return;
       } catch (error, stackTrace) {
         ErrorHandler.log(error, stackTrace, 'deleteReportFirebase');
       }
     }
 
-    await _removeReportLocally(id);
+    await _removeReportLocally(reportId);
+    final uid = actorUid?.trim();
+    if (uid != null && uid.isNotEmpty) {
+      await _pendingReportQueue.removeByReportId(uid, reportId);
+      await _syncMeta.clearReport(uid, reportId);
+    }
   }
 
   Future<Directory> getReportsDirectory() async {

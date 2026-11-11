@@ -18,6 +18,8 @@ import '../models/records_page_result.dart';
 import '../utils/firestore_json_helper.dart';
 import '../models/saved_report.dart';
 import '../models/saved_report_summary.dart';
+import '../utils/report_content_fingerprint.dart';
+import '../utils/report_upsert_decision.dart';
 import 'cloud_sync_port.dart';
 import 'firestore_record_query_builder.dart';
 import 'report_dual_write_plan.dart';
@@ -811,7 +813,10 @@ class CloudSyncService implements CloudSyncPort {
   }
 
   @override
-  Future<SavedReport> saveReport(SavedReport report) async {
+  Future<SavedReport> saveReport(
+    SavedReport report, {
+    String? expectedBaseFingerprint,
+  }) async {
     await bootstrap();
     final uid = await _requireUserId();
     final stamped =
@@ -827,16 +832,45 @@ class CloudSyncService implements CloudSyncPort {
         : report;
 
     final plan = ReportDualWritePlan.fromReport(stamped);
-    final batch = _firestore.batch();
-    batch.set(_reports.doc(plan.reportId), {
-      ...plan.reportData,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    batch.set(_reportSummaries.doc(plan.reportId), {
-      ...plan.summaryData,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-    await batch.commit();
+    final localFp = reportContentFingerprint(stamped);
+    final reportRef = _reports.doc(plan.reportId);
+    final summaryRef = _reportSummaries.doc(plan.reportId);
+
+    // Transacción: cierra la ventana TOCTOU entre lectura y dual-write.
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(reportRef);
+      String? remoteFp;
+      if (snap.exists && snap.data() != null) {
+        final remote = SavedReport.tryFromJson(
+          Map<String, dynamic>.from(snap.data()!),
+        );
+        if (remote != null) {
+          remoteFp = reportContentFingerprint(remote);
+        }
+      }
+
+      final decision = decideReportUpsert(
+        localFingerprint: localFp,
+        remoteFingerprint: remoteFp,
+        expectedBaseFingerprint: expectedBaseFingerprint,
+      );
+      if (decision == ReportUpsertDecision.conflict) {
+        throw ReportSyncConflictException(plan.reportId);
+      }
+      if (decision == ReportUpsertDecision.alreadySynced) {
+        return;
+      }
+
+      tx.set(reportRef, {
+        ...plan.reportData,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      tx.set(summaryRef, {
+        ...plan.summaryData,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+
     return stamped;
   }
 

@@ -91,7 +91,12 @@ abstract class CloudSyncPort {
   /// Informes completos para una lista explícita de ids (sin listado masivo).
   Future<List<SavedReport>> fetchReportsByIds(List<String> ids);
 
-  Future<SavedReport> saveReport(SavedReport report);
+  /// Dual-write de informe. Si [expectedBaseFingerprint] no es null y el
+  /// remoto existe con otra huella, debe fallar sin sobrescribir.
+  Future<SavedReport> saveReport(
+    SavedReport report, {
+    String? expectedBaseFingerprint,
+  });
 
   Future<void> deleteReport(String reportId);
 
