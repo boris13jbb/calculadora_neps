@@ -157,7 +157,10 @@ class _TrackingCloudSync implements CloudSyncPort {
   }
 
   @override
-  Future<SavedReport> saveReport(SavedReport report) async {
+  Future<SavedReport> saveReport(
+    SavedReport report, {
+    String? expectedBaseFingerprint,
+  }) async {
     fullById[report.id] = report;
     summaries.removeWhere((s) => s.id == report.id);
     summaries.add(SavedReportSummary.fromSavedReport(report));

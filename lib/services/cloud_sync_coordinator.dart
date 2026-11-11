@@ -80,8 +80,14 @@ class CloudSyncCoordinator {
   Future<List<SavedReport>> fetchReportsByIds(List<String> ids) =>
       _cloud.fetchReportsByIds(ids);
 
-  Future<SavedReport> saveReport(SavedReport report) =>
-      _cloud.saveReport(report);
+  Future<SavedReport> saveReport(
+    SavedReport report, {
+    String? expectedBaseFingerprint,
+  }) =>
+      _cloud.saveReport(
+        report,
+        expectedBaseFingerprint: expectedBaseFingerprint,
+      );
 
   Future<void> deleteReport(String reportId) => _cloud.deleteReport(reportId);
 

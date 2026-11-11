@@ -161,7 +161,10 @@ class _TrackingCloudSync implements CloudSyncPort {
   }
 
   @override
-  Future<SavedReport> saveReport(SavedReport report) async {
+  Future<SavedReport> saveReport(
+    SavedReport report, {
+    String? expectedBaseFingerprint,
+  }) async {
     fullById[report.id] = report;
     return report;
   }

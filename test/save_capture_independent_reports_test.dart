@@ -5,7 +5,7 @@ import 'package:calculadora_neps/models/app_user_role.dart';
 import 'package:calculadora_neps/models/nep_record.dart';
 import 'package:calculadora_neps/models/pdf_report_style.dart';
 import 'package:calculadora_neps/models/record_filters.dart';
-import 'package:calculadora_neps/models/saved_report.dart';
+import 'package:calculadora_neps/models/report_save_outcome.dart';
 import 'package:calculadora_neps/providers/app_state.dart';
 import 'package:calculadora_neps/services/report_storage_service.dart';
 import 'package:flutter/material.dart';
@@ -36,7 +36,7 @@ class _ThrowingReportStorage extends ReportStorageService {
   _ThrowingReportStorage() : super();
 
   @override
-  Future<SavedReport> saveReport({
+  Future<ReportSaveOutcome> saveReport({
     required String name,
     required List<NepRecord> records,
     RecordFilters? appliedFilters,

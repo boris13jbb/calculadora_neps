@@ -18,6 +18,7 @@ import '../../models/nep_record.dart';
 import '../../models/pdf_report_style.dart';
 import '../../models/record_filters.dart';
 import '../../models/report_list_metrics.dart';
+import '../../models/report_sync_status.dart';
 import '../../models/saved_report.dart';
 import '../../models/saved_report_summary.dart';
 import '../../providers/app_state.dart';
@@ -37,33 +38,40 @@ const Set<ReportShareFormat> kSavedReportAllShareFormats = {
 
 /// Ítems del menú de acciones por informe (fuente única para UI y tests).
 @visibleForTesting
-List<PopupMenuEntry<String>> buildSavedReportRowMenuItems() {
-  return const [
-    PopupMenuItem(
+List<PopupMenuEntry<String>> buildSavedReportRowMenuItems({
+  bool showRetrySync = false,
+}) {
+  return [
+    const PopupMenuItem(
       value: 'view',
       child: Text('Ver informe'),
     ),
-    PopupMenuItem(
+    if (showRetrySync)
+      const PopupMenuItem(
+        value: 'retry_sync',
+        child: Text('Reintentar sincronización'),
+      ),
+    const PopupMenuItem(
       value: 'csv',
       child: Text('Compartir CSV'),
     ),
-    PopupMenuItem(
+    const PopupMenuItem(
       value: 'excel',
       child: Text('Compartir Excel'),
     ),
-    PopupMenuItem(
+    const PopupMenuItem(
       value: 'pdf',
       child: Text('Compartir PDF'),
     ),
-    PopupMenuItem(
+    const PopupMenuItem(
       value: 'all',
       child: Text('Compartir completo'),
     ),
-    PopupMenuItem(
+    const PopupMenuItem(
       value: 'classic',
       child: Text('Compartir clásico'),
     ),
-    PopupMenuItem(
+    const PopupMenuItem(
       value: 'delete',
       child: Text('Eliminar'),
     ),
@@ -102,6 +110,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   late final ReportShareHelper shareHelper;
   List<SavedReportSummary> summaries = [];
   Map<String, SavedReport> _localFullById = {};
+  Map<String, ReportSyncStatus> _pendingSyncById = {};
   ReportListMetrics? lastListMetrics;
   int cloudFullFetchCount = 0;
   final Set<String> selectedReportIds = {};
@@ -152,6 +161,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       final loaded = await appState.refreshReportSummariesResult();
       final localFulls =
           await appState.reportStorageService.loadLocalReportsById();
+      final pendingStatuses = await appState.pendingReportSyncStatuses();
       selectedReportIds.removeWhere(
         (id) => !loaded.summaries.any((summary) => summary.id == id),
       );
@@ -159,6 +169,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         setState(() {
           summaries = loaded.summaries;
           _localFullById = localFulls;
+          _pendingSyncById = pendingStatuses;
           lastListMetrics = loaded.metrics;
           loadError = loaded.summaries.isEmpty ? loaded.cloudError : null;
           if (loaded.cloudError != null && loaded.summaries.isNotEmpty) {
@@ -260,8 +271,26 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
   }
 
+  Future<void> _retryReportSync(SavedReportSummary summary) async {
+    final appState = context.read<AppState>();
+    setState(() => isWorking = true);
+    try {
+      final outcome = await appState.retryPendingReportSync(summary.id);
+      if (!mounted) return;
+      if (outcome == null) {
+        _showMessage(
+          'No hay operación pendiente para «${summary.name}».',
+        );
+      }
+      await _loadReports(showLoader: false);
+    } finally {
+      if (mounted) setState(() => isWorking = false);
+    }
+  }
+
   Future<void> _deleteReport(SavedReportSummary summary) async {
-    final storage = context.read<AppState>().reportStorageService;
+    final appState = context.read<AppState>();
+    final storage = appState.reportStorageService;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -281,7 +310,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
     );
 
     if (confirmed != true || !mounted) return;
-    await storage.deleteReport(summary.id);
+    await storage.deleteReport(
+      summary.id,
+      actorUid: appState.authUid,
+    );
     selectedReportIds.remove(summary.id);
     _localFullById.remove(summary.id);
     await _loadReports();
@@ -844,6 +876,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
               itemBuilder: (context, index) {
                 final summary = filtered[index];
                 final isSelected = selectedReportIds.contains(summary.id);
+                final syncStatus = _pendingSyncById[summary.id];
+                final needsRetry = syncStatus == ReportSyncStatus.localPending ||
+                    syncStatus == ReportSyncStatus.retryableError ||
+                    syncStatus == ReportSyncStatus.conflict ||
+                    syncStatus == ReportSyncStatus.permanentError ||
+                    syncStatus == ReportSyncStatus.syncing;
+                final syncLabel = syncStatus == null
+                    ? null
+                    : ReportSyncUserMessages.shortLabel(syncStatus);
 
                 return AppMaterialListTile(
                   dense: phone,
@@ -865,7 +906,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text(
-                    '${_formatDate(summary.createdAt)} · ${summary.recordCount} reg.',
+                    syncLabel == null
+                        ? '${_formatDate(summary.createdAt)} · ${summary.recordCount} reg.'
+                        : '${_formatDate(summary.createdAt)} · ${summary.recordCount} reg. · $syncLabel',
                     style: TextStyle(fontSize: phone ? 11 : 13),
                   ),
                   trailing: isWorking
@@ -878,6 +921,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                           onSelected: (value) async {
                             if (value == 'view') {
                               await _viewSavedReport(summary);
+                            } else if (value == 'retry_sync') {
+                              await _retryReportSync(summary);
                             } else if (value == 'delete') {
                               await _deleteReport(summary);
                             } else {
@@ -885,7 +930,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                             }
                           },
                           itemBuilder: (context) =>
-                              buildSavedReportRowMenuItems(),
+                              buildSavedReportRowMenuItems(
+                            showRetrySync: needsRetry,
+                          ),
                         ),
                 );
               },

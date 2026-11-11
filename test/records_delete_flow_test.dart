@@ -155,7 +155,11 @@ class _TrackingCloudSync implements CloudSyncPort {
   Future<List<SavedReport>> fetchReportsByIds(List<String> ids) async => [];
 
   @override
-  Future<SavedReport> saveReport(SavedReport report) async => report;
+  Future<SavedReport> saveReport(
+    SavedReport report, {
+    String? expectedBaseFingerprint,
+  }) async =>
+      report;
 
   @override
   Future<void> deleteReport(String reportId) async {

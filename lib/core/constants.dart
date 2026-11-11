@@ -13,6 +13,10 @@ const String recordsHiveBoxPrefix = 'vicunha_records_uid_v1_';
 const String recordsAmbiguousKey = 'vicunha_records_ambiguous_v1';
 const String recordsLegacySplitDoneKey = 'vicunha_records_legacy_split_v1';
 const String pendingSyncKeyPrefix = 'vicunha_pending_sync_v1_';
+/// Cola de sync de Informes guardados (independiente de registros y personalSessions).
+const String pendingReportSyncKeyPrefix = 'vicunha_pending_report_sync_v1_';
+/// Última huella confirmada en cloud por informe (por UID).
+const String reportSyncMetaKeyPrefix = 'vicunha_report_sync_meta_v1_';
 const String captureDraftKeyPrefix = 'vicunha_capture_draft_v1_';
 const String personalSessionsKeyPrefix = 'vicunha_personal_sessions_v1_';
 const String personalReportsKeyPrefix = 'vicunha_personal_reports_v1_';
@@ -60,6 +64,9 @@ const String savedCaptureIdsKeyPrefix = 'vicunha_saved_capture_ids_v1_';
 String recordsPrefsKeyForUid(String uid) => '$recordsPrefsKeyPrefix$uid';
 String recordsHiveBoxForUid(String uid) => '$recordsHiveBoxPrefix$uid';
 String pendingSyncKeyForUid(String uid) => '$pendingSyncKeyPrefix$uid';
+String pendingReportSyncKeyForUid(String uid) =>
+    '$pendingReportSyncKeyPrefix$uid';
+String reportSyncMetaKeyForUid(String uid) => '$reportSyncMetaKeyPrefix$uid';
 String captureDraftKeyForUid(String uid) => '$captureDraftKeyPrefix$uid';
 String personalSessionsKeyForUid(String uid) =>
     '$personalSessionsKeyPrefix$uid';
